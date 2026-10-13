@@ -23,7 +23,7 @@ import ru.forma.domain.*
 class MainActivity:ComponentActivity(){
  private val vm:FormaViewModel by viewModels()
  private val permission=registerForActivityResult(ActivityResultContracts.RequestPermission()){}
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS);setContent{FormaRoot(vm)}}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{FormaRoot(vm)};if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS)}
 }
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){

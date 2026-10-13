@@ -1,6 +1,6 @@
 # FORMA work checkpoint
 
-Updated: 2026-10-13 15:08 Europe/Moscow
+Updated: 2026-10-13 16:15 Europe/Moscow
 
 ## Exact source
 
@@ -61,6 +61,14 @@ no competing writer was detected.
   `services.gradle.org`. This is an environment gate and is not a fresh PASS.
 - API 34 instrumentation remains unexecuted. KVM was enabled successfully in
   run `38388029382`; the confirmed blocker was runner disk capacity.
+- Follow-up run `38394512778` verify job `115286204722` passed. Its API 34
+  emulator booted with KVM and executed `JourneyTest`, proving the runner-disk
+  blocker fixed. Instrumentation job `115287639581` then failed the single
+  journey before UI interaction: Android 14 notification permission launched
+  before Compose content, so the test found no Compose hierarchy. The app now
+  installs Compose content before requesting notification permission, and the
+  journey grants that runtime permission before launching `MainActivity`.
+  This correction is pending CI and is not yet a runtime PASS.
 - Runtime/device acceptance is limited to the Owner reporting that the APK
   opened. Full physical acceptance has not occurred.
 

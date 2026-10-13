@@ -14,6 +14,6 @@ dependencies {
  implementation(platform(libs.androidx.compose.bom));implementation(libs.androidx.ui);implementation(libs.androidx.material3);implementation(libs.androidx.material.icons.extended)
  implementation(libs.androidx.room.runtime);implementation(libs.androidx.room.ktx);ksp(libs.androidx.room.compiler);implementation(libs.androidx.datastore.preferences);implementation(libs.kotlinx.serialization.json)
  testImplementation(libs.junit);testImplementation(libs.robolectric)
- androidTestImplementation(libs.androidx.junit);androidTestImplementation(libs.androidx.espresso.core);androidTestImplementation(platform(libs.androidx.compose.bom));androidTestImplementation(libs.androidx.ui.test.junit4)
+ androidTestImplementation(libs.androidx.junit);androidTestImplementation(libs.androidx.espresso.core);androidTestImplementation(libs.androidx.test.rules);androidTestImplementation(platform(libs.androidx.compose.bom));androidTestImplementation(libs.androidx.ui.test.junit4)
  debugImplementation(libs.androidx.ui.test.manifest)
 }
