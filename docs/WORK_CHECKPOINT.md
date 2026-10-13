@@ -28,6 +28,17 @@ no competing writer was detected.
   package `tools`. No code/build tests ran in that workflow attempt. The
   redundant action has been removed; GitHub's Ubuntu Android image supplies
   the SDK used by Gradle.
+- Remote CI-fix HEAD: `fbf8e0c89116f0cbad660e55244d6f2e3a78c2e5`.
+- GitHub Actions run `38386276683` completed successfully: domain/app tests,
+  lint and debug assembly all ran; build duration was 6m49s.
+- APK artifact `11806632582` was published with archive digest
+  `sha256:73da5ccb7d17bb4fec57514f6355bdca893e413c79d15066c4740f70f18f8ac7`.
+  The contained `app-debug.apk` SHA-256 is
+  `ae31453d4b3fdc1fc85f5136cbe95398d124dab9052fa2b8cbf6440e2e2aa507`;
+  metadata identifies `ru.forma.fitness` 0.1.0, versionCode 1, minSdk 26.
+- The next CI revision records apksigner/aapt evidence and executes the
+  existing Compose journey on an API 34 KVM-backed GitHub emulator. Until that
+  run completes, signature details and UI runtime remain unconfirmed.
 - Durable baseline at recovered HEAD: domain tests 25 passed; app/Room tests
   3 passed; lint 0 errors and 3 warnings; debug APK and instrumentation APK
   assembled.
