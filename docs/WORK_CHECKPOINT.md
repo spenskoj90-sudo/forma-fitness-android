@@ -1,6 +1,6 @@
 # FORMA work checkpoint
 
-Updated: 2026-10-13 13:55 Europe/Moscow
+Updated: 2026-10-13 15:08 Europe/Moscow
 
 ## Exact source
 
@@ -9,6 +9,7 @@ Updated: 2026-10-13 13:55 Europe/Moscow
 - Durable source archive SHA-256: `9822da4e025c8cffe665c42bdc446781976a0b956ff17ec93489643333a80059`
 - Source archive provenance: Library checkpoint `FORMA_Source_Checkpoint.zip`
 - Upstream scaffolding provenance: GetFitPro `f349ae0d9d582595f6dca0d1824c58687275862e`, MIT notice retained.
+- Remote `main` before this checkpoint update: `a058dee690b0fd06a514974be021b466d50c4bf3`.
 
 ## Current block
 
@@ -36,26 +37,42 @@ no competing writer was detected.
   The contained `app-debug.apk` SHA-256 is
   `ae31453d4b3fdc1fc85f5136cbe95398d124dab9052fa2b8cbf6440e2e2aa507`;
   metadata identifies `ru.forma.fitness` 0.1.0, versionCode 1, minSdk 26.
-- The next CI revision records apksigner/aapt evidence and executes the
-  existing Compose journey on an API 34 KVM-backed GitHub emulator. Until that
-  run completes, signature details and UI runtime remain unconfirmed.
+- GitHub Actions run `38388029382`, verify job `115264536734`, passed the
+  domain/app tests, lint, assembly, APK identity and signature checks.
+- APK artifact `11807343335` has archive digest
+  `sha256:8c2e0154ef16f46cf4dd4fee929041e44438a8beebddb57bbde3ca36f190ec81`.
+  Its `app-debug.apk` SHA-256 is
+  `6b3b74b9430a92a3dfc6656450d35022c89b2a3881362a85b18797ac8c159b23`.
+  AAPT confirms `ru.forma.fitness`, versionName 0.1.0, versionCode 1,
+  minSdk 26 and targetSdk 35. Apksigner confirms one RSA-2048 signer, valid
+  APK Signature Scheme v2, certificate DN `CN=FORMA Development,O=FORMA,C=RU`
+  and certificate SHA-256
+  `f64c119c6bcc34e33f2061cf8873f6c57e9b186a10c13644c3a0719467605225`.
+- The same run's instrumentation job `115266290452` did not execute tests:
+  emulator 37.2.12 exited before ADB registration because the Pixel 6 AVD
+  requested a 7372.80 MB userdata partition while only 5738.94 MB remained.
+  The workflow now caps the AVD disk at 4096 MB. This is an infrastructure
+  correction, not a runtime PASS; the follow-up run must provide that evidence.
 - Durable baseline at recovered HEAD: domain tests 25 passed; app/Room tests
   3 passed; lint 0 errors and 3 warnings; debug APK and instrumentation APK
   assembled.
 - A fresh local rerun was attempted on 2026-10-13 but could not download
   Gradle 8.10.2 because the execution environment had no route to
   `services.gradle.org`. This is an environment gate and is not a fresh PASS.
-- API 34 instrumentation remains unexecuted. The earlier software emulator
-  timed out without KVM.
+- API 34 instrumentation remains unexecuted. KVM was enabled successfully in
+  run `38388029382`; the confirmed blocker was runner disk capacity.
 - Runtime/device acceptance is limited to the Owner reporting that the APK
   opened. Full physical acceptance has not occurred.
 
 ## Writer and next step
 
 - Current writer: FORMA engineering continuation automation, single integration lane.
-- Next step: import this source as one repository block, run GitHub Actions,
-  record exact remote HEAD/run/artifact results, then continue the next
-  measured product block.
+- CI concurrency is serialized per ref with `cancel-in-progress: false`, so a
+  later push does not cancel an already executing FORMA run. A repository-wide
+  fenced writer lease for non-CI mutations remains required and must not be
+  represented by this checkpoint alone.
+- Next step: obtain an executed API 34 Compose journey, then finish Block A and
+  implement the repository-wide fenced writer lease before starting Block B.
 
 ## Evidence boundaries
 
