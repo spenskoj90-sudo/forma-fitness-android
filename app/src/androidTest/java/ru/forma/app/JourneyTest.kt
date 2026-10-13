@@ -20,7 +20,9 @@ class JourneyTest{
   composeRule.waitUntil(20000){composeRule.onAllNodesWithText("Твоя форма.").fetchSemanticsNodes().isNotEmpty()}
   click("К тренировкам");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick()
   composeRule.waitUntil(20000){composeRule.onAllNodesWithText("Пропустить этап").fetchSemanticsNodes().isNotEmpty()}
-  click("Пропустить этап");click("Подход выполнен")
+  click("Пропустить этап")
+  composeRule.waitUntil(20000){composeRule.onAllNodesWithText("Подход выполнен").fetchSemanticsNodes().isNotEmpty()}
+  click("Подход выполнен")
   composeRule.waitUntil(20000){composeRule.onAllNodesWithText("Отдых").fetchSemanticsNodes().isNotEmpty()}
   click("Пауза");composeRule.onNodeWithText("Продолжить сопровождение").assertExists();click("Продолжить сопровождение")
   click("Остановить тренировку");click("Сохранить и завершить");click("Прогресс")

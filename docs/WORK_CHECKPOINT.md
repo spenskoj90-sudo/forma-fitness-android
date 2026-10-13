@@ -1,6 +1,6 @@
 # FORMA work checkpoint
 
-Updated: 2026-10-13 17:10 Europe/Moscow
+Updated: 2026-10-13 18:12 Europe/Moscow
 
 ## Exact source
 
@@ -76,6 +76,13 @@ no competing writer was detected.
   exited before ADB registration. CI now uses the smaller Pixel 2 hardware
   profile with API 34/x86_64/KVM and 2048 MB userdata; screen geometry is not
   an assertion of this functional journey. A follow-up run remains required.
+- Run `38410081769` verify job `115339775646` passed. Compact API 34
+  instrumentation job `115341646207` booted reliably and executed the journey
+  through profile creation, generated program, workout start and warm-up skip.
+  It then failed because the test tried to click `Подход выполнен` before the
+  asynchronous Room/ViewModel transition exposed that node. The journey now
+  waits for the work-stage action before clicking it. Product state logic was
+  not changed; a follow-up runtime result remains required.
 - Runtime/device acceptance is limited to the Owner reporting that the APK
   opened. Full physical acceptance has not occurred.
 
