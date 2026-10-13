@@ -1,6 +1,6 @@
 # FORMA work checkpoint
 
-Updated: 2026-10-13 18:12 Europe/Moscow
+Updated: 2026-10-13 19:14 Europe/Moscow
 
 ## Exact source
 
@@ -83,6 +83,13 @@ no competing writer was detected.
   asynchronous Room/ViewModel transition exposed that node. The journey now
   waits for the work-stage action before clicking it. Product state logic was
   not changed; a follow-up runtime result remains required.
+- Run `38419006432` verify job `115371015846` passed. Instrumentation job
+  `115372964244` did not execute the updated journey: this runner had 5988.68
+  MB free while emulator 37.2.12 again reserved 7372.80 MB even though the AVD
+  config contained `disk.dataPartition.size=2048M`. The Android-only job now
+  removes unrelated preinstalled .NET, GHC and Android NDK toolchains before
+  creating the AVD, making the required disk headroom explicit. This is an
+  infrastructure retry and not runtime evidence.
 - Runtime/device acceptance is limited to the Owner reporting that the APK
   opened. Full physical acceptance has not occurred.
 
