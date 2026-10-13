@@ -1,6 +1,6 @@
 # FORMA work checkpoint
 
-Updated: 2026-10-13 16:15 Europe/Moscow
+Updated: 2026-10-13 17:10 Europe/Moscow
 
 ## Exact source
 
@@ -69,6 +69,13 @@ no competing writer was detected.
   installs Compose content before requesting notification permission, and the
   journey grants that runtime permission before launching `MainActivity`.
   This correction is pending CI and is not yet a runtime PASS.
+- Run `38402187095` verify job `115312345638` passed, but instrumentation job
+  `115315096082` did not reach Gradle or execute the corrected journey. On a
+  lower-capacity runner, emulator 37.2.12 again applied the Pixel 6 profile's
+  7372.80 MB userdata requirement despite the appended 4096 MB setting and
+  exited before ADB registration. CI now uses the smaller Pixel 2 hardware
+  profile with API 34/x86_64/KVM and 2048 MB userdata; screen geometry is not
+  an assertion of this functional journey. A follow-up run remains required.
 - Runtime/device acceptance is limited to the Owner reporting that the APK
   opened. Full physical acceptance has not occurred.
 
