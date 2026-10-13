@@ -22,6 +22,12 @@ no competing writer was detected.
 
 ## Verification evidence
 
+- Remote import commit: `95bfc78e358edd73321db833990f3f4e52ad21bc`.
+- GitHub Actions run `38386131003` failed before Gradle at
+  `android-actions/setup-android@v3`: the action requested the obsolete SDK
+  package `tools`. No code/build tests ran in that workflow attempt. The
+  redundant action has been removed; GitHub's Ubuntu Android image supplies
+  the SDK used by Gradle.
 - Durable baseline at recovered HEAD: domain tests 25 passed; app/Room tests
   3 passed; lint 0 errors and 3 warnings; debug APK and instrumentation APK
   assembled.
