@@ -74,6 +74,25 @@ class StorageTest {
   assertEquals(s.id,stopped.id)
   db.close()
  }
+ @Test fun pausePersistsAcrossTimedCardioTicksAndRecovery()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
+  val day=generateProgram(p).first{it.cardio!=null}.copy(durationSec=60)
+  val start=repo.start(p.id,day,1000)
+  repo.mutateSession(p.id,start.id){skipStage(it,2000)}
+  assertEquals(Phase.CARDIO,repo.load(p.id)!!.active!!.phase)
+  repo.mutateSession(p.id,start.id){pauseSession(it,2500)}
+  val paused=repo.load(p.id)!!.active!!
+  assertTrue(paused.paused)
+  repo.mutateSession(p.id,start.id){advanceTimed(it,10000)}
+  val afterTick=repo.load(p.id)!!.active!!
+  assertEquals(paused,afterTick)
+  // Reopen the database to prove the pause survives a new repository
+  // instance rather than merely an in-memory StateFlow state.
+  val nextRepo=ProfileRepository(db)
+  assertTrue(nextRepo.load(p.id)!!.active!!.paused)
+  db.close()
+ }
  @Test fun importCapacityExceededLeavesAllProfilesUnchanged()=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   val repo=ProfileRepository(db)
