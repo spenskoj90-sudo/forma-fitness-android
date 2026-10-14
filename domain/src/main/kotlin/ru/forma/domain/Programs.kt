@@ -43,13 +43,16 @@ fun generateProgram(p:Profile,now:Long=System.currentTimeMillis()):List<Training
  for(d in p.days.sorted())if(strengthDays.size<3&&strengthDays.none{val gap=kotlin.math.abs(d-it);gap<=1||gap==6})strengthDays+=d
  val returning=p.history.filter{it.status==Phase.DONE&&it.day.cardio==null}.maxOfOrNull{it.finishedMs}?.let{now-it>21L*86400000}?:true
  val reps=when(p.primary){Goal.STRENGTH->8;Goal.ENDURANCE->15;else->12};val sets=if(p.experience==Experience.BEGINNER||returning)2 else 3
+ // Cardio completion cannot erase the safety signal from a stopped strength workout.
+ val latestStrength=p.history.filter{it.day.cardio==null}.maxByOrNull{it.finishedMs}
+ val holdProgression=latestStrength?.let{it.status!=Phase.DONE||it.painReported}==true
  val muscles=(listOf(Muscle.LEGS,Muscle.BACK,Muscle.CHEST,Muscle.CORE)+p.priorities.sortedBy{it.ordinal}).distinct()
  return p.days.sorted().map{d->if(d !in strengthDays)TrainingDay(d,"Лёгкое кардио",cardio=CardioKind.WALK,durationSec=if(p.primary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS)||p.secondary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS))1800 else 1200,explanation="Ходьба между силовыми днями; длительность и интервалы настраиваются.")
  else TrainingDay(d,"Силовая · всё тело",exercises=muscles.mapNotNull{m->
   val choices=available.filter{it.muscle==m}.sortedByDescending{when(it.equipment){Equipment.DUMBBELL->2;Equipment.BARBELL->1;else->0}}
   val ex=choices.firstOrNull()?:return@mapNotNull null
   val last=p.history.sortedByDescending{it.finishedMs}.firstOrNull{it.status==Phase.DONE&&it.sets.any{s->s.exerciseId==ex.id}}?.sets?.filter{it.exerciseId==ex.id}.orEmpty()
-  val previous=last.lastOrNull()?.weight?:0.0;val weight=suggestWeight(previous,if(last.size>=sets)last.minOf{it.reps}else 0,reps,last.maxOfOrNull{it.effort}?:10,last.any{it.pain}||p.history.maxByOrNull{it.finishedMs}?.let{it.status==Phase.STOPPED||it.painReported}==true,p.recovery,returning)
-  Prescription(ex,sets,reps,weight,if(p.primary==Goal.STRENGTH)120 else 90,"${p.primary.label}; ${p.experience.label}. "+if(returning)"Возвращение: 2 подхода, 70% прошлого веса."else if(weight>previous)"Все подходы выполнены: предлагается +5%, подтвердите вес."else"Вес сохранён, корректируйте по самочувствию.")
+  val previous=last.lastOrNull()?.weight?:0.0;val weight=suggestWeight(previous,if(last.size>=sets)last.minOf{it.reps}else 0,reps,last.maxOfOrNull{it.effort}?:10,last.any{it.pain}||holdProgression,p.recovery,returning)
+  Prescription(ex,sets,reps,weight,if(p.primary==Goal.STRENGTH)120 else 90,"${p.primary.label}; ${p.experience.label}. "+if(returning)"Возвращение: 2 подхода, 70% прошлого веса."else if(holdProgression)"Последнее силовое занятие остановлено: нагрузка не повышается."else if(weight>previous)"Все подходы выполнены: предлагается +5%, подтвердите вес."else"Вес сохранён, корректируйте по самочувствию.")
  },explanation="Всё тело и доступные акценты. Силовые дни разделены отдыхом. Вес: на одну гантель или общий вес штанги.")}
 }
