@@ -8,11 +8,15 @@ import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import ru.forma.domain.*
 
 class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
  private var job:Job?=null
+ // Android may dispatch a new START before the previous workout loop exits.
+ private val commandMutex=Mutex()
  private var tts:TextToSpeech?=null
  @Volatile private var ready=false
  @Volatile private var focusGranted=false
@@ -41,27 +45,50 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  }
  override fun onBind(intent:Intent?):IBinder?=null
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
-  // Each PendingIntent carries the exact workout id; old notification actions
-  // never target a newer workout of the same profile.
+  // Keep each Android startId: an old loop must never stop a newer START.
   startForeground(1,notification("Подготовка тренировки",null))
   val id=intent?.getStringExtra("profile")
   val expected=intent?.getStringExtra("session")
-  if(id==null||expected==null){stopSelf();return START_NOT_STICKY}
+  if(id==null||expected==null){
+   if(job?.isActive!=true)stopSelf(startId)
+   return START_NOT_STICKY
+  }
   scope.launch{
-   val active=app.repository.load(id)?.active
-   if(active==null||active.id!=expected||active.terminal){if(job?.isActive!=true)stopSelf();return@launch}
-   if(sessionId!=null && sessionId!=expected)return@launch
-   if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}
-   profileId=id;sessionId=expected
-   when(intent.action){
-    "PAUSE"->{app.repository.mutateSession(id,expected){pauseSession(it,app.workoutNow())};silence()}
-    "STOP"->{app.repository.mutateSession(id,expected){stopSession(it,false,app.workoutNow())};silence()}
+   commandMutex.withLock{
+    val active=app.repository.load(id)?.active
+    if(active==null||active.id!=expected||active.terminal){
+     if(job?.isActive!=true)stopSelf(startId)
+     return@withLock
+    }
+    if(sessionId!=null&&sessionId!=expected){
+     // Await resource cleanup (TTS, focus, wakelock) before starting a
+     // replacement session. A stale notification cannot mutate this one.
+     job?.cancelAndJoin()
+     job=null
+     lastStage=""
+     nextBeat=0L
+    }
+    if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}
+    profileId=id;sessionId=expected
+    when(intent.action){
+     "PAUSE"->{app.repository.mutateSession(id,expected){pauseSession(it,app.workoutNow())};silence()}
+     "STOP"->{app.repository.mutateSession(id,expected){stopSession(it,false,app.workoutNow())};silence()}
+    }
+    if(intent.action=="STOP"){
+     // A newer START can arrive while the cancelled loop is completing.
+     job?.cancelAndJoin()
+     job=null
+     app.serviceRunning=false
+     stopSelf(startId)
+    }else if(job?.isActive!=true){
+     app.serviceRunning=true
+     job=scope.launch{runWorkout(id,expected,startId)}
+    }
    }
-   if(job?.isActive!=true){app.serviceRunning=true;job=scope.launch{runWorkout(id,expected)}}
   }
   return START_NOT_STICKY
  }
- private suspend fun runWorkout(id:String,expected:String){
+ private suspend fun runWorkout(id:String,expected:String,startId:Int){
   wake=(getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout")
   try{while(currentCoroutineContext().isActive){
    app.repository.mutateSession(id,expected){advanceTimed(it,app.workoutNow())}
@@ -85,7 +112,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   }}catch(e:CancellationException){throw e}catch(e:Exception){
    runCatching{app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}}
    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2,notification("Сбой сопровождения. Откройте FORMA.",null))
-  }finally{silence();releaseFocus();if(wake?.isHeld==true)wake?.release();stopSelf()}
+  }finally{silence();releaseFocus();if(wake?.isHeld==true)wake?.release();stopSelf(startId)}
  }
  private fun silence(){tts?.stop();tone?.stopTone();nextBeat=0}
  private fun releaseFocus(){if(focusGranted){manager.abandonAudioFocusRequest(focus);focusGranted=false}}
