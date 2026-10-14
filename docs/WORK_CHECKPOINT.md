@@ -1,5 +1,5 @@
 # FORMA work checkpoint
-Updated: 2026-10-14 14:17 Europe/Moscow
+Updated: 2026-10-14 14:24 Europe/Moscow
 
 ## Source and coordination
 - Live main verified once at start: `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`.
@@ -31,6 +31,11 @@ Updated: 2026-10-14 14:17 Europe/Moscow
 - Capture timeout screenshots and Compose tree **inside** instrumentation before teardown. Store evidence in the debuggable app-private directory and retrieve it via `run-as` / tar, including on API30; include logcat on failures.
 - API34 compatibility update test executed in `38530992443`, but does **not** establish a stable cross-build signing channel because disposable debug keys are generated per CI run. Private custody remains the Owner gate.
 
+## Current continuation
+- Latest pre-checkpoint integration commit: `e446edd6790c75c1aaeda0bd66ccf75a1837349a` (keyboard dismissal and per-profile editor field state). PR #1 owns the current branch; the actual post-checkpoint commit SHA is recorded in the PR and GitHub Actions.
+- Real API34 screenshots from run `38530992443` showed the IME still covering Home/Training after onboarding and a purple default Material3 nav indicator. UI now dismisses the IME after saving and uses explicit green FORMA secondary/navigation colors. Visual result on corrected build is **pending** CI screenshots.
+- No claims of a physical release or compatible owner APK update.
+ 
 ## Next step
 Wait for exact-HEAD jobs after the assertions/evidence changes. If runtime remains red, inspect in-app timeout screenshot and logcat before changing product logic. Continue reliability review and meaningful tests. Do not merge while red or pending.
 
