@@ -140,7 +140,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  // Do not inherit the previous stage's scroll position.
  key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
  Page(if(s.paused)"Пауза"else stageLabel(s),"${s.day.name} · ${s.sets.size} сохранённых подходов"){
-  if(s.terminal)Panel("Результат"){Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.");Action("Сохранить и завершить",vm::finish)}
+  if(s.terminal)Panel("Результат"){Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.");Action("Сохранить и завершить",{vm.finish(s.id)})}
   else{
    Panel("Текущий этап"){
     if(s.phase in listOf(Phase.WARMUP,Phase.REST,Phase.CARDIO))Text("${remainingSeconds(s,now)/60}:${(remainingSeconds(s,now)%60).toString().padStart(2,'0')}",style=MaterialTheme.typography.displayMedium)
@@ -148,13 +148,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     if(s.phase==Phase.WARMUP)Text("Лёгкая ходьба на месте, плавные движения плеч и таза. Без боли и рывков.");if(s.phase==Phase.CARDIO)Text("Комфортный темп. При дискомфорте остановитесь.")
    }
    if(s.phase==Phase.WORK){if(s.current?.exercise?.equipment!=Equipment.BODYWEIGHT)NumericField("Вес, кг · гантель: на одну руку",weight){weight=it};NumericField("Повторения",reps){reps=it};Text("Сложность: ${effort.toInt()}/10");Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
-    val w=number(weight);val r=reps.toIntOrNull();Action("Подход выполнен",{vm.done(w?:0.0,r?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&r!=null&&r in 1..100)
+    val w=number(weight);val r=reps.toIntOrNull();Action("Подход выполнен",{vm.done(s.id,w?:0.0,r?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&r!=null&&r in 1..100)
 
    }
-   OutlinedButton(vm::painStop,Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
-   Action(if(s.paused)"Продолжить сопровождение"else"Пауза",if(s.paused)vm::resume else vm::pause)
-   OutlinedButton(vm::skip,Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")}
-   TextButton(vm::stop,Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
+   OutlinedButton({vm.painStop(s.id)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
+   Action(if(s.paused)"Продолжить сопровождение"else"Пауза",{if(s.paused)vm.resume(s.id) else vm.pause(s.id)})
+   OutlinedButton({vm.skip(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")}
+   TextButton({vm.stop(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
   }
  }
  }
