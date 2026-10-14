@@ -16,6 +16,7 @@ capture_failure() {
   if ((code != 0)); then
     # Android emulator contains only synthetic test profiles. Preserve visual
     # evidence even if the main journey exits before the normal adb pull.
+    mkdir -p "verification/screenshots-api${api}"
     timeout --kill-after=5s 20s bash -c 'adb exec-out run-as ru.forma.fitness tar -cf - -C files evidence | tar -xf - -C "verification/screenshots-api${1}" --strip-components=1' bash "$api" || true
     timeout --kill-after=5s 20s adb logcat -d -v threadtime -t 4000 > "verification/logcat-failure-api${api}.txt" || true
     timeout --kill-after=5s 20s adb shell screencap -p /sdcard/forma-test-failure.png || true
