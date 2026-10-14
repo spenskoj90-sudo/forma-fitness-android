@@ -58,6 +58,22 @@ class StorageTest {
   repo.mutateSession("a",old.id){stopSession(it)}
   assertEquals(next,repo.load("a")!!.active);db.close()
  }
+ @Test fun rapidResumeThenStopUsesSessionIdentityNotStalePauseStage()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
+  val s=repo.start(p.id,generateProgram(p).first(),0)
+  repo.mutateSession(p.id,s.id){pauseSession(it,1000)}
+  val visible=repo.load(p.id)!!.active!!
+  assertTrue(visible.paused)
+  repo.mutateSession(p.id,s.id,sessionStage(visible)){resumeSession(it,2000)}
+  // Simulate Stop being tapped before the Compose snapshot has reflected
+  // Resume. Guarding Stop by sessionStage(visible) would silently lose it.
+  repo.mutateSession(p.id,s.id){stopSession(it,false,2100)}
+  val stopped=repo.load(p.id)!!.active!!
+  assertEquals(Phase.STOPPED,stopped.phase)
+  assertEquals(s.id,stopped.id)
+  db.close()
+ }
  @Test fun importCapacityExceededLeavesAllProfilesUnchanged()=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   val repo=ProfileRepository(db)
