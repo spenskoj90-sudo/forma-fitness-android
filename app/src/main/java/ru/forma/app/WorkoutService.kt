@@ -25,6 +25,10 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private var wake:PowerManager.WakeLock?=null
  private var profileId:String?=null
  private var sessionId:String?=null
+ // onStartCommand is serialized on the main thread. Keep the latest Android
+ // start id, so a completed session can stop after PAUSE/STOP commands too.
+ @Volatile private var lastRequestedSession:String?=null
+ @Volatile private var lastStartId:Int=0
  private var lastStage=""
  private var nextBeat=0L
  private val app get()=application as FormaApp
@@ -49,6 +53,8 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   startForeground(1,notification("Подготовка тренировки",null))
   val id=intent?.getStringExtra("profile")
   val expected=intent?.getStringExtra("session")
+  lastRequestedSession=expected
+  lastStartId=startId
   if(id==null||expected==null){
    if(job?.isActive!=true)stopSelf(startId)
    return START_NOT_STICKY
@@ -57,7 +63,9 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
    commandMutex.withLock{
     val active=app.repository.load(id)?.active
     if(active==null||active.id!=expected||active.terminal){
-     if(job?.isActive!=true)stopSelf(startId)
+     // A stale PendingIntent cannot supersede the real running session.
+     if(job?.isActive==true)lastRequestedSession=sessionId
+     else stopSelf(startId)
      return@withLock
     }
     if(sessionId!=null&&sessionId!=expected){
@@ -82,13 +90,13 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      stopSelf(startId)
     }else if(job?.isActive!=true){
      app.serviceRunning=true
-     job=scope.launch{runWorkout(id,expected,startId)}
+     job=scope.launch{runWorkout(id,expected)}
     }
    }
   }
   return START_NOT_STICKY
  }
- private suspend fun runWorkout(id:String,expected:String,startId:Int){
+ private suspend fun runWorkout(id:String,expected:String){
   wake=(getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout")
   try{while(currentCoroutineContext().isActive){
    app.repository.mutateSession(id,expected){advanceTimed(it,app.workoutNow())}
@@ -112,7 +120,11 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   }}catch(e:CancellationException){throw e}catch(e:Exception){
    runCatching{app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}}
    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2,notification("Сбой сопровождения. Откройте FORMA.",null))
-  }finally{silence();releaseFocus();if(wake?.isHeld==true)wake?.release();stopSelf(startId)}
+  }finally{
+   silence();releaseFocus();if(wake?.isHeld==true)wake?.release()
+   // Do not tear down a service whose newer start targets another workout.
+   if(lastRequestedSession==expected)stopSelf(lastStartId)
+  }
  }
  private fun silence(){tts?.stop();tone?.stopTone();nextBeat=0}
  private fun releaseFocus(){if(focusGranted){manager.abandonAudioFocusRequest(focus);focusGranted=false}}
