@@ -26,7 +26,13 @@ if [[ "$api" == "34" ]]; then
   grep -F "OK (1 test)" legacy-seed.txt
   ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.UpdateTest --console=plain
 fi
-./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.JourneyTest --console=plain
+# Gradle connected tests uninstall the app at cleanup, which erases screenshots
+# from its external files directory. Install and run instrumentations directly.
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w -e class ru.forma.app.JourneyTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/journey-api${api}.txt"
+grep -F "OK (1 test)" "verification/journey-api${api}.txt"
 adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence "verification/screenshots-api${api}"
 adb shell am force-stop ru.forma.fitness
 adb shell settings put system font_scale 1.3

@@ -26,7 +26,7 @@ class JourneyTest{
  private val app get()=composeRule.activity.application as FormaApp
  private fun waitText(text:String){composeRule.waitUntil(20000){composeRule.onAllNodesWithText(text,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
  private fun click(text:String){
-  if(text in listOf("Главная","Моё тело","Прогресс","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text).performClick()
+  if(text in listOf("Главная","Моё тело","Прогресс","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
