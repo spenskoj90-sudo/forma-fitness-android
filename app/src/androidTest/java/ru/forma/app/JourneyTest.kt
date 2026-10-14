@@ -24,7 +24,14 @@ class JourneyTest{
  private val composeRule=createAndroidComposeRule<MainActivity>()
  @get:Rule val rules:TestRule=if(Build.VERSION.SDK_INT>=33)RuleChain.outerRule(GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)).around(composeRule)else composeRule
  private val app get()=composeRule.activity.application as FormaApp
- private fun waitText(text:String){composeRule.waitUntil(20000){composeRule.onAllNodesWithText(text,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+ private fun waitText(text:String){
+  try{composeRule.waitUntil(20000){composeRule.onAllNodesWithText(text,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("text-timeout-${text.hashCode()}")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-TEXT-TIMEOUT")}
+   throw e
+  }
+ }
  // The bottom navigation's labels may not appear as text (alwaysShowLabel=false).
  // Require an actionable navigation target after the active workout disappears.
  private fun waitNavigation(){
@@ -51,7 +58,7 @@ class JourneyTest{
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitText("Тест Б")
+  click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitNavigation();waitText("Тест Б")
   click("Прогресс");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
   click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
