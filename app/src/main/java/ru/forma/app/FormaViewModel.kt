@@ -28,12 +28,16 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());startService(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  fun resume(){val p=current.value?:return;val s=p.active?:return;action{app.repository.mutateSession(p.id,s.id,sessionStage(s)){resumeSession(it,app.workoutNow())};startService(p.id,s.id)}}
- fun pause(){mutateSession{pauseSession(it,app.workoutNow())}}
+ // Pause/stop target the workout ID, not the displayed stage. In particular
+ // a rapid Resume -> Stop must not be dropped because the paused flag changed
+ // before the queued Room transaction. Stage binding remains for set/skip
+ // actions to prevent old taps from advancing a new stage.
+ fun pause(){mutateSession(stageBound=false){pauseSession(it,app.workoutNow())}}
  fun skip(){mutateSession{skipStage(it,app.workoutNow())}}
  fun done(w:Double,r:Int,e:Int,pain:Boolean){mutateSession{logSet(it,w,r,e,pain,app.workoutNow())}}
- fun stop(){mutateSession{stopSession(it,false,app.workoutNow())}}
- fun painStop(){mutateSession{stopSession(it,true,app.workoutNow())}}
- private fun mutateSession(op:(Session)->Session){val p=current.value?:return;val s=p.active?:return;action{app.repository.mutateSession(p.id,s.id,sessionStage(s),op)}}
+ fun stop(){mutateSession(stageBound=false){stopSession(it,false,app.workoutNow())}}
+ fun painStop(){mutateSession(stageBound=false){stopSession(it,true,app.workoutNow())}}
+ private fun mutateSession(stageBound:Boolean=true,op:(Session)->Session){val p=current.value?:return;val s=p.active?:return;action{app.repository.mutateSession(p.id,s.id,if(stageBound)sessionStage(s) else null,op)}}
  fun finish(){val p=current.value?:return;val expected=p.active?.id?:return;action{app.repository.mutate(p.id){v->v.active?.takeIf{it.id==expected}?.let{finishSession(v,it,app.workoutNow())}?:v}}}
  fun measurement(values:Map<String,Double>,id:String?=null,dateMs:Long=System.currentTimeMillis(),onSaved:()->Unit={}){val profile=current.value?.id?:return;action{val m=Measurement(id=id?:java.util.UUID.randomUUID().toString(),dateMs=dateMs,values=values);require(m.valid());app.repository.mutate(profile){p->require(id==null||p.measurements.any{it.id==id}){"Замер больше не существует"};val records=if(id==null)p.measurements+m else p.measurements.map{if(it.id==id)m else it};val latest=records.sortedBy{it.dateMs};p.copy(measurements=records,weightKg=latest.lastOrNull{it.values.containsKey("weight")}?.values?.get("weight")?:p.weightKg,heightCm=latest.lastOrNull{it.values.containsKey("height")}?.values?.get("height")?:p.heightCm)};onSaved()}}
  fun exportBackup(uri:Uri){action{withContext(Dispatchers.IO){val text=app.repository.exportBackup();val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value="Резервная копия сохранена. Храните её в личном месте: она содержит замеры и ограничения."}}
