@@ -68,7 +68,7 @@ class JourneyTest{
   composeRule.waitUntil(20000){current().recovery==1};assertEquals(0,current().history.last().sets.size);assertEquals(Phase.STOPPED,current().history.last().status)
   click("Профиль");click("Изменить профиль и цели")
   // Slider semantics make the recovery update independent of pixel coordinates.
-  composeRule.onAllNodes(hasSetProgressAction()).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(3f)}
+  composeRule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.SetProgress)).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(3f)}
   click("Сохранить профиль");waitText("Пользователи");click("Тренировки")
   composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");click("Пауза");waitText("Продолжить сопровождение")
   composeRule.activityRule.scenario.recreate();waitText("Продолжить сопровождение");assertTrue(current().active!!.paused)
