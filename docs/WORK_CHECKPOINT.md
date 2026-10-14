@@ -1,5 +1,5 @@
 # FORMA work checkpoint
-Updated: 2026-10-14 Europe/Moscow
+Updated: 2026-10-14 14:17 Europe/Moscow
 
 ## Source and coordination
 - Live main verified once at start: `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`.
@@ -24,11 +24,15 @@ Updated: 2026-10-14 Europe/Moscow
 4. Trainer: audio focus, offline TTS fallback, adjustable tempo/volume, notification session binding; API26/30/34 journeys.
 5. Final review, exact HEAD CI, APK evidence; stable signer custody proposal remains an Owner gate.
 
-## Current finding
-TimingRegressionTest added first: existing advanceTimed drops fractional time at each tick; pause does not credit interval since last tick; late cardio tick overcredits past completion. CI red evidence required before implementation.
+## Latest exact-HEAD evidence and correction
+- PR #1 is open and DRAFT. Its pre-continuation HEAD was `aaafde3c04cd4381aadb3ebe345cee815d2383d8`.
+- Actions run `38530992443` completed FAILURE. Verify job `115742726470` and API26 instrumentation `115744199640` PASSED; API30 `115744199778` and API34 `115744199754` FAILED on `JourneyTest.kt:40`, waiting for the text "Тренировки" after Room showed `active==null`.
+- This is not evidence that the workout save failed. The hidden NavigationBar labels are not a stable text assertion; use an actual actionable `contentDescription="Прогресс"` to establish UI readiness, while retaining the database assertion. Failure screenshots obtained only after test teardown show the Android launcher and cannot establish a product crash.
+- Capture timeout screenshots and Compose tree **inside** instrumentation before teardown. Store evidence in the debuggable app-private directory and retrieve it via `run-as` / tar, including on API30; include logcat on failures.
+- API34 compatibility update test executed in `38530992443`, but does **not** establish a stable cross-build signing channel because disposable debug keys are generated per CI run. Private custody remains the Owner gate.
 
 ## Next step
-Run new timer regressions on branch CI, implement fixes and backup tests, then remaining blocks above in one integration PR. Never merge failing/unexecuted runtime work.
+Wait for exact-HEAD jobs after the assertions/evidence changes. If runtime remains red, inspect in-app timeout screenshot and logcat before changing product logic. Continue reliability review and meaningful tests. Do not merge while red or pending.
 
 ## Release boundary
 No release candidate claim yet. Stable signing and update path are unverified; do not delete an installed app containing history to bypass signature mismatch. No production secrets created or changed.

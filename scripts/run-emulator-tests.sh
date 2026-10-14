@@ -4,12 +4,20 @@
 set -euo pipefail
 api="${1:?Android API argument required}"
 mkdir -p verification
+# Screenshots live inside the debug app's private storage, so Android's
+# /sdcard/Android/data scoped-storage restrictions cannot hide CI evidence.
+pull_evidence() {
+  local target="verification/screenshots-api${api}"
+  mkdir -p "$target"
+  adb exec-out run-as ru.forma.fitness tar -cf - -C files evidence | tar -xf - -C "$target" --strip-components=1
+}
 capture_failure() {
   local code=$?
   if ((code != 0)); then
     # Android emulator contains only synthetic test profiles. Preserve visual
     # evidence even if the main journey exits before the normal adb pull.
-    adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence "verification/screenshots-api${api}" || true
+    pull_evidence || true
+    adb logcat -d -v threadtime -t 4000 > "verification/logcat-failure-api${api}.txt" || true
     adb shell screencap -p /sdcard/forma-test-failure.png || true
     adb pull /sdcard/forma-test-failure.png "verification/failure-api${api}.png" || true
   fi
@@ -31,9 +39,10 @@ fi
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb logcat -c || true
 adb shell am instrument -w -e class ru.forma.app.JourneyTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/journey-api${api}.txt"
 grep -F "OK (1 test)" "verification/journey-api${api}.txt"
-adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence "verification/screenshots-api${api}"
+pull_evidence
 adb shell am force-stop ru.forma.fitness
 adb shell settings put system font_scale 1.3
 if (( api >= 33 )); then

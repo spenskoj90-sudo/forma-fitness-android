@@ -112,5 +112,6 @@ jobs:
             verification/journey-api${{ matrix.api }}.txt
             verification/recovery-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
+            verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt
 

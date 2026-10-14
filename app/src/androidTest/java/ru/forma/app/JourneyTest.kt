@@ -42,7 +42,7 @@ class JourneyTest{
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
- private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.getExternalFilesDir(null),"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
+ private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.filesDir,"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
   waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твоя форма.")
