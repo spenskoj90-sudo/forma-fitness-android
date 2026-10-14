@@ -25,6 +25,18 @@ class JourneyTest{
  @get:Rule val rules:TestRule=if(Build.VERSION.SDK_INT>=33)RuleChain.outerRule(GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)).around(composeRule)else composeRule
  private val app get()=composeRule.activity.application as FormaApp
  private fun waitText(text:String){composeRule.waitUntil(20000){composeRule.onAllNodesWithText(text,useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+ // The bottom navigation's labels may not appear as text (alwaysShowLabel=false).
+ // Require an actionable navigation target after the active workout disappears.
+ private fun waitNavigation(){
+  try{composeRule.waitUntil(20000){composeRule.onAllNodesWithContentDescription("Прогресс",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   // Capture while Activity is still alive; CI failure screenshots after
+   // instrumentation teardown only show the Android launcher.
+   runCatching{screenshot("navigation-timeout")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-NAV-TIMEOUT")}
+   throw e
+  }
+ }
  private fun click(text:String){
   if(text in listOf("Главная","Моё тело","Прогресс","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
@@ -37,7 +49,7 @@ class JourneyTest{
   screenshot("home-light");click("К тренировкам");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
-  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitText("Тренировки");click("Прогресс")
+  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitText("Тест Б")
   click("Прогресс");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
@@ -49,7 +61,7 @@ class JourneyTest{
   click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
   val count=current().active!!.day.exercises.sumOf{it.sets}
   for(i in 0 until count){waitText("Подход выполнен");click("Подход выполнен");if(i<count-1){waitText("Отдых");click("Пропустить этап")}}
-  waitText("Сохранить и завершить");assertEquals(Phase.DONE,current().active!!.phase);click("Сохранить и завершить");waitText("Тренировки")
+  waitText("Сохранить и завершить");assertEquals(Phase.DONE,current().active!!.phase);click("Сохранить и завершить");waitNavigation()
   composeRule.waitUntil(20000){current().history.size==2};assertEquals(count,current().history.last().sets.size)
   // Exercise real app/repository backup without sending personal data anywhere.
   runBlocking{val before=app.repository.exportBackup();val ids=app.repository.importBackup(before);assertEquals(2,ids.size);assertEquals(4,app.repository.profiles.firstForTest().size)}
@@ -62,7 +74,7 @@ class JourneyTest{
   composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
   // Wait for actual cardio terminal state, rather than an arbitrary sleep.
   composeRule.waitUntil(80000){current().active?.phase==Phase.DONE}
-  waitText("Сохранить и завершить");click("Сохранить и завершить");waitText("Тренировки")
+  waitText("Сохранить и завершить");click("Сохранить и завершить");waitNavigation()
   composeRule.waitUntil(20000){current().history.size==3};assertEquals(60,current().history.last().day.durationSec)
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Боль / дискомфорт — стоп");waitText("Сохранить и завершить");click("Сохранить и завершить")
   composeRule.waitUntil(20000){current().recovery==1};assertEquals(0,current().history.last().sets.size);assertEquals(Phase.STOPPED,current().history.last().status)
