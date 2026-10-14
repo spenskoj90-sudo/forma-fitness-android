@@ -4,6 +4,10 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import androidx.compose.ui.graphics.Brush
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.*
@@ -27,37 +31,51 @@ class MainActivity:ComponentActivity(){
 }
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
- val p by vm.current.collectAsState();val profiles by vm.profiles.collectAsState();val settings by vm.prefs.collectAsState();val error by vm.error.collectAsState()
+ val p by vm.current.collectAsState();val profiles by vm.profiles.collectAsState();val settings by vm.prefs.collectAsState();val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
  val dark=settings.dark?:isSystemInDarkTheme()
- val colors=if(dark)darkColorScheme(primary=Color(0xFFC8F88A),background=Color(0xFF101B18),surface=Color(0xFF182720))else lightColorScheme(primary=Color(0xFF176A50),background=Color(0xFFF5F7F2),surface=Color.White)
+ val colors=if(dark)darkColorScheme(primary=Color(0xFF39ED75),onPrimary=Color(0xFF042610),background=Color(0xFF080E12),surface=Color(0xFF121B20),surfaceVariant=Color(0xFF1C272D),onSurface=Color(0xFFF1F5F3),onSurfaceVariant=Color(0xFFB8C6C0),outline=Color(0xFF65746E))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,background=Color(0xFFF3F7F4),surface=Color.White,onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
  MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Моё тело","Прогресс","Профиль");val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.Straighten,Icons.Outlined.TrendingUp,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar{titles.forEachIndexed{i,t->NavigationBarItem(tab==i,{tab=i},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)})}}}){padding->
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface){titles.forEachIndexed{i,t->NavigationBarItem(tab==i,{tab=i},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=false)}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
-    Row(Modifier.fillMaxWidth().padding(vertical=16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("FORMA",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Black);p?.let{Text(it.name,color=colors.primary)}}
+    Row(Modifier.fillMaxWidth().padding(vertical=16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("FORMA",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Black,color=colors.onSurface);p?.let{Text(it.name.take(30),Modifier.weight(1f).padding(start=16.dp),color=colors.primary,maxLines=2)}}
+    if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
     if(error!=null)Panel("Не удалось выполнить действие"){Text(error!!);TextButton({vm.error.value=null}){Text("Понятно")}}
-    when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it);creating=false;editing=false},{creating=false;editing=false},profiles.isNotEmpty())
+    when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
      p?.active!=null->Runner(p!!.active!!,vm)
      p==null->Text("Загрузка…")
-     else->when(tab){0->Home(p!!,{tab=1},{tab=4});1->TrainingScreen(p!!,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
+     else->when(tab){0->Home(p!!,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
     }
    }
   }
  }
 }
 @Composable fun Page(title:String,subtitle:String="",content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){Text(title,style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
-@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
+@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
 @Composable fun NumericField(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,Modifier.fillMaxWidth(),label={Text(label)},singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Decimal))}
-@Composable fun Home(p:Profile,onTrain:()->Unit,onProfile:()->Unit){
+@Composable fun Home(p:Profile,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
  val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs>=weekStart(System.currentTimeMillis())}
  Page("Твоя форма.","Последовательность важнее рекорда."){
-  Panel("На этой неделе"){Text("$weekly завершённых занятий",style=MaterialTheme.typography.headlineSmall);Text("План: ${generateProgram(p).size} занятий · ${p.primary.label}");LinearProgressIndicator(progress={if(p.days.isEmpty())0f else(weekly.toFloat()/p.days.size).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())}
+  val plan=generateProgram(p);val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.firstOrNull{it.day==today}?:plan.firstOrNull()
+  Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(28.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
+   Column(Modifier.background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.primary.copy(alpha=0.12f)))).padding(22.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
+    Icon(Icons.Outlined.FitnessCenter,null,Modifier.size(42.dp),tint=MaterialTheme.colorScheme.primary)
+    Text(if(next==null)"Время восстановиться"else if(next.day==today)"Сегодня тренировка"else "Следующая тренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+    next?.let{Text(it.name,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleLarge);Text("${dayNames[it.day-1]} · "+if(it.cardio!=null)"${it.durationSec/60} минут"else "${it.exercises.size} упражнений · ${it.exercises.sumOf{e->e.sets}} подходов")}
+    if(next!=null)Action("К тренировкам",onTrain)else Action("Открыть профиль",onProfile)
+   }
+  }
+  Panel("На этой неделе"){Text("$weekly завершённых занятий",style=MaterialTheme.typography.headlineSmall);Text("План: ${plan.size} занятий · ${p.primary.label}");LinearProgressIndicator(progress={if(p.days.isEmpty())0f else(weekly.toFloat()/p.days.size).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())}
+  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+   OutlinedButton(onBody,Modifier.weight(1f).heightIn(min=64.dp)){Icon(Icons.Outlined.Straighten,null);Text("Замеры",Modifier.padding(start=8.dp))}
+   OutlinedButton(onProgress,Modifier.weight(1f).heightIn(min=64.dp)){Icon(Icons.Outlined.TrendingUp,null);Text("Прогресс",Modifier.padding(start=8.dp))}
+  }
   if(p.limitations.isNotBlank()||p.recovery<=1)Panel("Сначала восстановление"){Text("Автоматическая программа приостановлена. При боли остановитесь. Уточните допустимые нагрузки со специалистом; обновите самочувствие, когда занятия снова допустимы.");Action("Открыть профиль",onProfile)}
-  else Panel("Программа под тебя"){Text("${p.experience.label} · ${p.equipment.joinToString{it.label}}");Action("К тренировкам",onTrain)}
-  Panel("Без интернета"){Text("Данные хранятся на этом телефоне. Для голоса нужна русская офлайн-модель Android TTS. Синхронизация и резервное копирование пока не подключены.")}
+  else Panel("Программа под тебя"){Text("${p.experience.label} · ${p.equipment.joinToString{it.label}}") }
+  Panel("Без интернета"){Text("Данные хранятся на этом телефоне. Для голоса нужна русская офлайн-модель Android TTS. Резервная копия и восстановление доступны в профиле через выбранный вами файл.")}
  }
 }
 @OptIn(ExperimentalLayoutApi::class)
@@ -77,7 +95,27 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Action("Сохранить профиль",{save(candidate)},candidate.valid());if(canCancel)TextButton(cancel){Text("Отмена")}
  }
 }
-@Composable fun TrainingScreen(p:Profile,vm:FormaViewModel){val plan=generateProgram(p);Page("Тренировки","Оборудование, восстановление и твои цели."){if(plan.isEmpty())Text("Выберите дни и проверьте ограничения и восстановление в профиле.");plan.forEach{day->Panel("${dayNames[day.day-1]} · ${day.name}"){Text(day.explanation);day.exercises.forEach{item->Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)};if(day.cardio!=null)CardioControls(day,vm)else Action("Начать тренировку",{vm.start(day)})}}}}
+@Composable fun TrainingScreen(p:Profile,vm:FormaViewModel){val plan=generateProgram(p);Page("Тренировки","Оборудование, восстановление и твои цели."){
+ if(plan.isEmpty())Text("Выберите дни и проверьте ограничения и восстановление в профиле.")
+ plan.forEach{day->TrainingDayCard(day,p,vm)}
+ Panel("Техника упражнений"){
+  Text("20 упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
+  exerciseCatalog.filter{it.equipment in p.equipment||it.equipment==Equipment.BODYWEIGHT}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
+ }
+}}
+@Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel){
+ var replacements by remember(day,p.equipment){mutableStateOf<Map<Int,Exercise>>(emptyMap())}
+ val chosen=day.copy(exercises=day.exercises.mapIndexed{i,item->replacements[i]?.let{item.copy(exercise=it,weight=0.0,reason="Замена выбрана вручную. Начните с лёгкого веса.")}?:item})
+ Panel("${dayNames[day.day-1]} · ${day.name}"){
+  Text(day.explanation)
+  chosen.exercises.forEachIndexed{i,item->
+   Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
+   val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && (it.equipment==Equipment.BODYWEIGHT||it.equipment in p.equipment)}
+   if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
+  }
+  if(day.cardio!=null)CardioControls(chosen,vm)else Action("Начать тренировку",{vm.start(chosen)})
+ }
+}
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun CardioControls(day:TrainingDay,vm:FormaViewModel){
  var kind by remember{mutableStateOf(day.cardio?:CardioKind.WALK)};var duration by remember{mutableStateOf((day.durationSec/60).toString())};var walk by remember{mutableStateOf("120")};var run by remember{mutableStateOf("60")}
@@ -87,7 +125,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  Action("Начать кардио",{vm.start(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
 }
 @Composable fun Runner(s:Session,vm:FormaViewModel){
- var now by remember{mutableLongStateOf(System.currentTimeMillis())};LaunchedEffect(s.id){while(true){kotlinx.coroutines.delay(500);now=System.currentTimeMillis()}}
+ val app=LocalContext.current.applicationContext as FormaApp;var now by remember{mutableLongStateOf(app.workoutNow())};LaunchedEffect(s.id){while(true){kotlinx.coroutines.delay(500);now=app.workoutNow()}}
  var weight by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.weight?:s.current?.weight?:0.0).toString())}
  var reps by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.reps?:s.current?.reps?:12).toString())}
  var effort by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableFloatStateOf(7f)}
@@ -96,7 +134,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   else{
    Panel("Текущий этап"){
     if(s.phase in listOf(Phase.WARMUP,Phase.REST,Phase.CARDIO))Text("${remainingSeconds(s,now)/60}:${(remainingSeconds(s,now)%60).toString().padStart(2,'0')}",style=MaterialTheme.typography.displayMedium)
-    if(s.phase==Phase.WORK)s.current?.let{Text("Подход ${s.setNumber} из ${it.sets}");Text(it.exercise.cue);Text(it.reason,style=MaterialTheme.typography.bodySmall)}
+    if(s.phase==Phase.WORK)s.current?.let{Text("Подход ${s.setNumber} из ${it.sets}");Text(it.exercise.cue);if(it.exercise.mistakes.isNotBlank())Text("Частые ошибки: ${it.exercise.mistakes}");Text(it.reason,style=MaterialTheme.typography.bodySmall)}
     if(s.phase==Phase.WARMUP)Text("Лёгкая ходьба на месте, плавные движения плеч и таза. Без боли и рывков.");if(s.phase==Phase.CARDIO)Text("Комфортный темп. При дискомфорте остановитесь.")
    }
    if(s.phase==Phase.WORK){if(s.current?.exercise?.equipment!=Equipment.BODYWEIGHT)NumericField("Вес, кг · гантель: на одну руку",weight){weight=it};NumericField("Повторения",reps){reps=it};Text("Сложность: ${effort.toInt()}/10");Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
@@ -113,8 +151,28 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 @Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit){Page("Профиль",p.primary.label){
  Panel("Пользователи"){profiles.forEach{v->OutlinedButton({vm.select(v.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(p.id==v.id)"✓ ${v.name}"else v.name)}};Action("Добавить пользователя",create)}
  Panel("${p.name} · ${p.age} лет"){Text("${p.heightCm} см · ${p.weightKg} кг");Text("${p.experience.label} · восстановление ${p.recovery}/5");Action("Изменить профиль и цели",edit)}
- Panel("Сопровождение"){SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)};SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)};SwitchRow("Метроном · 60 уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)};Text("Для голоса нужна русская офлайн-модель TTS. Громкость — мультимедиа Android.")}
+ val coach by vm.coachStatus.collectAsState()
+ val context=LocalContext.current
+ Panel("Сопровождение"){SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)};SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)};SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)};Text(coach);Text("Громкость подсказок: ${settings.volume}%");Slider(settings.volume.toFloat(),{vm.coach(it.toInt(),settings.bpm,settings.speechRate)},valueRange=0f..100f)
+ Text("Темп: ${settings.bpm} уд/мин");Slider(settings.bpm.toFloat(),{vm.coach(settings.volume,it.toInt(),settings.speechRate)},valueRange=40f..180f,steps=27)
+ Text("Скорость речи: ${"%.1f".format(settings.speechRate)}");Slider(settings.speechRate,{vm.coach(settings.volume,settings.bpm,it)},valueRange=0.7f..1.3f)
+ TextButton({runCatching{context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))}.onFailure{vm.error.value="Настройки синтеза речи недоступны на этом телефоне"}}){Text("Настроить голос Android")}
+ Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
  Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
- Panel("FORMA · 0.1.0"){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
+ BackupPanel(vm)
+ Panel("FORMA · 0.2.0"){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
 }}
 @Composable fun SwitchRow(label:String,value:Boolean,change:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text(label,Modifier.weight(1f));Switch(value,change)}}
+
+
+@Composable fun BackupPanel(vm:FormaViewModel){
+ val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let(vm::exportBackup)}
+ val import=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(vm::importBackup)}
+ var confirm by remember{mutableStateOf(false)}
+ Panel("Резервная копия"){
+  Text("Все профили, история и замеры — в одном локальном файле. Сначала завершите текущее занятие. Файл содержит личные данные; храните его в защищённом месте.")
+  Action("Экспортировать копию",{export.launch("FORMA-backup-${java.time.LocalDate.now()}.json")})
+  OutlinedButton({confirm=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Восстановить из файла")}
+ }
+ if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Восстановление копии")},text={Text("Профили добавятся как отдельные копии. Текущие данные не заменяются. Повторный импорт создаёт ещё одну копию каждого профиля. Файл до 8 МБ.")},confirmButton={TextButton({confirm=false;import.launch(arrayOf("application/json","text/plain","application/octet-stream"))}){Text("Выбрать файл")}},dismissButton={TextButton({confirm=false}){Text("Отмена")}})
+}

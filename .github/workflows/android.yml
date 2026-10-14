@@ -1,5 +1,8 @@
 name: FORMA Android
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main, 'forma/**']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -44,6 +47,10 @@ jobs:
             app/build/reports/
   instrumentation:
     needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30, 34]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,21 +78,32 @@ jobs:
           test ! -d /opt/ghc || sudo rm -rf -- /opt/ghc
           test ! -d /usr/local/lib/android/sdk/ndk || sudo rm -rf -- /usr/local/lib/android/sdk/ndk
           df -h /
-      - name: API 34 Compose journey
+      - name: Offline Compose journey and process recovery
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: google_apis
           profile: pixel_2
           disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
-          script: ./gradlew :app:connectedDebugAndroidTest --console=plain
+          script: |
+            adb shell settings put global airplane_mode_on 1
+            adb shell svc wifi disable
+            adb shell svc data disable
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.JourneyTest --console=plain
+            adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence verification/screenshots-api${{ matrix.api }}
+            adb shell am force-stop ru.forma.fitness
+            adb shell settings put system font_scale 1.3
+            if [ ${{ matrix.api }} -ge 33 ]; then adb shell pm revoke ru.forma.fitness android.permission.POST_NOTIFICATIONS; fi
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.RecoveryTest --console=plain
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: instrumentation-${{ github.sha }}
+          name: instrumentation-api${{ matrix.api }}-${{ github.sha }}
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            verification/screenshots-api${{ matrix.api }}/
+
