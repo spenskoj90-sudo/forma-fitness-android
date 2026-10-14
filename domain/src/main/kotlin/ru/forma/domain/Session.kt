@@ -2,15 +2,25 @@ package ru.forma.domain
 import kotlinx.serialization.Serializable
 import java.util.UUID
 @Serializable enum class Phase{WARMUP,WORK,REST,CARDIO,DONE,STOPPED}
-@Serializable data class Session(val id:String=UUID.randomUUID().toString(),val profileId:String,val day:TrainingDay,val startedMs:Long,val phase:Phase=Phase.WARMUP,val exerciseIndex:Int=0,val setNumber:Int=1,val deadlineMs:Long=0,val paused:Boolean=false,val pausedRemainingSec:Int=0,val sets:List<SetResult> = emptyList(),val cardioIndex:Int=0,val cardioElapsedSec:Int=0,val painReported:Boolean=false,val activeSeconds:Int=0,val lastTickMs:Long=startedMs,val elapsedRemainderMs:Long=0){val current:Prescription? get()=day.exercises.getOrNull(exerciseIndex);val terminal:Boolean get()=phase==Phase.DONE||phase==Phase.STOPPED}
+@Serializable data class Session(val id:String=UUID.randomUUID().toString(),val profileId:String,val day:TrainingDay,val startedMs:Long,val phase:Phase=Phase.WARMUP,val exerciseIndex:Int=0,val setNumber:Int=1,val deadlineMs:Long=0,val paused:Boolean=false,val pausedRemainingSec:Int=0,val sets:List<SetResult> = emptyList(),val cardioIndex:Int=0,val cardioElapsedSec:Int=0,val painReported:Boolean=false,val activeSeconds:Int=0,val lastTickMs:Long=startedMs,val elapsedRemainderMs:Long=0,val pausedRemainingMs:Long=-1L){val current:Prescription? get()=day.exercises.getOrNull(exerciseIndex);val terminal:Boolean get()=phase==Phase.DONE||phase==Phase.STOPPED}
 fun startSession(profileId:String,day:TrainingDay,now:Long):Session{require(day.exercises.isNotEmpty()||day.cardio!=null);require(day.durationSec in 60..7200&&day.intervals.size>=2&&day.intervals.all{it in 10..1800});return Session(profileId=profileId,day=day,startedMs=now,deadlineMs=now+300000)}
-fun remainingSeconds(s:Session,now:Long)=if(s.paused)s.pausedRemainingSec else((s.deadlineMs-now+999)/1000).coerceIn(0,7200).toInt()
+fun remainingSeconds(s:Session,now:Long)=if(s.paused){
+ ((if(s.pausedRemainingMs>=0) (s.pausedRemainingMs+999)/1000 else s.pausedRemainingSec.toLong())).coerceIn(0,7200).toInt()
+} else ((s.deadlineMs-now+999)/1000).coerceIn(0,7200).toInt()
 fun pauseSession(s:Session,now:Long):Session {
  if(s.paused||s.terminal)return s
  val v=advanceTimed(s,now)
- return if(v.terminal)v else v.copy(paused=true,pausedRemainingSec=remainingSeconds(v,now),lastTickMs=now)
+ return if(v.terminal)v else {
+  // Store exact remaining milliseconds: rounding on each pause inflated workouts.
+  // pausedRemainingSec remains for backward compatibility with saved v1 sessions.
+  val remaining=(v.deadlineMs-now).coerceIn(0,7200000)
+  v.copy(paused=true,pausedRemainingSec=((remaining+999)/1000).toInt(),
+   pausedRemainingMs=remaining,lastTickMs=now)
+ }
 }
-fun resumeSession(s:Session,now:Long)=if(!s.paused||s.terminal)s else s.copy(paused=false,deadlineMs=now+s.pausedRemainingSec*1000L,lastTickMs=now)
+fun resumeSession(s:Session,now:Long)=if(!s.paused||s.terminal)s else s.copy(paused=false,
+ deadlineMs=now+(if(s.pausedRemainingMs>=0)s.pausedRemainingMs else s.pausedRemainingSec*1000L),
+ lastTickMs=now,pausedRemainingMs=-1L)
 fun recoverSession(s:Session,now:Long):Session = if(s.terminal)s else pauseSession(s,s.lastTickMs).copy(lastTickMs=now)
 fun stopSession(s:Session,pain:Boolean=false,now:Long=s.lastTickMs):Session {
  if(s.terminal)return s
