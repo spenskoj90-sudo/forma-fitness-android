@@ -58,7 +58,15 @@ class JourneyTest{
   screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Моё тело");screenshot("body-dark");click("Профиль");screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
-  click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
+  click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап")
+  // Regression: a previous foreground loop must not swallow or stop this
+  // immediate next start. Confirm the NEW session is receiving live ticks.
+  val secondSession=current().active!!
+  composeRule.waitUntil(15000){
+   val active=current().active
+   active?.id==secondSession.id && active.lastTickMs>secondSession.lastTickMs
+  }
+  click("Пропустить этап")
   val count=current().active!!.day.exercises.sumOf{it.sets}
   for(i in 0 until count){waitText("Подход выполнен");click("Подход выполнен");if(i<count-1){waitText("Отдых");click("Пропустить этап")}}
   waitText("Сохранить и завершить");assertEquals(Phase.DONE,current().active!!.phase);click("Сохранить и завершить");waitNavigation()
