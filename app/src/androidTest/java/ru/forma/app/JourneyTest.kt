@@ -97,7 +97,25 @@ class JourneyTest{
   // Slider semantics make the recovery update independent of pixel coordinates.
   composeRule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.SetProgress)).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(3f)}
   click("Сохранить профиль");waitText("Пользователи");click("Тренировки")
-  composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");click("Пауза");waitText("Продолжить сопровождение")
+  composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick()
+  waitText("Пропустить этап")
+  val recoveryCardioId=current().active!!.id
+  click("Пропустить этап")
+  // Stage transition replaces the Runner subtree using Compose key(phase).
+  // Clicking Pause before the new CARDIO node is composed can hit a stale
+  // WARMUP button and silently miss the user's tap on slower emulators.
+  composeRule.waitUntil(20000){current().active?.let{it.id==recoveryCardioId&&it.phase==Phase.CARDIO}==true}
+  waitText("Ходьба")
+  click("Пауза")
+  // Check durable Room state as well as the UI: identify an actual command
+  // failure separately from a delayed Compose transition.
+  try{composeRule.waitUntil(20000){current().active?.let{it.id==recoveryCardioId&&it.paused}==true}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("pause-not-persisted")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-PAUSE-TIMEOUT")}
+   throw AssertionError("Pause did not persist for session $recoveryCardioId; state=${current().active}",e)
+  }
+  waitText("Продолжить сопровождение")
   composeRule.activityRule.scenario.recreate();waitText("Продолжить сопровождение");assertTrue(current().active!!.paused)
   // Leave a real persisted paused workout for a separate force-stop/relaunch test.
   screenshot("paused-dark")
