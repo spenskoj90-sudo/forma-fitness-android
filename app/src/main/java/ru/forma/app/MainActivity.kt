@@ -26,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
 class MainActivity:ComponentActivity(){
  private val vm:FormaViewModel by viewModels()
- private val permission=registerForActivityResult(ActivityResultContracts.RequestPermission()){}
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{FormaRoot(vm)};if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS)}
+
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{FormaRoot(vm)}}
 }
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
@@ -159,6 +159,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  TextButton({runCatching{context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))}.onFailure{vm.error.value="Настройки синтеза речи недоступны на этом телефоне"}}){Text("Настроить голос Android")}
  Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
  Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
+ NotificationPanel()
  BackupPanel(vm)
  Panel("FORMA · 0.2.0"){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
 }}
@@ -175,4 +176,14 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   OutlinedButton({confirm=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Восстановить из файла")}
  }
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Восстановление копии")},text={Text("Профили добавятся как отдельные копии. Текущие данные не заменяются. Повторный импорт создаёт ещё одну копию каждого профиля. Файл до 8 МБ.")},confirmButton={TextButton({confirm=false;import.launch(arrayOf("application/json","text/plain","application/octet-stream"))}){Text("Выбрать файл")}},dismissButton={TextButton({confirm=false}){Text("Отмена")}})
+}
+
+@Composable fun NotificationPanel(){
+ val context=LocalContext.current
+ var allowed by remember{mutableStateOf(androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled())}
+ val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){allowed=it}
+ Panel("Уведомления"){
+  Text(if(allowed)"Управление паузой и остановкой доступно в уведомлении."else "Уведомления выключены. Таймер продолжает работу; для управления откройте FORMA.")
+  if(!allowed)TextButton({if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS)else runCatching{context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.packageName))}}){Text("Разрешить уведомления")}
+ }
 }

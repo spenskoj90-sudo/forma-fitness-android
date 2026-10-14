@@ -64,6 +64,18 @@ jobs:
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
+      - name: Build exact legacy base for API34 update test
+        if: matrix.api == 34
+        run: |
+          git fetch --depth=1 origin 2fff305c22e9fe3f1d32c213777c14e7a2cc3560
+          mkdir -p legacy
+          git archive FETCH_HEAD | tar -x -C legacy
+          mkdir -p legacy/.forma-signing
+          cp .forma-signing/debug.keystore legacy/.forma-signing/debug.keystore
+          cp app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt legacy/app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt
+          cd legacy
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -92,12 +104,20 @@ jobs:
             adb shell settings put global airplane_mode_on 1
             adb shell svc wifi disable
             adb shell svc data disable
+            if [ ${{ matrix.api }} -eq 34 ]; then
+              adb install legacy/app/build/outputs/apk/debug/app-debug.apk
+              adb install legacy/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+              adb shell am instrument -w -e class ru.forma.app.LegacySeedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee legacy-seed.txt
+              grep -F 'OK (1 test)' legacy-seed.txt
+              ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.UpdateTest --console=plain
+            fi
             ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.JourneyTest --console=plain
             adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence verification/screenshots-api${{ matrix.api }}
             adb shell am force-stop ru.forma.fitness
             adb shell settings put system font_scale 1.3
             if [ ${{ matrix.api }} -ge 33 ]; then adb shell pm revoke ru.forma.fitness android.permission.POST_NOTIFICATIONS; fi
-            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.RecoveryTest --console=plain
+            adb shell am instrument -w -e class ru.forma.app.RecoveryTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee verification/recovery-api${{ matrix.api }}.txt
+            grep -F 'OK (1 test)' verification/recovery-api${{ matrix.api }}.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -106,4 +126,6 @@ jobs:
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
             verification/screenshots-api${{ matrix.api }}/
+            verification/recovery-api${{ matrix.api }}.txt
+            legacy-seed.txt
 

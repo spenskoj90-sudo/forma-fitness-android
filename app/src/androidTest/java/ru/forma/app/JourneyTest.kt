@@ -31,7 +31,7 @@ class JourneyTest{
   composeRule.waitForIdle()
  }
  private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.getExternalFilesDir(null),"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
- private fun current()=runBlocking{app.repository.profiles.firstForTest()}.first{it.name=="Тест А"}
+ private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
   waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твоя форма.")
   screenshot("home-light");click("К тренировкам");screenshot("training-light")
@@ -44,7 +44,7 @@ class JourneyTest{
   click("Профиль");click("Тест А");composeRule.waitUntil(20000){runBlocking{app.settings.settings.firstForTest()}.selected==current().id};click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Моё тело");screenshot("body-dark");click("Профиль");screenshot("profile-dark")
-  click("Изменить профиль и цели");click("Общая форма");click("Сохранить профиль");waitText("Пользователи")
+  click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
   click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
   val count=current().active!!.day.exercises.sumOf{it.sets}

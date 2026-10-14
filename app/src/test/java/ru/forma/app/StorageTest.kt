@@ -34,7 +34,7 @@ class StorageTest {
   db.close()
  }
 
- @Test fun importCreatesIsolatedCopiesAndSurvivesReopen()=runBlocking {
+ @Test fun importCreatesIsolatedCopiesAndSurvivesReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-import-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build();var repo=ProfileRepository(db)
   repo.saveProfile(Profile(id="a",name="A"))

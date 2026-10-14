@@ -7,4 +7,11 @@ class TimingRegressionTest {
  @Test fun pauseCreditsOnlyLiveTime(){val s=pauseSession(cardio(),5500);assertEquals(5,s.activeSeconds);assertEquals(55,remainingSeconds(s,999000));val resumed=resumeSession(s,1000000);assertEquals(60,advanceTimed(resumed,1055000).activeSeconds)}
  @Test fun lateTickDoesNotCreditPastCardioCompletion(){assertEquals(60,advanceTimed(cardio(),600000).activeSeconds)}
  @Test fun stoppedSessionRemainsImmutable(){val s=stopSession(cardio());assertEquals(s,advanceTimed(s,600000));assertEquals(s,resumeSession(s,600000))}
+
+ @Test fun repeatedSubsecondPausesDoNotExtendCardio(){
+  var s=cardio();var now=0L
+  repeat(100){now+=100;s=pauseSession(s,now);now+=100;s=resumeSession(s,now)}
+  s=advanceTimed(s,70000)
+  assertEquals(Phase.DONE,s.phase);assertEquals(60,s.activeSeconds)
+ }
 }
