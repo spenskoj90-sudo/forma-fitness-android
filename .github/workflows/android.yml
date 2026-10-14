@@ -49,6 +49,8 @@ jobs:
             app/build/reports/
   instrumentation:
     needs: verify
+    # Emulator/test hangs must not consume hours of CI runner time.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
