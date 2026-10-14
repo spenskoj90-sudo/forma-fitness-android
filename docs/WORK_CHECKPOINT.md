@@ -1,111 +1,52 @@
 # FORMA work checkpoint
+Updated: 2026-10-14 (FORMA engineering continuation, Europe/Moscow)
 
-Updated: 2026-10-13 19:14 Europe/Moscow
+## Source and coordination
+- Live main verified once at start: `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`.
+- Open PRs: none at start; main is not protected.
+- Working lane: `forma/rc-2026-10-14`, single executor in this chat.
+- Separate workspace: `/workspace/scratch/d63f10f33469/forma`.
+- Previous hourly automations remain disabled. No Markdown lock or global lease required for this single writer. SENTINEL untouched.
+- MIT GetFitPro notice retained. No AGENTS.md in remote tree.
 
-## Exact source
+## Confirmed baseline evidence
+- Actions run `38427526988`, source main above: verify `115400723271` SUCCESS and instrumentation `115402506460` SUCCESS.
+- Verify ran domain/app tests, lint, debug APK assembly, package and certificate inspection.
+- API34 executed one Compose JourneyTest: profile A, generated strength program, warmup skip, one completed set, rest pause/resume, stopped workout saved, theme change, profile B empty history, A history retained.
+- This does NOT prove complete workout, cardio, process recovery, background/lock, import, API30/26 or physical audio.
+- Owner only confirmed opening old 0.1.0 APK on Infinix Zero 30; physical/visual acceptance pending.
+- Local Gradle download attempted today: services.gradle.org unreachable. Use GitHub CI for fresh evidence, not old local PASS.
 
-- Recovered source HEAD: `42766072f7be6e66da2f5fc66befcb67dc2cf82d`
-- Parent: `8e45c1cee4d194039afd7e22c397a226dde23660`
-- Durable source archive SHA-256: `9822da4e025c8cffe665c42bdc446781976a0b956ff17ec93489643333a80059`
-- Source archive provenance: Library checkpoint `FORMA_Source_Checkpoint.zip`
-- Upstream scaffolding provenance: GetFitPro `f349ae0d9d582595f6dca0d1824c58687275862e`, MIT notice retained.
-- Remote `main` before this checkpoint update: `a058dee690b0fd06a514974be021b466d50c4bf3`.
+## Current block / plan
+1. Reliability: fractional timer accounting, pause and finish, stale session commands, explicit process recovery; regression tests.
+2. Data preservation: versioned bounded JSON backup, strict validation, transactional import as new isolated profiles; measurement editing; test rollback/reopen.
+3. Design: actual reference inspected (`Фитнес-приложение FORMA — путь к силе.png`); graphite/green UI, home cards, accessible themes/navigation, vector adaptive/monochrome icon; actual screenshot evidence.
+4. Trainer: audio focus, offline TTS fallback, adjustable tempo/volume, notification session binding; API26/30/34 journeys.
+5. Final review, exact HEAD CI, APK evidence; stable signer custody proposal remains an Owner gate.
 
-## Current block
+## Latest exact-HEAD evidence and correction
+- PR #1 is open and DRAFT. Its pre-continuation HEAD was `aaafde3c04cd4381aadb3ebe345cee815d2383d8`.
+- Actions run `38530992443` completed FAILURE. Verify job `115742726470` and API26 instrumentation `115744199640` PASSED; API30 `115744199778` and API34 `115744199754` FAILED on `JourneyTest.kt:40`, waiting for the text "Тренировки" after Room showed `active==null`.
+- This is not evidence that the workout save failed. The hidden NavigationBar labels are not a stable text assertion; use an actual actionable `contentDescription="Прогресс"` to establish UI readiness, while retaining the database assertion. Failure screenshots obtained only after test teardown show the Android launcher and cannot establish a product crash.
+- Capture timeout screenshots and Compose tree **inside** instrumentation before teardown. Store evidence in the debuggable app-private directory and retrieve it via `run-as` / tar, including on API30; include logcat on failures.
+- API34 compatibility update test executed in `38530992443`, but does **not** establish a stable cross-build signing channel because disposable debug keys are generated per CI run. Private custody remains the Owner gate.
 
-Block A is in progress: restore the existing source into the empty private
-`spenskoj90-sudo/forma-fitness-android` repository, preserve provenance, and
-obtain a reproducible GitHub Actions build with unit/Room/lint/APK evidence.
+## Current continuation — exact evidence
 
-The recovered bundle is clean and contains no `AGENTS.md`. At the start of
-this block the remote repository was empty and had no open pull requests, so
-no competing writer was detected.
+- Baseline `main` remains `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`, not protected. One open draft integration PR #1, branch `forma/rc-2026-10-14`.
+- Run `38556446767` for SHA `2fc27fb5f0196ca92541844be27b70f89ee31f72` is **completed / FAILURE**: verify SUCCESS, API34 instrumentation SUCCESS; API26 and API30 instrumentations FAILURE.
+- API26 log: `JourneyTest.kt:52`, 20s timeout inside workout stop/save/nav sequence. API30 log: `JourneyTest.kt:55`, attempted Progress nav before second-profile editor had fully dismissed. Neither failure constitutes a release PASS.
+- Actual failed-run artifacts `11890996021` (API26) and `11891750210` (API30) include workout screenshots with numeric IME covering workout controls; late failure screenshots after teardown show the launcher, not a product crash.
+- Follow-up fixes in integration lane: `98ae23e` and `b4cbaef` serialize WorkoutService commands, await prior loop teardown, and prevent older startIds from stopping a new workout. `fe08683` requires evidence that a rapidly started second workout receives live background ticks. `6c68fe7` waits for actionable navigation on second profile and saves in-app screenshot + Compose tree if text times out. `a5d054e` dismisses stale numeric focus and resets stage scroll position.
+- Previous main checkpoint document (dated 13 October) is historical; this branch checkpoint is the source of current integration state.
+- **No exact-HEAD green matrix yet.** After the above commits, pending/active CI must be rechecked for the latest branch SHA and all API26/30/34 results. No merge before all pass, final code review and evidence inspection.
+- Earlier APK v0.1.0 was only opened by Owner; device update compatibility, audio audibility, OEM background behaviour and physical/visual acceptance remain unverified.
 
-## Verification evidence
+## Next step
 
-- Remote import commit: `95bfc78e358edd73321db833990f3f4e52ad21bc`.
-- GitHub Actions run `38386131003` failed before Gradle at
-  `android-actions/setup-android@v3`: the action requested the obsolete SDK
-  package `tools`. No code/build tests ran in that workflow attempt. The
-  redundant action has been removed; GitHub's Ubuntu Android image supplies
-  the SDK used by Gradle.
-- Remote CI-fix HEAD: `fbf8e0c89116f0cbad660e55244d6f2e3a78c2e5`.
-- GitHub Actions run `38386276683` completed successfully: domain/app tests,
-  lint and debug assembly all ran; build duration was 6m49s.
-- APK artifact `11806632582` was published with archive digest
-  `sha256:73da5ccb7d17bb4fec57514f6355bdca893e413c79d15066c4740f70f18f8ac7`.
-  The contained `app-debug.apk` SHA-256 is
-  `ae31453d4b3fdc1fc85f5136cbe95398d124dab9052fa2b8cbf6440e2e2aa507`;
-  metadata identifies `ru.forma.fitness` 0.1.0, versionCode 1, minSdk 26.
-- GitHub Actions run `38388029382`, verify job `115264536734`, passed the
-  domain/app tests, lint, assembly, APK identity and signature checks.
-- APK artifact `11807343335` has archive digest
-  `sha256:8c2e0154ef16f46cf4dd4fee929041e44438a8beebddb57bbde3ca36f190ec81`.
-  Its `app-debug.apk` SHA-256 is
-  `6b3b74b9430a92a3dfc6656450d35022c89b2a3881362a85b18797ac8c159b23`.
-  AAPT confirms `ru.forma.fitness`, versionName 0.1.0, versionCode 1,
-  minSdk 26 and targetSdk 35. Apksigner confirms one RSA-2048 signer, valid
-  APK Signature Scheme v2, certificate DN `CN=FORMA Development,O=FORMA,C=RU`
-  and certificate SHA-256
-  `f64c119c6bcc34e33f2061cf8873f6c57e9b186a10c13644c3a0719467605225`.
-- The same run's instrumentation job `115266290452` did not execute tests:
-  emulator 37.2.12 exited before ADB registration because the Pixel 6 AVD
-  requested a 7372.80 MB userdata partition while only 5738.94 MB remained.
-  The workflow now caps the AVD disk at 4096 MB. This is an infrastructure
-  correction, not a runtime PASS; the follow-up run must provide that evidence.
-- Durable baseline at recovered HEAD: domain tests 25 passed; app/Room tests
-  3 passed; lint 0 errors and 3 warnings; debug APK and instrumentation APK
-  assembled.
-- A fresh local rerun was attempted on 2026-10-13 but could not download
-  Gradle 8.10.2 because the execution environment had no route to
-  `services.gradle.org`. This is an environment gate and is not a fresh PASS.
-- API 34 instrumentation remains unexecuted. KVM was enabled successfully in
-  run `38388029382`; the confirmed blocker was runner disk capacity.
-- Follow-up run `38394512778` verify job `115286204722` passed. Its API 34
-  emulator booted with KVM and executed `JourneyTest`, proving the runner-disk
-  blocker fixed. Instrumentation job `115287639581` then failed the single
-  journey before UI interaction: Android 14 notification permission launched
-  before Compose content, so the test found no Compose hierarchy. The app now
-  installs Compose content before requesting notification permission, and the
-  journey grants that runtime permission before launching `MainActivity`.
-  This correction is pending CI and is not yet a runtime PASS.
-- Run `38402187095` verify job `115312345638` passed, but instrumentation job
-  `115315096082` did not reach Gradle or execute the corrected journey. On a
-  lower-capacity runner, emulator 37.2.12 again applied the Pixel 6 profile's
-  7372.80 MB userdata requirement despite the appended 4096 MB setting and
-  exited before ADB registration. CI now uses the smaller Pixel 2 hardware
-  profile with API 34/x86_64/KVM and 2048 MB userdata; screen geometry is not
-  an assertion of this functional journey. A follow-up run remains required.
-- Run `38410081769` verify job `115339775646` passed. Compact API 34
-  instrumentation job `115341646207` booted reliably and executed the journey
-  through profile creation, generated program, workout start and warm-up skip.
-  It then failed because the test tried to click `Подход выполнен` before the
-  asynchronous Room/ViewModel transition exposed that node. The journey now
-  waits for the work-stage action before clicking it. Product state logic was
-  not changed; a follow-up runtime result remains required.
-- Run `38419006432` verify job `115371015846` passed. Instrumentation job
-  `115372964244` did not execute the updated journey: this runner had 5988.68
-  MB free while emulator 37.2.12 again reserved 7372.80 MB even though the AVD
-  config contained `disk.dataPartition.size=2048M`. The Android-only job now
-  removes unrelated preinstalled .NET, GHC and Android NDK toolchains before
-  creating the AVD, making the required disk headroom explicit. This is an
-  infrastructure retry and not runtime evidence.
-- Runtime/device acceptance is limited to the Owner reporting that the APK
-  opened. Full physical acceptance has not occurred.
+1. Confirm the final branch HEAD and matching Actions workflow run; inspect verify, API26/30/34 jobs and failure evidence, especially API26 workout stop/save.
+2. Fix proven failures on the same integration branch, rerun and review final HEAD, integrate PR #1 only with verified gates.
+3. Record merged `main` SHA, APK hash/certificate, real app screenshots and exact device-acceptance checklist; require Owner signing custody decision before stable release channel.
 
-## Writer and next step
-
-- Current writer: FORMA engineering continuation automation, single integration lane.
-- CI concurrency is serialized per ref with `cancel-in-progress: false`, so a
-  later push does not cancel an already executing FORMA run. A repository-wide
-  fenced writer lease for non-CI mutations remains required and must not be
-  represented by this checkpoint alone.
-- Next step: obtain an executed API 34 Compose journey, then finish Block A and
-  implement the repository-wide fenced writer lease before starting Block B.
-
-## Evidence boundaries
-
-CODE, BUILD, RUNTIME, and OWNER acceptance are tracked separately. A compiled
-instrumentation APK is not an executed UI test; an emulator is not a physical
-device; opening the app is not full acceptance. Stable update signing is not
-implemented, and no signing secret is stored in Git.
+## Release boundary
+No release candidate claim yet. Stable signing and update path are unverified; do not delete an installed app containing history to bypass signature mismatch. No production secrets created or changed.

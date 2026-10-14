@@ -8,4 +8,20 @@ class ReviewRegressionTest {
  @Test fun terminalResultCannotBeOverwritten(){val s=startSession(p.id,generateProgram(p).first(),0).copy(phase=Phase.DONE);assertEquals(s,stopSession(s,false));assertEquals(s,stopSession(s,true))}
  @Test fun oneSetThenSkipsIsNotCompleted(){var s=skipStage(startSession(p.id,generateProgram(p).first(),0),0);s=logSet(s,0.0,12,7,false,0);while(!s.terminal)s=skipStage(s,0);val saved=finishSession(p,s,1000);assertEquals(1,saved.history.single().sets.size);assertEquals(Phase.STOPPED,saved.history.single().status)}
  @Test fun measurementBoundsRespectProfile(){assertFalse(Measurement(dateMs=0,values=mapOf("weight" to 10.0)).valid());assertFalse(Measurement(dateMs=0,values=mapOf("height" to 250.0)).valid())}
+
+ @Test fun finishedCardioCannotMaskUnsafeStrengthForWeightProgression(){
+  val athlete=p.copy(days=setOf(1,3),equipment=setOf(Equipment.DUMBBELL),recovery=3)
+  val strength=generateProgram(athlete,10000).first{it.exercises.isNotEmpty()}
+  val first=strength.exercises.first{it.exercise.equipment==Equipment.DUMBBELL}
+  val completedSets=strength.exercises.flatMap { e ->
+   List(e.sets){SetResult(e.exercise.id,e.reps,if(e.exercise.equipment==Equipment.BODYWEIGHT)0.0 else 10.0,6,false,1500)}
+  }
+  val good=Workout("done",strength,1000,2000,completedSets,Phase.DONE)
+  val painful=Workout("stopped",strength,3000,4000,emptyList(),Phase.STOPPED,painReported=true)
+  val easyCardio=Workout("cardio",TrainingDay(2,"Кардио",cardio=CardioKind.WALK,durationSec=60),5000,65000,emptyList(),Phase.DONE)
+  val program=generateProgram(athlete.copy(history=listOf(good,painful,easyCardio)),66000)
+  val next=program.first{it.exercises.isNotEmpty()}.exercises.first{it.exercise.id==first.exercise.id}
+  assertEquals(10.0,next.weight,0.0)
+  assertTrue(next.reason.contains("нагрузка не повышается"))
+ }
 }

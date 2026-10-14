@@ -33,4 +33,56 @@ class StorageTest {
   assertEquals(outcomes.first{it.isSuccess}.getOrThrow().id,repo.load("a")!!.active!!.id)
   db.close()
  }
+
+ @Test fun importCreatesIsolatedCopiesAndSurvivesReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication();val name="forma-import-test.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build();var repo=ProfileRepository(db)
+  repo.saveProfile(Profile(id="a",name="A"))
+  val backup=repo.exportBackup();val imported=repo.importBackup(backup)
+  assertEquals(1,imported.size);assertNotEquals("a",imported.single())
+  repo.mutate(imported.single()){it.copy(weightKg=90.0)};assertEquals(70.0,repo.load("a")!!.weightKg,0.0)
+  db.close();db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build();repo=ProfileRepository(db)
+  assertEquals(90.0,repo.load(imported.single())!!.weightKg,0.0);db.close();ctx.deleteDatabase(name)
+ }
+ @Test fun invalidImportDoesNotPartiallyWrite()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build();val repo=ProfileRepository(db)
+  repo.saveProfile(Profile(id="a",name="A"))
+  assertTrue(runCatching{repo.importBackup("{\"version\":99,\"profiles\":[]}")}.isFailure)
+  assertEquals(1,db.profiles().all().size);db.close()
+ }
+ @Test fun staleSessionCommandCannotChangeNewWorkout()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build();val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
+  val old=repo.start("a",generateProgram(p).first(),0)
+  repo.mutateSession("a",old.id){stopSession(it)};repo.mutate("a"){finishSession(it,it.active!!,1000)}
+  val next=repo.start("a",generateProgram(p).first(),2000)
+  repo.mutateSession("a",old.id){stopSession(it)}
+  assertEquals(next,repo.load("a")!!.active);db.close()
+ }
+ @Test fun rapidResumeThenStopUsesSessionIdentityNotStalePauseStage()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
+  val s=repo.start(p.id,generateProgram(p).first(),0)
+  repo.mutateSession(p.id,s.id){pauseSession(it,1000)}
+  val visible=repo.load(p.id)!!.active!!
+  assertTrue(visible.paused)
+  repo.mutateSession(p.id,s.id,sessionStage(visible)){resumeSession(it,2000)}
+  // Simulate Stop being tapped before the Compose snapshot has reflected
+  // Resume. Guarding Stop by sessionStage(visible) would silently lose it.
+  repo.mutateSession(p.id,s.id){stopSession(it,false,2100)}
+  val stopped=repo.load(p.id)!!.active!!
+  assertEquals(Phase.STOPPED,stopped.phase)
+  assertEquals(s.id,stopped.id)
+  db.close()
+ }
+ @Test fun importCapacityExceededLeavesAllProfilesUnchanged()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val repo=ProfileRepository(db)
+  (1..MAX_BACKUP_PROFILES).forEach{index->repo.saveProfile(Profile(id="p$index",name="Профиль $index"))}
+  val single=encodeBackup(Backup(profiles=listOf(Profile(id="incoming",name="Ещё один"))))
+  assertTrue(runCatching{repo.importBackup(single)}.isFailure)
+  assertEquals(MAX_BACKUP_PROFILES,db.profiles().all().size)
+  assertNull(repo.load("incoming"))
+  db.close()
+ }
+
 }

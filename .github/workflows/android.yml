@@ -1,5 +1,8 @@
 name: FORMA Android
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main, 'forma/**']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -20,7 +23,7 @@ jobs:
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
-      - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
+      - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
       - name: APK identity and signature evidence
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
@@ -44,6 +47,10 @@ jobs:
             app/build/reports/
   instrumentation:
     needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 30, 34]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +64,18 @@ jobs:
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
+      - name: Build exact legacy base for API34 update test
+        if: matrix.api == 34
+        run: |
+          git fetch --depth=1 origin 2fff305c22e9fe3f1d32c213777c14e7a2cc3560
+          mkdir -p legacy
+          git archive FETCH_HEAD | tar -x -C legacy
+          mkdir -p legacy/.forma-signing
+          cp .forma-signing/debug.keystore legacy/.forma-signing/debug.keystore
+          cp app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt legacy/app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt
+          cd legacy
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -71,21 +90,28 @@ jobs:
           test ! -d /opt/ghc || sudo rm -rf -- /opt/ghc
           test ! -d /usr/local/lib/android/sdk/ndk || sudo rm -rf -- /usr/local/lib/android/sdk/ndk
           df -h /
-      - name: API 34 Compose journey
+      - name: Offline Compose journey and process recovery
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: google_apis
           profile: pixel_2
           disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
-          script: ./gradlew :app:connectedDebugAndroidTest --console=plain
+          script: bash scripts/run-emulator-tests.sh ${{ matrix.api }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: instrumentation-${{ github.sha }}
+          name: instrumentation-api${{ matrix.api }}-${{ github.sha }}
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            verification/screenshots-api${{ matrix.api }}/
+            verification/journey-api${{ matrix.api }}.txt
+            verification/recovery-api${{ matrix.api }}.txt
+            verification/failure-api${{ matrix.api }}.png
+            verification/logcat-failure-api${{ matrix.api }}.txt
+            legacy-seed.txt
+
