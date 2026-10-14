@@ -41,7 +41,7 @@ class JourneyTest{
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitText("Тест Б")
   click("Прогресс");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
-  click("Профиль");click("Тест А");composeRule.waitUntil(20000){runBlocking{app.settings.settings.firstForTest()}.selected==current().id};click("Прогресс")
+  click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Моё тело");screenshot("body-dark");click("Профиль");screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
