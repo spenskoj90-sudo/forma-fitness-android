@@ -1,5 +1,5 @@
 # FORMA work checkpoint
-Updated: 2026-10-14 14:24 Europe/Moscow
+Updated: 2026-10-14 (FORMA engineering continuation, Europe/Moscow)
 
 ## Source and coordination
 - Live main verified once at start: `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`.
@@ -31,13 +31,22 @@ Updated: 2026-10-14 14:24 Europe/Moscow
 - Capture timeout screenshots and Compose tree **inside** instrumentation before teardown. Store evidence in the debuggable app-private directory and retrieve it via `run-as` / tar, including on API30; include logcat on failures.
 - API34 compatibility update test executed in `38530992443`, but does **not** establish a stable cross-build signing channel because disposable debug keys are generated per CI run. Private custody remains the Owner gate.
 
-## Current continuation
-- Latest pre-checkpoint integration commit: `e446edd6790c75c1aaeda0bd66ccf75a1837349a` (keyboard dismissal and per-profile editor field state). PR #1 owns the current branch; the actual post-checkpoint commit SHA is recorded in the PR and GitHub Actions.
-- Real API34 screenshots from run `38530992443` showed the IME still covering Home/Training after onboarding and a purple default Material3 nav indicator. UI now dismisses the IME after saving and uses explicit green FORMA secondary/navigation colors. Visual result on corrected build is **pending** CI screenshots.
-- No claims of a physical release or compatible owner APK update.
- 
+## Current continuation — exact evidence
+
+- Baseline `main` remains `2fff305c22e9fe3f1d32c213777c14e7a2cc3560`, not protected. One open draft integration PR #1, branch `forma/rc-2026-10-14`.
+- Run `38556446767` for SHA `2fc27fb5f0196ca92541844be27b70f89ee31f72` is **completed / FAILURE**: verify SUCCESS, API34 instrumentation SUCCESS; API26 and API30 instrumentations FAILURE.
+- API26 log: `JourneyTest.kt:52`, 20s timeout inside workout stop/save/nav sequence. API30 log: `JourneyTest.kt:55`, attempted Progress nav before second-profile editor had fully dismissed. Neither failure constitutes a release PASS.
+- Actual failed-run artifacts `11890996021` (API26) and `11891750210` (API30) include workout screenshots with numeric IME covering workout controls; late failure screenshots after teardown show the launcher, not a product crash.
+- Follow-up fixes in integration lane: `98ae23e` and `b4cbaef` serialize WorkoutService commands, await prior loop teardown, and prevent older startIds from stopping a new workout. `fe08683` requires evidence that a rapidly started second workout receives live background ticks. `6c68fe7` waits for actionable navigation on second profile and saves in-app screenshot + Compose tree if text times out. `a5d054e` dismisses stale numeric focus and resets stage scroll position.
+- Previous main checkpoint document (dated 13 October) is historical; this branch checkpoint is the source of current integration state.
+- **No exact-HEAD green matrix yet.** After the above commits, pending/active CI must be rechecked for the latest branch SHA and all API26/30/34 results. No merge before all pass, final code review and evidence inspection.
+- Earlier APK v0.1.0 was only opened by Owner; device update compatibility, audio audibility, OEM background behaviour and physical/visual acceptance remain unverified.
+
 ## Next step
-Wait for exact-HEAD jobs after the assertions/evidence changes. If runtime remains red, inspect in-app timeout screenshot and logcat before changing product logic. Continue reliability review and meaningful tests. Do not merge while red or pending.
+
+1. Confirm the final branch HEAD and matching Actions workflow run; inspect verify, API26/30/34 jobs and failure evidence, especially API26 workout stop/save.
+2. Fix proven failures on the same integration branch, rerun and review final HEAD, integrate PR #1 only with verified gates.
+3. Record merged `main` SHA, APK hash/certificate, real app screenshots and exact device-acceptance checklist; require Owner signing custody decision before stable release channel.
 
 ## Release boundary
 No release candidate claim yet. Stable signing and update path are unverified; do not delete an installed app containing history to bypass signature mismatch. No production secrets created or changed.
