@@ -74,7 +74,7 @@ class StorageTest {
   assertEquals(s.id,stopped.id)
   db.close()
  }
- @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen()=runBlocking {
+ @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
   val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
