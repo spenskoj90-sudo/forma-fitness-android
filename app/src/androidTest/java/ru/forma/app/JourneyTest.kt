@@ -37,7 +37,7 @@ class JourneyTest{
   screenshot("home-light");click("К тренировкам");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
-  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");waitText("Твоя форма.");click("Прогресс")
+  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitText("Тренировки");click("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitText("Тест Б")
   click("Прогресс");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()

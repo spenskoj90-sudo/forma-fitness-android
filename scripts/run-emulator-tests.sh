@@ -4,6 +4,17 @@
 set -euo pipefail
 api="${1:?Android API argument required}"
 mkdir -p verification
+capture_failure() {
+  local code=$?
+  if ((code != 0)); then
+    # Android emulator contains only synthetic test profiles. Preserve visual
+    # evidence even if the main journey exits before the normal adb pull.
+    adb pull /sdcard/Android/data/ru.forma.fitness/files/evidence "verification/screenshots-api${api}" || true
+    adb shell screencap -p /sdcard/forma-test-failure.png || true
+    adb pull /sdcard/forma-test-failure.png "verification/failure-api${api}.png" || true
+  fi
+}
+trap capture_failure EXIT
 # No app code or training data should require the network.
 adb shell settings put global airplane_mode_on 1
 adb shell svc wifi disable || echo "Wi-Fi disable unavailable; airplane mode requested"

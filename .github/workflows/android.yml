@@ -110,5 +110,6 @@ jobs:
             app/build/outputs/androidTest-results/
             verification/screenshots-api${{ matrix.api }}/
             verification/recovery-api${{ matrix.api }}.txt
+            verification/failure-api${{ matrix.api }}.png
             legacy-seed.txt
 
