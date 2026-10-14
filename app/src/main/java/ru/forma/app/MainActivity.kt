@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import android.content.Intent
 import androidx.compose.ui.graphics.Brush
 import androidx.activity.result.contract.ActivityResultContracts
@@ -80,7 +82,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean){
- var p by remember(existing?.id){mutableStateOf(existing?:Profile())};var name by remember{mutableStateOf(p.name)};var age by remember{mutableStateOf(p.age.toString())};var height by remember{mutableStateOf(p.heightCm.toString())};var weight by remember{mutableStateOf(p.weightKg.toString())}
+ val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+ var p by remember(existing?.id){mutableStateOf(existing?:Profile())};var name by remember(existing?.id){mutableStateOf(p.name)};var age by remember(existing?.id){mutableStateOf(p.age.toString())};var height by remember(existing?.id){mutableStateOf(p.heightCm.toString())};var weight by remember(existing?.id){mutableStateOf(p.weightKg.toString())}
  Page(if(existing==null)"Начнём с тебя"else"Твой профиль","Для взрослых. История каждого пользователя изолирована."){
   OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Имя")},singleLine=true);NumericField("Возраст",age){age=it};NumericField("Рост, см",height){height=it};NumericField("Вес, кг",weight){weight=it}
   Panel("Опыт"){FlowRow{Experience.entries.forEach{v->FilterChip(p.experience==v,{p=p.copy(experience=v)},label={Text(v.label)},modifier=Modifier.padding(end=6.dp))}}}
@@ -92,7 +95,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   OutlinedTextField(p.limitations,{p=p.copy(limitations=it.take(2000))},Modifier.fillMaxWidth(),label={Text("Ограничения и боль")},supportingText={Text("${p.limitations.length}/2000 символов. Заполнение блокирует автоматический подбор; приложение не оценивает медицинскую допустимость упражнений.")})
   Panel("Восстановление: ${p.recovery}/5"){Text("1 — выраженное недомогание; 3 — нормально; 5 — хорошо.");Slider(p.recovery.toFloat(),{p=p.copy(recovery=it.toInt())},valueRange=1f..5f,steps=3)}
   val candidate=p.copy(name=name.trim(),age=age.toIntOrNull()?:0,heightCm=number(height)?:0.0,weightKg=number(weight)?:0.0)
-  Action("Сохранить профиль",{save(candidate)},candidate.valid());if(canCancel)TextButton(cancel){Text("Отмена")}
+  Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid());if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()}){Text("Отмена")}
  }
 }
 @Composable fun TrainingScreen(p:Profile,vm:FormaViewModel){val plan=generateProgram(p);Page("Тренировки","Оборудование, восстановление и твои цели."){
