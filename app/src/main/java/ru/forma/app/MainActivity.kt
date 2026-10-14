@@ -132,6 +132,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  var weight by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.weight?:s.current?.weight?:0.0).toString())}
  var reps by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.reps?:s.current?.reps?:12).toString())}
  var effort by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableFloatStateOf(7f)}
+ // Do not leave a numeric field focused when changing workout stages.
+ val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+ LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
+  focus.clearFocus(force=true);keyboard?.hide()
+ }
+ // Do not inherit the previous stage's scroll position.
+ key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
  Page(if(s.paused)"Пауза"else stageLabel(s),"${s.day.name} · ${s.sets.size} сохранённых подходов"){
   if(s.terminal)Panel("Результат"){Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.");Action("Сохранить и завершить",vm::finish)}
   else{
@@ -149,6 +156,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    OutlinedButton(vm::skip,Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")}
    TextButton(vm::stop,Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
   }
+ }
  }
 }
 @Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit){Page("Профиль",p.primary.label){
