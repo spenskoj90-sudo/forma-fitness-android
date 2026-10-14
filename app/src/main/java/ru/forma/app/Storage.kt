@@ -40,7 +40,9 @@ class ProfileRepository(private val db:FormaDatabase) {
  suspend fun importBackup(text:String):List<String> {
   val backup=decodeBackup(text)
   return db.withTransaction {
-   require(db.profiles().all().map(::decode).none{it.active!=null}){"Завершите занятие перед импортом"}
+   val existing=db.profiles().all().map(::decode)
+   require(existing.none{it.active!=null}){"Завершите занятие перед импортом"}
+   require(existing.size+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }

@@ -58,4 +58,15 @@ class StorageTest {
   repo.mutateSession("a",old.id){stopSession(it)}
   assertEquals(next,repo.load("a")!!.active);db.close()
  }
+ @Test fun importCapacityExceededLeavesAllProfilesUnchanged()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val repo=ProfileRepository(db)
+  (1..MAX_BACKUP_PROFILES).forEach{index->repo.saveProfile(Profile(id="p$index",name="Профиль $index"))}
+  val single=encodeBackup(Backup(profiles=listOf(Profile(id="incoming",name="Ещё один"))))
+  assertTrue(runCatching{repo.importBackup(single)}.isFailure)
+  assertEquals(MAX_BACKUP_PROFILES,db.profiles().all().size)
+  assertNull(repo.load("incoming"))
+  db.close()
+ }
+
 }

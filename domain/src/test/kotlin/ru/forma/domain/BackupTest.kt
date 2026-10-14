@@ -14,4 +14,9 @@ class BackupTest {
  }
  @Test fun oversizedInputRejected(){assertThrows(IllegalArgumentException::class.java){decodeBackup(" ".repeat(MAX_BACKUP_BYTES+1))}}
  @Test fun stoppedHistorySurvives(){val s=stopSession(startSession("a",generateProgram(p).first(),0));val saved=finishSession(p,s,1000);assertEquals(saved,decodeBackup(encodeBackup(Backup(profiles=listOf(saved)))).profiles.single())}
+ @Test fun limitationsAreBoundedAtProfileEntry(){
+  assertFalse(p.copy(limitations="x".repeat(2001)).valid())
+  assertTrue(p.copy(limitations="x".repeat(2000)).valid())
+ }
+
 }

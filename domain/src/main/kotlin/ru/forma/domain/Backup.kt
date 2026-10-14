@@ -6,6 +6,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 const val MAX_BACKUP_BYTES=8*1024*1024
+const val MAX_BACKUP_PROFILES=20
 @Serializable data class Backup(val version:Int=1,val profiles:List<Profile>)
 private val backupJson=Json{encodeDefaults=true;ignoreUnknownKeys=false}
 
@@ -16,7 +17,7 @@ private fun validDay(d:TrainingDay)=d.day in 1..7 && d.name.length in 1..200 &&
 
 fun validateBackup(b:Backup){
  require(b.version==1){"Неподдерживаемая версия резервной копии"}
- require(b.profiles.size in 1..20){"Копия должна содержать от 1 до 20 профилей"}
+ require(b.profiles.size in 1..MAX_BACKUP_PROFILES){"Копия должна содержать от 1 до 20 профилей"}
  require(b.profiles.map{it.id}.distinct().size==b.profiles.size){"Повторяющийся профиль"}
  b.profiles.forEach{p->
   require(p.valid() && p.id.length in 1..100 && p.limitations.length<=2000 && p.active==null){"Завершите занятие перед резервным копированием"}
