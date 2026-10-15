@@ -52,9 +52,9 @@ class JourneyTest{
  private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.filesDir,"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
-  waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твоя форма.")
+  waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твой путь к сильной и здоровой версии себя")
   // The Home UI can render from the Room profile before DataStore finishes\n  // persisting the selected ID; assert the durable new-profile defaults directly.\n  assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
-  screenshot("home-light");click("К тренировкам");screenshot("training-light")
+  screenshot("home-light");click("Тренировки");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Прогресс")

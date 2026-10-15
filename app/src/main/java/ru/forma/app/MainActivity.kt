@@ -23,6 +23,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
@@ -36,18 +43,18 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  val p by vm.current.collectAsState();val profiles by vm.profiles.collectAsState();val settings by vm.prefs.collectAsState();val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
  val dark=settings.dark?:isSystemInDarkTheme()
- val colors=if(dark)darkColorScheme(primary=Color(0xFF39ED75),onPrimary=Color(0xFF042610),secondary=Color(0xFF7AD6A0),onSecondary=Color(0xFF062817),secondaryContainer=Color(0xFF244B36),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF080E12),surface=Color(0xFF121B20),surfaceVariant=Color(0xFF1C272D),onSurface=Color(0xFFF1F5F3),onSurfaceVariant=Color(0xFFB8C6C0),outline=Color(0xFF65746E))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
+ val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
  MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Моё тело","Прогресс","Профиль");val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.Straighten,Icons.Outlined.TrendingUp,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface){titles.forEachIndexed{i,t->NavigationBarItem(tab==i,{tab=i},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=false,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==i,{tab=i},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
-    Row(Modifier.fillMaxWidth().padding(vertical=16.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("FORMA",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Black,color=colors.onSurface);p?.let{Text(it.name.take(30),Modifier.weight(1f).padding(start=16.dp),color=colors.primary,maxLines=2)}}
+    Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Row(verticalAlignment=Alignment.CenterVertically){Text("FORM",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.onSurface);Text("A",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.primary)};p?.let{Text(it.name.take(22),Modifier.padding(start=14.dp),color=colors.onSurfaceVariant,maxLines=1,style=MaterialTheme.typography.labelMedium)}}
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
     if(error!=null)Panel("Не удалось выполнить действие"){Text(error!!);TextButton({vm.error.value=null}){Text("Понятно")}}
     when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
      p?.active!=null->Runner(p!!.active!!,vm)
      p==null->Text("Загрузка…")
-     else->when(tab){0->Home(p!!,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
+     else->when(tab){0->Home(p!!,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
     }
    }
   }
@@ -58,26 +65,84 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
 @Composable fun NumericField(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,Modifier.fillMaxWidth(),label={Text(label)},singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Decimal))}
-@Composable fun Home(p:Profile,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
+
+/** Decorative brand artwork: not a depiction of correct exercise technique. */
+@Composable fun FormaAthleteArtwork(modifier:Modifier=Modifier){
+ val green=Color(0xFF37F375)
+ Canvas(modifier){
+  val w=size.width;val h=size.height
+  drawCircle(brush=Brush.radialGradient(listOf(green.copy(alpha=0.24f),Color.Transparent),center=Offset(w*0.66f,h*0.47f),radius=w*0.49f),radius=w*0.49f,center=Offset(w*0.66f,h*0.47f))
+  drawArc(color=green.copy(alpha=0.82f),startAngle=145f,sweepAngle=260f,useCenter=false,topLeft=Offset(w*0.23f,h*0.14f),size=Size(w*0.70f,h*0.67f),style=Stroke(width=6.dp.toPx(),cap=StrokeCap.Round))
+  val upper=Path().apply{
+   moveTo(w*0.64f,h*0.18f)
+   cubicTo(w*0.75f,h*0.10f,w*0.85f,h*0.18f,w*0.82f,h*0.35f)
+   cubicTo(w*0.80f,h*0.39f,w*0.74f,h*0.41f,w*0.73f,h*0.45f)
+   cubicTo(w*0.93f,h*0.47f,w*1.04f,h*0.65f,w*0.97f,h*0.95f)
+   lineTo(w*0.27f,h*0.95f)
+   cubicTo(w*0.20f,h*0.70f,w*0.35f,h*0.49f,w*0.59f,h*0.45f)
+   cubicTo(w*0.54f,h*0.36f,w*0.55f,h*0.25f,w*0.64f,h*0.18f)
+   close()
+  }
+  drawPath(upper,brush=Brush.linearGradient(listOf(Color(0xFF61767A),Color(0xFF23383F),Color(0xFF091318)),start=Offset(w*0.53f,0f),end=Offset(w*0.96f,h)))
+  val back=Path().apply{
+   moveTo(w*0.59f,h*0.46f);cubicTo(w*0.66f,h*0.5f,w*0.73f,h*0.5f,w*0.79f,h*0.46f)
+   moveTo(w*0.67f,h*0.48f);cubicTo(w*0.69f,h*0.65f,w*0.67f,h*0.78f,w*0.66f,h*0.9f)
+   moveTo(w*0.58f,h*0.52f);cubicTo(w*0.47f,h*0.59f,w*0.44f,h*0.71f,w*0.48f,h*0.84f)
+   moveTo(w*0.76f,h*0.52f);cubicTo(w*0.84f,h*0.59f,w*0.82f,h*0.71f,w*0.76f,h*0.84f)
+  }
+  drawPath(back,color=Color(0xFFA9BCB9).copy(alpha=0.36f),style=Stroke(width=2.dp.toPx(),cap=StrokeCap.Round))
+ }
+}
+@Composable fun FormaShortcut(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,tint:Color,onClick:()->Unit,modifier:Modifier=Modifier){
+ Card(modifier.height(112.dp).clickable(onClick=onClick),shape=RoundedCornerShape(19.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
+  Column(Modifier.fillMaxSize().padding(horizontal=8.dp,vertical=13.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween){
+   Icon(icon,contentDescription=null,tint=tint,modifier=Modifier.size(28.dp))
+   Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Medium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,lineHeight=14.sp)
+  }
+ }
+}
+@Composable fun Home(p:Profile,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
  val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs>=weekStart(System.currentTimeMillis())}
- Page("Твоя форма.","Последовательность важнее рекорда."){
-  val plan=generateProgram(p);val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.firstOrNull{it.day==today}?:plan.firstOrNull()
-  Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(28.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
-   Column(Modifier.background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.primary.copy(alpha=0.12f)))).padding(22.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
-    Icon(Icons.Outlined.FitnessCenter,null,Modifier.size(42.dp),tint=MaterialTheme.colorScheme.primary)
-    Text(if(next==null)"Время восстановиться"else if(next.day==today)"Сегодня тренировка"else "Следующая тренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
-    next?.let{Text(it.name,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleLarge);Text("${dayNames[it.day-1]} · "+if(it.cardio!=null)"${it.durationSec/60} минут"else "${it.exercises.size} упражнений · ${it.exercises.sumOf{e->e.sets}} подходов")}
-    if(next!=null)Action("К тренировкам",onTrain)else Action("Открыть профиль",onProfile)
+ val plan=generateProgram(p);val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.firstOrNull{it.day==today}?:plan.firstOrNull()
+ Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
+  Text("Твой путь к сильной и здоровой версии себя",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+  Box(Modifier.fillMaxWidth().height(316.dp).clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
+   FormaAthleteArtwork(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(246.dp))
+   Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xFF0C171D),Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
+   Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.SpaceBetween){
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+     Text(if(next==null)"День восстановления"else"Сегодня\nтренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,lineHeight=32.sp,color=Color.White)
+     Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
+    }
+    Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+     if(next!=null){
+      Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
+      Action("▶  Начать тренировку",{vm.start(next)})
+     }else Action("Открыть профиль",onProfile)
+    }
    }
   }
-  Panel("На этой неделе"){Text("$weekly завершённых занятий",style=MaterialTheme.typography.headlineSmall);Text("План: ${plan.size} занятий · ${p.primary.label}");LinearProgressIndicator(progress={if(p.days.isEmpty())0f else(weekly.toFloat()/p.days.size).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())}
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
-   OutlinedButton(onBody,Modifier.weight(1f).heightIn(min=64.dp)){Icon(Icons.Outlined.Straighten,null);Text("Замеры",Modifier.padding(start=8.dp))}
-   OutlinedButton(onProgress,Modifier.weight(1f).heightIn(min=64.dp)){Icon(Icons.Outlined.TrendingUp,null);Text("Прогресс",Modifier.padding(start=8.dp))}
+  val green=MaterialTheme.colorScheme.primary
+  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
+   FormaShortcut("Программа\nтренировок",Icons.Outlined.FitnessCenter,green,onTrain,Modifier.weight(1f))
+   FormaShortcut("Моя\nстатистика",Icons.Outlined.BarChart,Color(0xFF72D4AD),onProgress,Modifier.weight(1f))
+   FormaShortcut("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress,Modifier.weight(1f))
   }
-  if(p.limitations.isNotBlank()||p.recovery<=1)Panel("Сначала восстановление"){Text("Автоматическая программа приостановлена. При боли остановитесь. Уточните допустимые нагрузки со специалистом; обновите самочувствие, когда занятия снова допустимы.");Action("Открыть профиль",onProfile)}
-  else Panel("Программа под тебя"){Text("${p.experience.label} · ${p.equipment.joinToString{it.label}}") }
-  Panel("Без интернета"){Text("Данные хранятся на этом телефоне. Для голоса нужна русская офлайн-модель Android TTS. Резервная копия и восстановление доступны в профиле через выбранный вами файл.")}
+  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
+   FormaShortcut("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody,Modifier.weight(1f))
+   FormaShortcut("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile,Modifier.weight(1f))
+   FormaShortcut("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile,Modifier.weight(1f))
+  }
+  Panel("На этой неделе"){
+   Text(weekly.toString()+" завершённых занятий",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
+   Text("План: "+plan.size+" занятий · "+p.primary.label,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+   LinearProgressIndicator(progress={if(p.days.isEmpty())0f else (weekly.toFloat()/p.days.size).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())
+  }
+  if(p.limitations.isNotBlank()||p.recovery<=1)Panel("Сначала восстановление"){
+   Text("При ограничениях и боли автоматическая программа приостановлена. Уточните допустимые нагрузки и обновите самочувствие.")
+   Action("Открыть профиль",onProfile)
+  }
+  Spacer(Modifier.height(18.dp))
  }
 }
 @OptIn(ExperimentalLayoutApi::class)
