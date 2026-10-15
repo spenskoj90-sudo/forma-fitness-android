@@ -1,5 +1,7 @@
 package ru.forma.app
 import androidx.compose.foundation.Canvas
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,8 +32,34 @@ fun dateLabel(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).f
  p.measurements.sortedByDescending{it.dateMs}.forEach{m->Panel(dateLabel(m.dateMs)){m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")};TextButton({editing=m;values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}}){Text("Исправить запись")}}}
 }}
 @Composable fun ProgressScreen(p:Profile){val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
+ val context=LocalContext.current
+ Panel("Еженедельный отчёт"){
+  Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
+  Action("Поделиться отчётом",{
+   val send=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,weeklyReport(p,now))}
+   context.startActivity(Intent.createChooser(send,"Отчёт FORMA"))
+  })
+ }
  listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");Text("Нагрузка: ${"%.1f".format(sets.sumOf{it.weight*it.reps})} кг·повт (на гантель)");Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
  p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){Text("Максимум: ${sets.maxOf{it.weight}} кг · ${sets.maxOf{it.reps}} повторений");HistoryChart(sets.sortedBy{it.timeMs}.map{it.weight})}}
  if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
  p.history.sortedByDescending{it.finishedMs}.forEach{w->Panel(w.day.name){Text(dateLabel(w.finishedMs));Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов");w.sets.forEach{s->Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${s.weight} кг × ${s.reps} · сложность ${s.effort}")}}}
 }}
+
+/** Local-only export: no automatic server upload of personal fitness data. */
+fun weeklyReport(p:Profile,now:Long=System.currentTimeMillis()):String{
+ val records=p.history.filter{it.finishedMs>=weekStart(now)&&it.finishedMs<=now}
+ val sets=records.flatMap{it.sets}
+ val cardio=records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.activeSeconds}/60
+ return buildString{
+  appendLine("FORMA · недельный отчёт")
+  appendLine("Профиль: "+p.name)
+  appendLine("Период: "+dateLabel(weekStart(now))+" — "+dateLabel(now))
+  appendLine("Завершено: "+records.count{it.status==Phase.DONE})
+  appendLine("Остановлено: "+records.count{it.status==Phase.STOPPED})
+  appendLine("Подходы: "+sets.size+"; повторения: "+sets.sumOf{it.reps})
+  appendLine("Кардио: "+cardio+" минут активного времени")
+  appendLine("Цель: "+p.primary.label)
+  append("Сводка локальная; не является медицинским заключением.")
+ }
+}

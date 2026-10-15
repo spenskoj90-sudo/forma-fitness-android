@@ -46,7 +46,8 @@ fun generateProgram(p:Profile,now:Long=System.currentTimeMillis()):List<Training
  // Cardio completion cannot erase the safety signal from a stopped strength workout.
  val latestStrength=p.history.filter{it.day.cardio==null}.maxByOrNull{it.finishedMs}
  val holdProgression=latestStrength?.let{it.status!=Phase.DONE||it.painReported}==true
- val muscles=(listOf(Muscle.LEGS,Muscle.BACK,Muscle.CHEST,Muscle.CORE)+p.priorities.sortedBy{it.ordinal}).distinct()
+ val baseMuscles=if(p.primary==Goal.MUSCLE)listOf(Muscle.BACK,Muscle.CHEST,Muscle.SHOULDERS,Muscle.ARMS,Muscle.CORE,Muscle.LEGS)else listOf(Muscle.LEGS,Muscle.BACK,Muscle.CHEST,Muscle.CORE)
+ val muscles=(p.priorities.sortedBy{it.ordinal}+baseMuscles).distinct()
  return p.days.sorted().map{d->if(d !in strengthDays)TrainingDay(d,"Лёгкое кардио",cardio=CardioKind.WALK,durationSec=if(p.primary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS)||p.secondary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS))1800 else 1200,explanation="Ходьба между силовыми днями; длительность и интервалы настраиваются.")
  else TrainingDay(d,"Силовая · всё тело",exercises=muscles.mapNotNull{m->
   val choices=available.filter{it.muscle==m}.sortedByDescending{when(it.equipment){Equipment.DUMBBELL->2;Equipment.BARBELL->1;else->0}}

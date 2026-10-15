@@ -53,7 +53,9 @@ class JourneyTest{
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
   waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твой путь к сильной и здоровой версии себя")
-  // The Home UI can render from the Room profile before DataStore finishes\n  // persisting the selected ID; assert the durable new-profile defaults directly.\n  assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
+  // Room may show the profile before DataStore updates the selection.
+  // Assert the durable default from Room, independent of selection timing.
+  assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
   screenshot("home-dark-default");click("Тренировки");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")

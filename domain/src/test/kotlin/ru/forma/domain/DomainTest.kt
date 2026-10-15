@@ -43,5 +43,9 @@ class DomainTest {
   assertTrue(generateProgram(scheduled.copy(secondary=Goal.ENDURANCE)).first{it.cardio!=null}.durationSec>
              generateProgram(scheduled.copy(secondary=null)).first{it.cardio!=null}.durationSec)
  }
+ @Test fun musclePlanIncludesUpperBodyAndLegs(){
+  val groups=generateProgram(p).first().exercises.map{it.exercise.muscle}.toSet()
+  assertTrue(groups.containsAll(setOf(Muscle.BACK,Muscle.CHEST,Muscle.SHOULDERS,Muscle.ARMS,Muscle.CORE,Muscle.LEGS)))
+ }
  @Test fun cardioIntervalEndsCorrectly() {val s=skipStage(startSession(p.id,TrainingDay(2,"Интервалы",cardio=CardioKind.INTERVAL,durationSec=300),0),0);assertEquals(Phase.CARDIO,advanceTimed(s,299000).phase);assertEquals(Phase.DONE,advanceTimed(s,300000).phase)}
 }

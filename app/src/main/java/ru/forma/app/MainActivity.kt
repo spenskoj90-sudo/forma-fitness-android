@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -109,6 +111,31 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   drawPath(back,color=Color(0xFFA9BCB9).copy(alpha=0.36f),style=Stroke(width=2.dp.toPx(),cap=StrokeCap.Round))
  }
 }
+
+/** Schematic zone highlight only; not an animation of safe exercise technique. */
+@Composable fun MuscleFocusMap(muscle:Muscle,modifier:Modifier=Modifier){
+ val green=MaterialTheme.colorScheme.primary
+ Canvas(modifier.semantics{contentDescription="Условная схема: "+muscle.label}){
+  val w=size.width;val h=size.height;val ink=Color(0xFFB4C4C4).copy(alpha=0.65f)
+  drawCircle(ink,w*0.075f,Offset(w*0.50f,h*0.16f))
+  drawLine(ink,Offset(w*0.50f,h*0.24f),Offset(w*0.50f,h*0.65f),2.dp.toPx())
+  drawLine(ink,Offset(w*0.27f,h*0.31f),Offset(w*0.73f,h*0.31f),2.dp.toPx())
+  drawLine(ink,Offset(w*0.27f,h*0.31f),Offset(w*0.20f,h*0.67f),2.dp.toPx())
+  drawLine(ink,Offset(w*0.73f,h*0.31f),Offset(w*0.80f,h*0.67f),2.dp.toPx())
+  drawLine(ink,Offset(w*0.41f,h*0.65f),Offset(w*0.33f,h*0.94f),2.dp.toPx())
+  drawLine(ink,Offset(w*0.59f,h*0.65f),Offset(w*0.67f,h*0.94f),2.dp.toPx())
+  val zones=when(muscle){
+   Muscle.BACK->listOf(0.40f to 0.42f,0.60f to 0.42f)
+   Muscle.CHEST->listOf(0.41f to 0.37f,0.59f to 0.37f)
+   Muscle.SHOULDERS->listOf(0.28f to 0.31f,0.72f to 0.31f)
+   Muscle.ARMS->listOf(0.23f to 0.46f,0.77f to 0.46f)
+   Muscle.CORE->listOf(0.50f to 0.52f)
+   Muscle.LEGS->listOf(0.39f to 0.78f,0.61f to 0.78f)
+  }
+  zones.forEach{(x,y)->drawCircle(green.copy(alpha=0.22f),w*0.12f,Offset(w*x,h*y));drawCircle(green,w*0.048f,Offset(w*x,h*y))}
+ }
+}
+
 @Composable fun FormaShortcut(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,tint:Color,onClick:()->Unit,modifier:Modifier=Modifier){
  Card(modifier.height(112.dp).clickable(onClick=onClick),shape=RoundedCornerShape(19.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
   Column(Modifier.fillMaxSize().padding(horizontal=8.dp,vertical=13.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween){
@@ -241,7 +268,11 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     if(current!=null){
      Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
      Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF0B1B20))){
-      FormaAthleteArtwork(Modifier.align(Alignment.Center).fillMaxHeight().width(250.dp))
+      FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
+      Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
+       MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(145.dp))
+       Text("Зона нагрузки",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
+      }
       Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color(0xFF091217)))).padding(14.dp)){
        Text("Мышечная группа: "+current.exercise.muscle.label,style=MaterialTheme.typography.bodyMedium,color=Color.White)
       }
@@ -280,7 +311,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
        }
       }
       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
-      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField("Вес, кг · гантель: на одну руку",weight){weight=it}
+      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(if(current.exercise.equipment==Equipment.BARBELL)"Вес, кг · штанга целиком" else "Вес, кг · одна гантель",weight){weight=it}
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
       Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
