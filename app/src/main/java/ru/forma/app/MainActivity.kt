@@ -42,11 +42,12 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
  val p by vm.current.collectAsState();val profiles by vm.profiles.collectAsState();val settings by vm.prefs.collectAsState();val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
- val dark=settings.dark?:isSystemInDarkTheme()
+ // Dark-first mockup; explicit theme choice still takes precedence.
+ val dark=settings.dark?:true
  val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
  MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
-  val titles=listOf("Главная","Тренировки","Моё тело","Прогресс","Профиль");val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.Straighten,Icons.Outlined.TrendingUp,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==i,{tab=i},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
+  val titles=listOf("Главная","Тренировки","Статистика","Профиль");val destinations=listOf(0,1,3,4);val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.BarChart,Icons.Outlined.Person)
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
     Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Row(verticalAlignment=Alignment.CenterVertically){Text("FORM",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.onSurface);Text("A",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.primary)};p?.let{Text(it.name.take(22),Modifier.padding(start=14.dp),color=colors.onSurfaceVariant,maxLines=1,style=MaterialTheme.typography.labelMedium)}}
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
@@ -111,7 +112,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xFF0C171D),Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
    Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.SpaceBetween){
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-     Text(if(next==null)"День восстановления"else"Сегодня\nтренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,lineHeight=32.sp,color=Color.White)
+     Text(if(next==null)"День восстановления"else if(next.day==today)"Сегодня\nтренировка"else"Следующая\nтренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,lineHeight=32.sp,color=Color.White)
      Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
     }
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
