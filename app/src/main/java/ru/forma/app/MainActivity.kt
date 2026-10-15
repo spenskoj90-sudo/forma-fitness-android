@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
@@ -121,7 +123,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
   Text("Твой путь к сильной и здоровой версии себя",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
   Box(Modifier.fillMaxWidth().height(316.dp).clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
-   FormaAthleteArtwork(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(246.dp))
+   Image(painter=painterResource(R.drawable.forma_hero),contentDescription=null,modifier=Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(246.dp),contentScale=ContentScale.Crop)
    Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xFF0C171D),Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
    Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.SpaceBetween){
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
