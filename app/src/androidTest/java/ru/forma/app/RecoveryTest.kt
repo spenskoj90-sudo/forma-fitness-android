@@ -17,8 +17,7 @@ class RecoveryTest{
   val p=runBlocking{app.repository.profiles.first()}.first{it.active!=null}
   val before=p.active!!;assertTrue(before.paused);assertFalse(app.serviceRunning)
   rule.onNodeWithText("Продолжить сопровождение").performScrollTo().performClick()
-  rule.waitUntil(15000){app.serviceRunning}
-  rule.onNodeWithText("Боль / дискомфорт — стоп").performScrollTo().performClick()
+  // The service flag is transient across process replacement; verify the\n  // persisted workout actually resumes and receives fresh foreground ticks.\n  rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.paused==false}\n  val resumeTick=runBlocking{app.repository.load(p.id)}?.active?.lastTickMs?:error("Missing resumed workout")\n  rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.let{!it.paused&&it.lastTickMs>resumeTick+1000}==true}\n  rule.onNodeWithText("Боль / дискомфорт — стоп").performScrollTo().performClick()
   rule.waitUntil(15000){runBlocking{app.repository.load(p.id)}?.active?.terminal==true}
   // Room may persist STOPPED before StateFlow recomposes Runner. On older
   // Compose/Android combinations the button text is only in the unmerged tree.
