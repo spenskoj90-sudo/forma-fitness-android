@@ -198,34 +198,89 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  val m=duration.toIntOrNull()?:0;val w=walk.toIntOrNull()?:0;val r=run.toIntOrNull()?:0
  Action("Начать кардио",{vm.start(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
 }
+
 @Composable fun Runner(s:Session,vm:FormaViewModel){
- val app=LocalContext.current.applicationContext as FormaApp;var now by remember{mutableLongStateOf(app.workoutNow())};LaunchedEffect(s.id){while(true){kotlinx.coroutines.delay(500);now=app.workoutNow()}}
+ val app=LocalContext.current.applicationContext as FormaApp
+ var now by remember{mutableLongStateOf(app.workoutNow())}
+ LaunchedEffect(s.id){while(true){kotlinx.coroutines.delay(500);now=app.workoutNow()}}
  var weight by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.weight?:s.current?.weight?:0.0).toString())}
  var reps by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.reps?:s.current?.reps?:12).toString())}
  var effort by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableFloatStateOf(7f)}
- // Do not leave a numeric field focused when changing workout stages.
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
- LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
-  focus.clearFocus(force=true);keyboard?.hide()
- }
- // Do not inherit the previous stage's scroll position.
+ LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){focus.clearFocus(force=true);keyboard?.hide()}
  key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
- Page(if(s.paused)"Пауза"else stageLabel(s),"${s.day.name} · ${s.sets.size} сохранённых подходов"){
-  if(s.terminal)Panel("Результат"){Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.");Action("Сохранить и завершить",{vm.finish(s.id)})}
-  else{
-   Panel("Текущий этап"){
-    if(s.phase in listOf(Phase.WARMUP,Phase.REST,Phase.CARDIO))Text("${remainingSeconds(s,now)/60}:${(remainingSeconds(s,now)%60).toString().padStart(2,'0')}",style=MaterialTheme.typography.displayMedium)
-    if(s.phase==Phase.WORK)s.current?.let{Text("Подход ${s.setNumber} из ${it.sets}");Text(it.exercise.cue);if(it.exercise.mistakes.isNotBlank())Text("Частые ошибки: ${it.exercise.mistakes}");Text(it.reason,style=MaterialTheme.typography.bodySmall)}
-    if(s.phase==Phase.WARMUP)Text("Лёгкая ходьба на месте, плавные движения плеч и таза. Без боли и рывков.");if(s.phase==Phase.CARDIO)Text("Комфортный темп. При дискомфорте остановитесь.")
+ Page(if(s.paused)"Пауза"else stageLabel(s),s.day.name+" · "+s.sets.size+" сохранённых подходов"){
+  val total=s.day.exercises.sumOf{it.sets}
+  val completed=s.sets.size
+  if(total>0)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+   Text("ТРЕНИРОВКА",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+   Text((completed+1).coerceAtMost(total).toString()+"/"+total,style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+  if(s.terminal)Panel("Результат"){
+   Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.")
+   Action("Сохранить и завершить",{vm.finish(s.id)})
+  }else{
+   if(s.phase==Phase.WORK){
+    val current=s.current
+    if(current!=null){
+     Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+     Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF0B1B20))){
+      FormaAthleteArtwork(Modifier.align(Alignment.Center).fillMaxHeight().width(250.dp))
+      Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color(0xFF091217)))).padding(14.dp)){
+       Text("Мышечная группа: "+current.exercise.muscle.label,style=MaterialTheme.typography.bodyMedium,color=Color.White)
+      }
+     }
+     Panel("Техника упражнения"){
+      Text(current.exercise.cue)
+      if(current.exercise.mistakes.isNotBlank()){
+       Text("Частые ошибки",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
+       Text(current.exercise.mistakes,style=MaterialTheme.typography.bodySmall)
+      }
+     }
+     Panel("Подходы"){
+      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+       Text("№",modifier=Modifier.weight(0.3f),style=MaterialTheme.typography.labelMedium)
+       Text("Вес, кг",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
+       Text("Повторы",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
+       Text("Статус",modifier=Modifier.weight(0.8f),style=MaterialTheme.typography.labelMedium)
+      }
+      val logged=s.sets.filter{it.exerciseId==current.exercise.id}
+      for(index in 1..current.sets){
+       val result=logged.getOrNull(index-1)
+       Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+        Text(index.toString(),modifier=Modifier.weight(0.3f))
+        Text(result?.weight?.toString()?:if(index==s.setNumber)weight else "—",modifier=Modifier.weight(1f))
+        Text(result?.reps?.toString()?:if(index==s.setNumber)reps else "—",modifier=Modifier.weight(1f))
+        Text(if(result!=null)"✓"else if(index==s.setNumber)"●"else "○",modifier=Modifier.weight(0.8f),color=if(result!=null)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+       }
+      }
+      Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
+      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField("Вес, кг · гантель: на одну руку",weight){weight=it}
+      NumericField("Повторения",reps){reps=it}
+      Text("Сложность: "+effort.toInt()+"/10")
+      Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
+      val w=number(weight);val n=reps.toIntOrNull()
+      Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
+     }
+    }
+   }else{
+    Panel("Текущий этап"){
+     if(s.phase in listOf(Phase.WARMUP,Phase.REST,Phase.CARDIO)){
+      Text((remainingSeconds(s,now)/60).toString().padStart(2,'0')+":"+(remainingSeconds(s,now)%60).toString().padStart(2,'0'),style=MaterialTheme.typography.displayMedium,fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)
+     }
+     if(s.phase==Phase.WARMUP)Text("Лёгкая ходьба на месте, плавные движения плеч и таза. Без боли и рывков.")
+     if(s.phase==Phase.CARDIO)Text("Комфортный темп. При дискомфорте остановитесь.")
+     if(s.phase==Phase.REST)Text("Восстановите дыхание перед следующим подходом.")
+    }
    }
-   if(s.phase==Phase.WORK){if(s.current?.exercise?.equipment!=Equipment.BODYWEIGHT)NumericField("Вес, кг · гантель: на одну руку",weight){weight=it};NumericField("Повторения",reps){reps=it};Text("Сложность: ${effort.toInt()}/10");Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
-    val w=number(weight);val r=reps.toIntOrNull();Action("Подход выполнен",{vm.done(s.id,w?:0.0,r?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&r!=null&&r in 1..100)
-
+   Panel("Управление"){
+    OutlinedButton({vm.painStop(s.id)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
+    Action(if(s.paused)"Продолжить сопровождение"else"Пауза",{if(s.paused)vm.resume(s.id) else vm.pause(s.id)})
+    OutlinedButton({vm.skip(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){
+     Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")
+    }
+    TextButton({vm.stop(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
    }
-   OutlinedButton({vm.painStop(s.id)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
-   Action(if(s.paused)"Продолжить сопровождение"else"Пауза",{if(s.paused)vm.resume(s.id) else vm.pause(s.id)})
-   OutlinedButton({vm.skip(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")}
-   TextButton({vm.stop(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
   }
  }
  }
