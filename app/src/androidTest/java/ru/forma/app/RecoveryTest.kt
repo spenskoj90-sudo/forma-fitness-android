@@ -18,7 +18,11 @@ class RecoveryTest{
   val before=p.active!!;assertTrue(before.paused);assertFalse(app.serviceRunning)
   rule.onNodeWithText("Продолжить сопровождение").performScrollTo().performClick()
   // Verify durable resume, a live service tick, then stop deliberately.
-  rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.paused==false}
+  try{rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.paused==false}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   val active=runBlocking{app.repository.load(p.id)}?.active
+   throw AssertionError("Owner Resume did not persist: session=$active, serviceRunning=${app.serviceRunning}",e)
+  }
   val resumeTick=runBlocking{app.repository.load(p.id)}?.active?.lastTickMs?:error("Missing resumed workout")
   rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.let{!it.paused&&it.lastTickMs>resumeTick+1000}==true}
   rule.onNodeWithText("Боль / дискомфорт — стоп").performScrollTo().performClick()

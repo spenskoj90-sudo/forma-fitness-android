@@ -21,7 +21,11 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  val profiles=app.repository.profiles.catch{error.value="Не удалось прочитать локальные данные"}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
  val prefs=app.settings.settings.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
  val current=combine(profiles,prefs){ps,s->ps.firstOrNull{it.id==s.selected}?:ps.firstOrNull()}.stateIn(viewModelScope,SharingStarted.Eagerly,null)
- init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->app.repository.mutateSession(profile.id,profile.active!!.id){recoverSession(it,app.workoutNow())}}}}
+ // Recovery applies only to sessions last ticked by an older process.
+ // A late init coroutine must never re-pause a workout the Owner just resumed.
+ init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->
+  app.repository.mutateSession(profile.id,profile.active!!.id){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
+ }}}
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
  fun saveProfile(p:Profile,onSaved:()->Unit={}){action{require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" };if(app.repository.load(p.id)==null)app.repository.saveProfile(p)else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)};app.settings.select(p.id);onSaved()}}
@@ -32,7 +36,8 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun resume(expected:String){
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
   action{
-   app.repository.mutateSession(p.id,expected,sessionStage(s)){resumeSession(it,app.workoutNow())}
+   // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
+   app.repository.mutateSession(p.id,expected){resumeSession(it,app.workoutNow())}
    val active=app.repository.load(p.id)?.active
    if(active?.id==expected&&!active.terminal&&!active.paused)startService(p.id,expected)
   }

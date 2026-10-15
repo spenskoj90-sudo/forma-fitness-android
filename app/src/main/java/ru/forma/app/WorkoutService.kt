@@ -76,7 +76,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      lastStage=""
      nextBeat=0L
     }
-    if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}
+    if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
     profileId=id;sessionId=expected
     when(intent.action){
      "PAUSE"->{app.repository.mutateSession(id,expected){pauseSession(it,app.workoutNow())};silence()}

@@ -60,8 +60,8 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
      if(p?.active!=null){
       Text("Тренировка",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold,color=colors.onSurface)
       val active=p!!.active!!
-      val totalSets=active.day.exercises.sumOf{it.sets}
-      Text(if(totalSets>0)"${(active.sets.size+1).coerceAtMost(totalSets)}/$totalSets" else active.day.cardio?.label.orEmpty(),style=MaterialTheme.typography.titleMedium,color=colors.onSurfaceVariant)
+      val exerciseCount=active.day.exercises.size
+      Text(if(exerciseCount>0)"${(active.exerciseIndex+1).coerceAtMost(exerciseCount)}/$exerciseCount" else active.day.cardio?.label.orEmpty(),style=MaterialTheme.typography.titleMedium,color=colors.onSurfaceVariant)
      }else{
       Row(verticalAlignment=Alignment.CenterVertically){Text("FORM",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.onSurface);Text("A",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.primary)}
       p?.let{Text(it.name.take(22),Modifier.padding(start=14.dp),color=colors.onSurfaceVariant,maxLines=1,style=MaterialTheme.typography.labelMedium)}
@@ -253,12 +253,6 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){focus.clearFocus(force=true);keyboard?.hide()}
  key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
  Page(if(s.paused)"Пауза"else if(s.phase==Phase.WORK)s.current?.exercise?.name?:stageLabel(s) else stageLabel(s),if(s.phase==Phase.WORK)(s.current?.exercise?.muscle?.label?:s.day.name)+" · "+s.sets.size+" сохранённых подходов" else s.day.name+" · "+s.sets.size+" сохранённых подходов",compact=true){
-  val total=s.day.exercises.sumOf{it.sets}
-  val completed=s.sets.size
-  if(total>0)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-   Text("ТРЕНИРОВКА",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
-   Text((completed+1).coerceAtMost(total).toString()+"/"+total,style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
-  }
   if(s.terminal)Panel("Результат"){
    Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.")
    Action("Сохранить и завершить",{vm.finish(s.id)})

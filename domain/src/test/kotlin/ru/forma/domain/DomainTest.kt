@@ -47,5 +47,15 @@ class DomainTest {
   val groups=generateProgram(p).first().exercises.map{it.exercise.muscle}.toSet()
   assertTrue(groups.containsAll(setOf(Muscle.BACK,Muscle.CHEST,Muscle.SHOULDERS,Muscle.ARMS,Muscle.CORE,Muscle.LEGS)))
  }
+ @Test fun delayedStartupRecoveryDoesNotUndoUserResume(){
+  val profile=Profile(id="resume",name="User")
+  val old=skipStage(startSession(profile.id,generateProgram(profile).first(),1000),1000)
+  val paused=pauseSession(old,1500)
+  val newProcessStarted=5000L
+  val freshlyResumed=resumeSession(paused,5100)
+  assertFalse(freshlyResumed.paused)
+  assertEquals(freshlyResumed,recoverIfPreviousProcess(freshlyResumed,newProcessStarted,5200))
+  assertTrue(recoverIfPreviousProcess(paused,newProcessStarted,5200).paused)
+ }
  @Test fun cardioIntervalEndsCorrectly() {val s=skipStage(startSession(p.id,TrainingDay(2,"Интервалы",cardio=CardioKind.INTERVAL,durationSec=300),0),0);assertEquals(Phase.CARDIO,advanceTimed(s,299000).phase);assertEquals(Phase.DONE,advanceTimed(s,300000).phase)}
 }

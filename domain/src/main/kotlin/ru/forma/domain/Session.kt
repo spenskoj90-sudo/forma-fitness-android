@@ -22,6 +22,9 @@ fun resumeSession(s:Session,now:Long)=if(!s.paused||s.terminal)s else s.copy(pau
  deadlineMs=now+(if(s.pausedRemainingMs>=0)s.pausedRemainingMs else s.pausedRemainingSec*1000L),
  lastTickMs=now,pausedRemainingMs=-1L)
 fun recoverSession(s:Session,now:Long):Session = if(s.terminal)s else pauseSession(s,s.lastTickMs).copy(lastTickMs=now)
+/** Never re-pause a session already resumed in the current Android process. */
+fun recoverIfPreviousProcess(s:Session,processStartedMs:Long,now:Long):Session =
+ if(s.terminal||s.lastTickMs>=processStartedMs)s else recoverSession(s,now)
 fun stopSession(s:Session,pain:Boolean=false,now:Long=s.lastTickMs):Session {
  if(s.terminal)return s
  val v=creditTime(s,now)
