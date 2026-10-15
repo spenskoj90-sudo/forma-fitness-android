@@ -1,0 +1,46 @@
+name: FORMA isolated Owner acceptance APK
+on:
+  push:
+    branches: ['forma/design-visual-fidelity-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Disposable signer for independent phone test
+        run: |
+          mkdir -p .forma-signing
+          keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Owner Acceptance,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
+      - name: Build separately installable APK
+        run: ./gradlew :app:assembleDebug -PformaAcceptance=true --console=plain
+      - name: Check isolated package, version, cryptographic signature and hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=app/build/outputs/apk/debug
+          APK="$OUT/app-debug.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" | tee "$OUT/APK_BADGING.txt"
+          grep -F "name='ru.forma.fitness.acceptance'" "$OUT/APK_BADGING.txt"
+          grep -F "versionName='0.2.0-acceptance'" "$OUT/APK_BADGING.txt"
+          "$SIGNER" verify --verbose --print-certs "$APK" > "$OUT/APK_SIGNATURE.txt"
+          sha256sum "$APK" > "$OUT/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forma-owner-acceptance-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/APK_BADGING.txt
+            app/build/outputs/apk/debug/APK_SIGNATURE.txt
+            app/build/outputs/apk/debug/SHA256SUMS
