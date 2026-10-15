@@ -5,7 +5,7 @@
  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
  <uses-permission android:name="android.permission.WAKE_LOCK"/>
  <queries><intent><action android:name="android.intent.action.TTS_SERVICE"/></intent></queries>
- <application android:name=".FormaApp" android:label="FORMA" android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:supportsRtl="true" android:theme="@style/Theme.Forma">
+ <application android:name=".FormaApp" android:label="${formaAppLabel}" android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:supportsRtl="true" android:theme="@style/Theme.Forma">
   <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <service android:name=".WorkoutService" android:exported="false" android:foregroundServiceType="health"/>
  </application>

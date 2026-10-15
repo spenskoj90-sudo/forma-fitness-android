@@ -1,7 +1,7 @@
 plugins {alias(libs.plugins.android.application);alias(libs.plugins.kotlin.android);alias(libs.plugins.kotlin.compose);alias(libs.plugins.kotlin.serialization);alias(libs.plugins.ksp)}
 android {
  namespace="ru.forma.app";compileSdk=35
- defaultConfig {applicationId="ru.forma.fitness";minSdk=26;targetSdk=35;versionCode=providers.gradleProperty("formaVersionCode").orNull?.toInt()?:2;versionName="0.2.0";testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"}
+ defaultConfig {applicationId="ru.forma.fitness";minSdk=26;targetSdk=35;versionCode=providers.gradleProperty("formaVersionCode").orNull?.toInt()?:2;versionName="0.2.0";testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner";manifestPlaceholders["formaAppLabel"]="FORMA"}
  compileOptions {sourceCompatibility=JavaVersion.VERSION_17;targetCompatibility=JavaVersion.VERSION_17}
  kotlinOptions {jvmTarget="17"}
  signingConfigs {
@@ -13,7 +13,18 @@ android {
    keyPassword=System.getenv("FORMA_RELEASE_KEY_PASSWORD")
   }
  }
- buildTypes { getByName("release") { signingConfig=signingConfigs.getByName("formaRelease") } }
+ buildTypes {
+  getByName("debug") {
+   // Opt-in isolated device acceptance APK; the old ru.forma.fitness
+   // installation (including data) remains untouched on the Owner's phone.
+   if(providers.gradleProperty("formaPhysicalTest").orNull=="true"){
+    applicationIdSuffix=".physicaltest"
+    versionNameSuffix="-device-test"
+    manifestPlaceholders["formaAppLabel"]="FORMA Тест"
+   }
+  }
+  getByName("release") { signingConfig=signingConfigs.getByName("formaRelease") }
+ }
  buildFeatures {compose=true}
  testOptions {unitTests.isIncludeAndroidResources=true;unitTests.all {it.systemProperty("robolectric.dependency.repo.url","https://repo.maven.apache.org/maven2")}}
 }
