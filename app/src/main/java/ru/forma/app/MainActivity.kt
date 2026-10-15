@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -130,7 +131,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    FormaShortcut("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress,Modifier.weight(1f))
   }
   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-   FormaShortcut("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody,Modifier.weight(1f))
+   FormaShortcut("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody,Modifier.weight(1f).testTag("shortcut-body"))
    FormaShortcut("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile,Modifier.weight(1f))
    FormaShortcut("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile,Modifier.weight(1f))
   }
