@@ -53,6 +53,7 @@ class JourneyTest{
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
   waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твоя форма.")
+  assertEquals(setOf(1,3,5),current().days)
   screenshot("home-light");click("К тренировкам");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
@@ -80,6 +81,7 @@ class JourneyTest{
   composeRule.waitUntil(20000){current().history.size==2};assertEquals(count,current().history.last().sets.size)
   // Exercise real app/repository backup without sending personal data anywhere.
   runBlocking{val before=app.repository.exportBackup();val ids=app.repository.importBackup(before);assertEquals(2,ids.size);assertEquals(4,app.repository.profiles.firstForTest().size)}
+  waitText("Кардио по желанию")
   composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst().performScrollTo().performTextReplacement("1")
   composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
   composeRule.waitUntil(15000){current().active?.phase==Phase.CARDIO}

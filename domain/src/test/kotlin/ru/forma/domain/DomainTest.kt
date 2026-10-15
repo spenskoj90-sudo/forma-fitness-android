@@ -24,6 +24,24 @@ class DomainTest {
  @Test fun roundTrip() {val v=p.copy(active=startSession(p.id,generateProgram(p).first(),0));assertEquals(v,Json.decodeFromString<Profile>(Json.encodeToString(v)))}
  @Test fun goalChangeKeepsHistory() {val s=startSession(p.id,generateProgram(p).first(),0).copy(phase=Phase.DONE);val saved=finishSession(p,s,1000);assertEquals(saved.history,saved.copy(primary=Goal.STRENGTH).history)}
  @Test fun skippedWorkoutNotCompleted() {var s=skipStage(startSession(p.id,generateProgram(p).first(),0),0);while(!s.terminal)s=skipStage(s,0);assertEquals(Phase.STOPPED,finishSession(p,s,1000).history.single().status)}
- @Test fun secondaryGoalAffectsCardio() {assertTrue(generateProgram(p.copy(secondary=Goal.ENDURANCE)).first{it.cardio!=null}.durationSec>generateProgram(p.copy(secondary=null)).first{it.cardio!=null}.durationSec)}
+ @Test fun defaultStartsWithThreeSeparatedStrengthDays(){
+  assertEquals(setOf(1,3,5),p.days)
+  val program=generateProgram(p)
+  assertEquals(listOf(1,3,5),program.map{it.day})
+  assertEquals(3,program.count{it.exercises.isNotEmpty()})
+  assertTrue(program.none{it.cardio!=null})
+ }
+ @Test fun extraSelectedDaysBecomeOptionalScheduledCardio(){
+  val scheduled=p.copy(days=setOf(1,2,3,5,6))
+  val program=generateProgram(scheduled)
+  assertEquals(5,program.size)
+  assertEquals(setOf(1,3,5),program.filter{it.cardio==null}.map{it.day}.toSet())
+  assertEquals(setOf(2,6),program.filter{it.cardio!=null}.map{it.day}.toSet())
+ }
+ @Test fun secondaryGoalAffectsCardio() {
+  val scheduled=p.copy(days=setOf(1,2,3,5,6))
+  assertTrue(generateProgram(scheduled.copy(secondary=Goal.ENDURANCE)).first{it.cardio!=null}.durationSec>
+             generateProgram(scheduled.copy(secondary=null)).first{it.cardio!=null}.durationSec)
+ }
  @Test fun cardioIntervalEndsCorrectly() {val s=skipStage(startSession(p.id,TrainingDay(2,"Интервалы",cardio=CardioKind.INTERVAL,durationSec=300),0),0);assertEquals(Phase.CARDIO,advanceTimed(s,299000).phase);assertEquals(Phase.DONE,advanceTimed(s,300000).phase)}
 }

@@ -78,7 +78,7 @@ class StorageTest {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
   val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
-  val day=generateProgram(p).first{it.cardio!=null}.copy(durationSec=60)
+  val day=TrainingDay(day=2,name="Кардио",cardio=CardioKind.WALK,durationSec=60)
   val start=repo.start(p.id,day,1000)
   repo.mutateSession(p.id,start.id){skipStage(it,2000)}
   assertEquals(Phase.CARDIO,repo.load(p.id)!!.active!!.phase)
