@@ -20,7 +20,19 @@ class RecoveryTest{
   rule.waitUntil(15000){app.serviceRunning}
   rule.onNodeWithText("Боль / дискомфорт — стоп").performScrollTo().performClick()
   rule.waitUntil(15000){runBlocking{app.repository.load(p.id)}?.active?.terminal==true}
-  rule.onNodeWithText("Сохранить и завершить").performScrollTo().performClick()
+  // Room may persist STOPPED before StateFlow recomposes Runner. On older
+  // Compose/Android combinations the button text is only in the unmerged tree.
+  // Assert both the durable terminal phase above and an actual rendered action.
+  try {
+   rule.waitUntil(20000){
+    rule.onAllNodesWithText("Сохранить и завершить",useUnmergedTree=true)
+     .fetchSemanticsNodes().isNotEmpty()
+   }
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{rule.onRoot(useUnmergedTree=true).printToLog("FORMA-RECOVERY-TIMEOUT")}
+   throw AssertionError("Terminal session persisted but completion action was not rendered",e)
+  }
+  rule.onNodeWithText("Сохранить и завершить",useUnmergedTree=true).performScrollTo().performClick()
   rule.waitUntil(15000){runBlocking{app.repository.load(p.id)}?.active==null}
   val saved=runBlocking{app.repository.load(p.id)}!!
   assertEquals(ru.forma.domain.Phase.STOPPED,saved.history.last().status)

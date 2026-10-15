@@ -74,6 +74,27 @@ class StorageTest {
   assertEquals(s.id,stopped.id)
   db.close()
  }
+ @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val repo=ProfileRepository(db);val p=Profile(id="a",name="A");repo.saveProfile(p)
+  val day=generateProgram(p).first{it.cardio!=null}.copy(durationSec=60)
+  val start=repo.start(p.id,day,1000)
+  repo.mutateSession(p.id,start.id){skipStage(it,2000)}
+  assertEquals(Phase.CARDIO,repo.load(p.id)!!.active!!.phase)
+  repo.mutateSession(p.id,start.id){pauseSession(it,2500)}
+  val paused=repo.load(p.id)!!.active!!
+  assertTrue(paused.paused)
+  repo.mutateSession(p.id,start.id){advanceTimed(it,10000)}
+  assertEquals(paused,repo.load(p.id)!!.active!!)
+  // Reopen the actual on-disk Room DB; no in-memory StateFlow may satisfy this.
+  db.close()
+  db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val restored=ProfileRepository(db).load(p.id)!!.active!!
+  assertEquals(paused,restored)
+  assertTrue(restored.paused)
+  db.close();ctx.deleteDatabase(name)
+ }
  @Test fun importCapacityExceededLeavesAllProfilesUnchanged()=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   val repo=ProfileRepository(db)

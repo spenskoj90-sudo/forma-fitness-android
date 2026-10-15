@@ -7,7 +7,9 @@ permissions:
   contents: read
 concurrency:
   group: forma-${{ github.ref }}
-  cancel-in-progress: false
+  # Only the latest integration-branch SHA needs a full emulator matrix.
+  # Never interrupt protected-main evidence runs.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -47,6 +49,8 @@ jobs:
             app/build/reports/
   instrumentation:
     needs: verify
+    # Emulator/test hangs must not consume hours of CI runner time.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
