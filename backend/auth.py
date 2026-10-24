@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import hmac
+from uuid import UUID
 from dataclasses import dataclass
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -43,6 +46,15 @@ def verify_claims(token: str, public_key: object, issuer: str, audience: str) ->
     if not isinstance(subject, str) or not subject or len(subject) > 512:
         raise InvalidTokenError("Missing or invalid subject")
     return Identity(issuer=issuer, subject=subject)
+
+
+def derived_account_id(identity: Identity, secret: bytes) -> UUID:
+    """Stable server-only identity; secret rotation needs an explicit migration."""
+    if len(secret) < 32:
+        raise ValueError("Account derivation key must be at least 256 bits")
+    message = (identity.issuer + "\\x00" + identity.subject).encode("utf-8")
+    digest = hmac.new(secret, message, hashlib.sha256).digest()
+    return UUID(bytes=digest[:16], version=4)
 
 
 class TokenVerifier:
