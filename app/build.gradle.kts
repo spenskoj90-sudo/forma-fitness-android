@@ -14,14 +14,9 @@ android {
   }
  }
  buildTypes {
-  getByName("debug"){
-   // Opt-in isolated package: leaves all existing Owner installations untouched.
-   if(providers.gradleProperty("formaAcceptance").orNull=="true"){
-    applicationIdSuffix=".acceptance"
-    versionNameSuffix="-acceptance"
-    manifestPlaceholders["formaAppLabel"]="FORMA Проверка"
-   }
-  }
+  // Never mint a different applicationId for an Owner-facing FORMA update.
+  // Debug APKs are CI evidence only; never install them over existing data
+  // unless the exact certificate is known to be compatible.
   getByName("release"){signingConfig=signingConfigs.getByName("formaRelease")}
  }
  buildFeatures {compose=true}
