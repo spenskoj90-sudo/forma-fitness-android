@@ -44,8 +44,14 @@ fun bodyShape(profile: Profile): BodyShape {
     val latest = profile.measurements.sortedBy { it.dateMs }
     fun measured(key: String): Double? = latest.lastOrNull { it.values.containsKey(key) }
         ?.values?.get(key)?.takeIf { it.isFinite() && it > 0.0 }
+    // Height/weight alone do not determine an actual body shape. Until tape
+    // measurements exist, only a modest neutral BMI-based visual adjustment is
+    // used; the interface clearly labels the figure as schematic.
+    val meters = (profile.heightCm / 100.0).takeIf { it.isFinite() && it > 0 } ?: 1.7
+    val bmi = (profile.weightKg / (meters * meters)).takeIf { it.isFinite() } ?: 23.0
+    val neutralFactor = (bmi / 23.0).coerceIn(0.85, 1.18)
     fun factor(value: Double?, reference: Double): Float =
-        ((value ?: reference) / reference).coerceIn(0.72, 1.35).toFloat()
+        ((value ?: reference * neutralFactor) / reference).coerceIn(0.72, 1.35).toFloat()
 
     return BodyShape(
         shoulderFactor = factor(measured("shoulders"), 44.0),
