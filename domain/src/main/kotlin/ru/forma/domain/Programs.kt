@@ -19,7 +19,24 @@ val exerciseCatalog=listOf(
  Exercise("hammer","Молотковое сгибание",Muscle.ARMS,Equipment.DUMBBELL,"Ладони направлены друг к другу. Локти около корпуса; плавно поднимите гантели и опустите без раскачивания.","Рывок корпусом, залом запястий, движение локтей вперёд.",listOf("curl")),
  Exercise("db_press","Жим лёгких гантелей стоя",Muscle.SHOULDERS,Equipment.DUMBBELL,"Стопы устойчивы, корпус собран. Плавно поднимайте лёгкие гантели в комфортной амплитуде, без выгибания поясницы.","Запрокидывание головы, прогиб поясницы, работа через боль.",listOf("raise")),
  Exercise("bb_rdl","Румынская тяга со штангой",Muscle.LEGS,Equipment.BARBELL,"Начните с лёгкого грифа. Мягкие колени, таз назад; гриф близко к ногам. Спина нейтральна. Не стремитесь опустить гриф к полу.","Округление спины, слишком тяжёлый вес, рывок.",listOf("squat","db_rdl")),
- Exercise("bb_curl","Сгибание рук со штангой",Muscle.ARMS,Equipment.BARBELL,"Лёгкий гриф, устойчивое положение. Локти рядом с корпусом, запястья ровные. Поднимайте и опускайте без рывка.","Раскачивание, залом запястий, движение плечами.",listOf("curl","hammer"))
+ Exercise("bb_curl","Сгибание рук со штангой",Muscle.ARMS,Equipment.BARBELL,"Лёгкий гриф, устойчивое положение. Локти рядом с корпусом, запястья ровные. Поднимайте и опускайте без рывка.","Раскачивание, залом запястий, движение плечами.",listOf("curl","hammer")),
+ Exercise("wall_slide","Скольжение руками по стене",Muscle.SHOULDERS,Equipment.BODYWEIGHT,"Спиной к стене, рёбра опущены. Ведите руки вверх только пока плечам комфортно. Плавно вернитесь.","Прогиб в пояснице, поднятые к ушам плечи."),
+ Exercise("self_curl","Сгибание руки с сопротивлением другой руки",Muscle.ARMS,Equipment.BODYWEIGHT,"Одной рукой плавно сгибайте локоть, другой создавайте небольшое контролируемое сопротивление. Не задерживайте дыхание.","Рывки, давление на запястье, работа через боль."),
+ Exercise("band_row","Тяга резинки к поясу",Muscle.BACK,Equipment.RESISTANCE_BAND,"Закрепите резинку на надёжной опоре. Тяните локти назад, не округляя спину; плавно отпускайте.","Ненадёжная точка крепления, рывки, чрезмерное натяжение."),
+ Exercise("band_press","Жим резинки вперёд",Muscle.CHEST,Equipment.RESISTANCE_BAND,"Надёжно зафиксируйте резинку позади себя. Выжимайте руки вперёд на комфортную амплитуду, без рывка.","Резинка скользит, локти слишком широко, прогиб поясницы."),
+ Exercise("band_extension","Разгибание рук с резинкой",Muscle.ARMS,Equipment.RESISTANCE_BAND,"Удерживайте локти возле корпуса. Медленно выпрямляйте руки с лёгким сопротивлением.","Размахивание плечами, резкие движения."),
+ Exercise("kettlebell_squat","Приседание с гирей у груди",Muscle.LEGS,Equipment.KETTLEBELL,"Держите лёгкую гирю у груди двумя руками. Контролируйте колени и устойчивость стоп.","Округление спины, уход коленей внутрь."),
+ Exercise("kettlebell_deadlift","Тяга гири от возвышения",Muscle.LEGS,Equipment.KETTLEBELL,"Начните с гири на устойчивом возвышении. Отведите таз назад, удерживайте спину нейтральной и встаньте без рывка.","Избыточный вес, округление спины, рывок."),
+ Exercise("scap_pull","Контролируемое движение лопаток на турнике",Muscle.BACK,Equipment.PULL_UP_BAR,"Возьмитесь за устойчивый турник с доступной опорой под ногами. Слегка опустите лопатки, затем вернитесь без полного провисания.","Неустойчивая опора, резкое раскачивание, движение через боль."),
+ Exercise("mat_plank","Планка на предплечьях",Muscle.CORE,Equipment.MAT,"Предплечья под плечами, тело вытянуто. Держите комфортную короткую продолжительность, спокойно дышите.","Провисание таза, задержка дыхания."),
+ Exercise("bench_step","Подъём на низкую устойчивую платформу",Muscle.LEGS,Equipment.BENCH,"Используйте только низкую нескользящую ступень. Поднимайтесь контролируемо, держитесь за опору при необходимости.","Шаткая или высокая скамья, прыжки, потеря равновесия."),
+ Exercise("cable_triceps","Разгибание рук на блоке",Muscle.ARMS,Equipment.CABLE_MACHINE,"Локти у корпуса, разгибайте руки без помощи спины. Верните рукоять плавно.","Слишком большой вес, рывок корпусом."),
+ Exercise("lat_pulldown","Тяга верхнего блока к груди",Muscle.BACK,Equipment.LAT_PULLDOWN,"Устойчиво сядьте, тяните рукоять к верхней части груди, направляя локти вниз. Не тяните за голову.","Потягивание за шею, чрезмерное отклонение, рывок."),
+ Exercise("leg_press","Жим ногами в тренажёре",Muscle.LEGS,Equipment.LEG_PRESS_MACHINE,"Поясница и таз опираются на сиденье. Разгибайте колени без блокировки, опускайте платформу в комфортной амплитуде.","Отрыв таза, глубокое сгибание с округлением поясницы, блокировка коленей."),
+ Exercise("chest_press","Жим от груди в тренажёре",Muscle.CHEST,Equipment.CHEST_PRESS_MACHINE,"Отрегулируйте сиденье: рукояти на уровне груди. Жмите плавно, лопатки опираются на спинку.","Рывки, слишком высокое сиденье, избыточная амплитуда."),
+ Exercise("machine_row","Горизонтальная тяга сидя",Muscle.BACK,Equipment.SEATED_ROW_MACHINE,"Сидите устойчиво, тяните локти назад, сохраняя корпус неподвижным. Плавно выпрямите руки.","Раскачивание корпусом, округление спины, рывок."),
+ Exercise("leg_curl","Сгибание ног в тренажёре",Muscle.LEGS,Equipment.LEG_CURL_MACHINE,"Настройте ось тренажёра под колено. Сгибайте ноги плавно с удобной амплитудой.","Отрыв таза, удар по ограничителю, чрезмерный вес."),
+ Exercise("smith_squat","Приседание в тренажёре Смита",Muscle.LEGS,Equipment.SMITH_MACHINE,"Установите страховочные упоры и комфортную высоту грифа. Приседайте плавно, сохраняя устойчивость.","Нет упоров, неподходящая траектория, работа через боль.")
 
 ).map{e->if(e.mistakes.isNotBlank())e else e.copy(mistakes=when(e.id){
  "squat","goblet"->"Отрыв пяток, колени внутрь, слишком глубокое движение через боль."
@@ -50,7 +67,12 @@ fun generateProgram(p:Profile,now:Long=System.currentTimeMillis()):List<Training
  val muscles=(p.priorities.sortedBy{it.ordinal}+baseMuscles).distinct()
  return p.days.sorted().map{d->if(d !in strengthDays)TrainingDay(d,"Лёгкое кардио",cardio=CardioKind.WALK,durationSec=if(p.primary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS)||p.secondary in setOf(Goal.ENDURANCE,Goal.FAT_LOSS))1800 else 1200,explanation="Ходьба между силовыми днями; длительность и интервалы настраиваются.")
  else TrainingDay(d,"Силовая · всё тело",exercises=muscles.mapNotNull{m->
-  val choices=available.filter{it.muscle==m}.sortedByDescending{when(it.equipment){Equipment.DUMBBELL->2;Equipment.BARBELL->1;else->0}}
+  val choices=available.filter{it.muscle==m}.sortedByDescending{when(it.equipment){
+    Equipment.BODYWEIGHT,Equipment.MAT->0
+    Equipment.RESISTANCE_BAND,Equipment.PULL_UP_BAR->1
+    Equipment.DUMBBELL,Equipment.KETTLEBELL,Equipment.BENCH->2
+    else->3
+   }}
   val ex=choices.firstOrNull()?:return@mapNotNull null
   val last=p.history.sortedByDescending{it.finishedMs}.firstOrNull{it.status==Phase.DONE&&it.sets.any{s->s.exerciseId==ex.id}}?.sets?.filter{it.exerciseId==ex.id}.orEmpty()
   val previous=last.lastOrNull()?.weight?:0.0;val weight=suggestWeight(previous,if(last.size>=sets)last.minOf{it.reps}else 0,reps,last.maxOfOrNull{it.effort}?:10,last.any{it.pain}||holdProgression,p.recovery,returning)
