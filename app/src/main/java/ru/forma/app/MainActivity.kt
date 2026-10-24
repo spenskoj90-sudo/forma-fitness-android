@@ -238,12 +238,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
  Panel("Техника упражнений"){
   Text("${exerciseCatalog.size} упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
-  exerciseCatalog.filter{it.equipment in availableEquipment(p,place)}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
+  exerciseCatalog.filter{it.equipment in available}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
  }
 }}
 @Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel,place:TrainingPlace){
- var replacements by remember(day,p.equipment){mutableStateOf<Map<Int,Exercise>>(emptyMap())}
- val chosen=day.copy(exercises=day.exercises.mapIndexed{i,item->replacements[i]?.let{item.copy(exercise=it,weight=0.0,reason="Замена выбрана вручную. Начните с лёгкого веса.")}?:item})
+ val available=availableEquipment(p,place)
+ var replacements by remember(day,p.equipment,place){mutableStateOf<Map<Int,Exercise>>(emptyMap())}
+ val chosen=day.copy(exercises=day.exercises.mapIndexed{i,item->replacements[i]?.takeIf{it.equipment in available}?.let{item.copy(exercise=it,weight=0.0,reason="Замена выбрана вручную. Начните с лёгкого веса.")}?:item})
  Panel("${dayNames[day.day-1]} · ${day.name}"){
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
