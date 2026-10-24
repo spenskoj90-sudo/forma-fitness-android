@@ -24,16 +24,16 @@ Date: 2026-10-24. Status: architectural contract and first Android implementatio
 2. The direct-APK update permission is suitable only for an approved
    sideload distribution; a future Google Play build must remove
    REQUEST_INSTALL_PACKAGES and use the Play-supported update flow.
-3. The original installed 0.1.0 signer is unverified. A newly generated key
-   cannot update that installed package in place. Inspect that device's actual
-   package ID + installed signing certificate, compare with the surviving key,
-   and test a same-certificate on-device upgrade with data preserved.
-   Do not uninstall the installed app if the certificates differ.
-4. If original signing key is irretrievable, attempt an **owner-assisted**
-   non-destructive backup of original sandbox data only when the installed app
-   is debuggable and Android permits `run-as`, or another verified migration.
-   Restore to the new long-lived signing channel only after backup integrity
-   and physical history count validation. This is not a proven recovery path.
+3. **Owner update 2026-10-24:** neither Infinix nor Poco currently has
+   FORMA installed. Infinix was reset, Poco is new. The earlier private signer
+   and missing old data are not first-installation blockers on these devices.
+   We can establish one fresh stable production signing identity now.
+4. The release key MUST be generated and retained securely by its owner,
+   with a private protected copy, using the manual signed-release workflow.
+   Then test first install and a genuine next-version update on both phones.
+   A disposable CI signer is still unacceptable for that first real install.
+   See `docs/SIGNING_DECISION.md`.
+
 
 ## Release JSON contract (same HTTPS origin)
 
@@ -55,6 +55,15 @@ different identity. Configure `forma_update_feed_url` in
 `app/src/main/res/values/forma_updates.xml` only after the signing decision,
 hosting and an end-to-end update-over-install test. The manifest publisher
 must publish atomically: upload immutable APK, verify hash, then publish feed.
+
+## Signed-APK workflow (prepared, not executed)
+
+`.github/workflows/signed-release.yml` provides an owner-triggered
+`main`-only signed build gated by protected secrets. It checks tests,
+lint, signer, package identity, version and APK fingerprint, then uploads a
+private release artifact. Before using it, the owner must generate and safely
+custody the permanent key and provide the GitHub release secrets. The signed
+APK is not yet built and no phone installation has taken place.
 
 ## Account model: one human, one authenticated identity
 
