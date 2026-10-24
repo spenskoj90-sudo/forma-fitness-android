@@ -18,6 +18,26 @@ fun equipmentAt(venue: EquipmentVenue): List<Equipment> = when (venue) {
     )
 }
 
+/** Selected workout setting can differ from where equipment was purchased.
+ * A gym may offer free weights as well as machines; combined is user-opted-in.
+ */
+enum class TrainingPlace(val label: String) {
+    HOME("Дома"), GYM("В зале"), COMBINED("Комбинировать")
+}
+
+fun availableEquipment(profile: Profile, place: TrainingPlace): Set<Equipment> {
+    val all = profile.equipment + Equipment.BODYWEIGHT
+    val allowed = when (place) {
+        TrainingPlace.HOME -> equipmentAt(EquipmentVenue.HOME).toSet()
+        TrainingPlace.GYM -> equipmentAt(EquipmentVenue.GYM).toSet() +
+            setOf(Equipment.BODYWEIGHT, Equipment.DUMBBELL, Equipment.BARBELL,
+                Equipment.KETTLEBELL, Equipment.MAT, Equipment.BENCH,
+                Equipment.PULL_UP_BAR)
+        TrainingPlace.COMBINED -> Equipment.entries.toSet()
+    }
+    return all intersect allowed
+}
+
 /** Anatomy labels are teaching aids, not a clinical motion analysis. */
 fun secondaryMuscles(exercise: Exercise): Set<Muscle> = when (exercise.id) {
     "squat", "goblet", "chair_squat", "leg_press", "smith_squat", "kettlebell_squat" -> setOf(Muscle.CORE)
