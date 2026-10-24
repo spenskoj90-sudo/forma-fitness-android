@@ -223,6 +223,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid());if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()}){Text("Отмена")}
  }
 }
+@OptIn(ExperimentalLayoutApi::class)
 @Composable fun TrainingScreen(p:Profile,place:TrainingPlace,vm:FormaViewModel){val plan=generateProgram(p,place=place);Page("Тренировки","Оборудование, восстановление и твои цели."){
  Panel("Где тренируемся"){
   FlowRow{TrainingPlace.entries.forEach{option->FilterChip(place==option,{vm.trainingPlace(option)},label={Text(option.label)},modifier=Modifier.padding(end=6.dp))}}
