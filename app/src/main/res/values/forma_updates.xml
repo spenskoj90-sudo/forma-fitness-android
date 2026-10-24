@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Set to an Owner-controlled HTTPS JSON feed only after signing is
+         configured and two consecutive same-certificate releases are tested. -->
+    <string name="forma_update_feed_url" translatable="false"></string>
+</resources>
