@@ -33,7 +33,10 @@ MAX_RECORD_JSON = 262144
 def validate_record(identity: UUID, payload: dict[str, Any], limit: int) -> dict[str, Any]:
     if not isinstance(payload, dict) or str(payload.get("id", "")) != str(identity):
         raise HTTPException(422, "Record identity does not match URL")
-    raw = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Document contains invalid JSON values") from None
     if len(raw.encode("utf-8")) > limit:
         raise HTTPException(413, "Document is too large")
     return payload
