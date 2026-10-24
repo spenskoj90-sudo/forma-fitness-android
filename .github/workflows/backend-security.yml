@@ -1,0 +1,32 @@
+name: FORMA backend security checks
+on:
+  push:
+    branches: [main, 'forma/**']
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-security.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-security.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FORMA backend test dependencies
+        working-directory: backend
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Verify Python syntax
+        working-directory: backend
+        run: python -m compileall -q auth.py api.py test_auth.py
+      - name: Run offline security tests (no cloud credentials)
+        working-directory: backend
+        run: python -m pytest -q test_auth.py
