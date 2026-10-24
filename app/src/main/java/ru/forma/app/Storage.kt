@@ -22,7 +22,7 @@ class ProfileRepository(private val db:FormaDatabase) {
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
  val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
  suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
- suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(load(p.id)==null);put(p)}}
+ suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
  suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
