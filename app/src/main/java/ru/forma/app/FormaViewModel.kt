@@ -64,4 +64,5 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}
  fun dark(v:Boolean?){action{app.settings.dark(v)}}
+ fun trainingPlace(place:TrainingPlace){action{app.settings.trainingPlace(place)}}
 }
