@@ -51,10 +51,18 @@ Date: 2026-10-24. Status: architectural contract and first Android implementatio
 The update host and the APK are both HTTPS and same-origin. Never put credentials,
 session tokens, health data or personal profiles in this public release feed.
 The client checks byte-level SHA-256 and the actual APK signer and refuses a
-different identity. Configure `forma_update_feed_url` in
-`app/src/main/res/values/forma_updates.xml` only after the signing decision,
+different identity. Set `FORMA_UPDATE_FEED_URL` as a protected release GitHub Actions variable
+(which Gradle injects into `R.string.forma_update_feed_url`) only after the signing decision,
 hosting and an end-to-end update-over-install test. The manifest publisher
 must publish atomically: upload immutable APK, verify hash, then publish feed.
+
+## Owner first-install baseline (confirmed)
+
+On 2026-10-24 the Owner confirmed that FORMA is not installed on either Poco
+(new device) or Infinix (factory-reset). No old on-device FORMA records need
+recovery. We can create a first permanent signing identity **before** the
+first installation and validate later in-place updates using that exact key.
+No key or complete signed APK has yet been generated/configured by this branch.
 
 ## Signed-APK workflow (prepared, not executed)
 
@@ -120,7 +128,17 @@ DELETE /v1/me                                          (confirmed)
 Conflict handling: append-only completed workouts are idempotent by workout
 UUID; duplicate uploads are no-ops. Independent measurement IDs merge; a
 conflicting edit to the same measurement must be surfaced for explicit
-resolution, never silently overwritten. Goal/equipment/settings profile edits
+resolution, never silently overwritten.
+
+The pure `domain/SyncMerge.kt` groundwork now implements this narrow
+**local calculation** for validated same-account/same-profile snapshots:
+identical workout/measurement UUIDs are idempotent, distinct UUIDs merge and
+the same UUID with different values returns a conflict instead of silently
+overwriting. Tests cover retries, two-phone divergent histories and cross-
+account mismatch. This is NOT an authenticated backend, live sync queue,
+server-side ownership test or usable sign-in: remote records cannot be trusted
+until the API enforces verified account identity.
+ Goal/equipment/settings profile edits
 use optimistic concurrency (409/412) and show differences. Partial sync is
 transactional; no complete-profile last-write-wins overwrite.
 
