@@ -351,8 +351,23 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
  }
 }
-@Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit){Page("Профиль",p.primary.label){
- Panel("Пользователи"){profiles.forEach{v->OutlinedButton({vm.select(v.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(p.id==v.id)"✓ ${v.name}"else v.name)}};Action("Добавить пользователя",create)}
+@Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit){
+ var profileSection by remember{mutableIntStateOf(0)}
+ var profileSearch by remember{mutableStateOf("")}
+ Page("Профиль",p.primary.label){
+  TabRow(selectedTabIndex=profileSection){
+   Tab(selected=profileSection==0,onClick={profileSection=0},text={Text("Пользователи")})
+   Tab(selected=profileSection==1,onClick={profileSection=1},text={Text("Обновление")})
+  }
+  if(profileSection==1){UpdateCenter()}else{
+   Panel("Пользователи · ${profiles.size}"){
+    if(profiles.size>4)OutlinedTextField(profileSearch,{profileSearch=it},label={Text("Найти профиль")},singleLine=true,modifier=Modifier.fillMaxWidth())
+    val matches=profiles.filter{it.name.contains(profileSearch,ignoreCase=true)}
+    matches.take(40).forEach{v->OutlinedButton({vm.select(v.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(p.id==v.id)"✓ ${v.name}"else v.name)}}
+    if(matches.size>40)Text("Показаны первые 40. Уточните поиск.",style=MaterialTheme.typography.bodySmall)
+    Action("Добавить пользователя",create)
+    Text("Это локальные профили. До подключения защищённой синхронизации переносите данные между телефонами через резервные копии.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+   }
  Panel("${p.name} · ${p.age} лет"){Text("${p.heightCm} см · ${p.weightKg} кг");Text("${p.experience.label} · восстановление ${p.recovery}/5");Action("Изменить профиль и цели",edit)}
  val coach by vm.coachStatus.collectAsState()
  val context=LocalContext.current
@@ -365,7 +380,9 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  NotificationPanel()
  BackupPanel(vm)
  Panel("FORMA · 0.2.0"){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
-}}
+  }
+ }
+}
 @Composable fun SwitchRow(label:String,value:Boolean,change:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text(label,Modifier.weight(1f));Switch(value,change)}}
 
 
