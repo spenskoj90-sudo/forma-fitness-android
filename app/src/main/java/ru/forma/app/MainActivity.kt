@@ -395,14 +395,18 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 
 
 @Composable fun BackupPanel(vm:FormaViewModel){
- val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let(vm::exportBackup)}
+ val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{vm.exportBackup(it,allProfiles=false)}}
+ val exportAll=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{vm.exportBackup(it,allProfiles=true)}}
  val import=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(vm::importBackup)}
  var confirm by remember{mutableStateOf(false)}
+ var confirmAll by remember{mutableStateOf(false)}
  Panel("Резервная копия"){
-  Text("Все профили, история и замеры — в одном локальном файле. Сначала завершите текущее занятие. Файл содержит личные данные; храните его в защищённом месте.")
-  Action("Экспортировать копию",{export.launch("FORMA-backup-${java.time.LocalDate.now()}.json")})
+  Text("По умолчанию сохраняется только текущий профиль: его история, тренировки и замеры. На другом телефоне файл можно импортировать как отдельный локальный профиль. Для защищённой автоматической синхронизации потребуется вход в аккаунт.")
+  Action("Экспортировать текущий профиль",{export.launch("FORMA-profile-${java.time.LocalDate.now()}.json")})
+  TextButton({confirmAll=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Экспортировать все локальные профили")}
   OutlinedButton({confirm=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Восстановить из файла")}
  }
+ if(confirmAll)AlertDialog(onDismissRequest={confirmAll=false},title={Text("Экспорт всех пользователей")},text={Text("Копия будет включать тренировки, замеры и другие персональные данные ВСЕХ локальных пользователей этого телефона. Делитесь таким файлом только с разрешения каждого владельца данных.")},confirmButton={TextButton({confirmAll=false;exportAll.launch("FORMA-all-profiles-${java.time.LocalDate.now()}.json")}){Text("Создать общую копию")}},dismissButton={TextButton({confirmAll=false}){Text("Отмена")}})
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Восстановление копии")},text={Text("Профили добавятся как отдельные копии. Текущие данные не заменяются. Повторный импорт создаёт ещё одну копию каждого профиля. Файл до 32 МБ.")},confirmButton={TextButton({confirm=false;import.launch(arrayOf("application/json","text/plain","application/octet-stream"))}){Text("Выбрать файл")}},dismissButton={TextButton({confirm=false}){Text("Отмена")}})
 }
 
