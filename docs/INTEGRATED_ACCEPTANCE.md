@@ -21,9 +21,11 @@ layout, four-tab navigation and bundled offline hero artwork.
 - Instrumentation recovery test now actually sends a stop command after
   persisted resume and fresh timer ticks. Previously it was commented out by
   literal backslash-n text, producing false failures on Android 8/11/14.
-- Separate preview package `ru.forma.fitness.acceptance`, visible as
-  `FORMA Проверка`, via `.github/workflows/owner-acceptance.yml`.
-  This preserves existing FORMA, FORMA Тест and FORMA Дизайн installations.
+- **Updated Owner direction (2026-10-24):** no further side-by-side preview
+  application IDs. Keep `ru.forma.fitness` stable. The former isolated
+  acceptance workflow and suffix were retired in the multi-device branch.
+  The existing installed FORMA app is not to be replaced by a disposable
+  CI-signed build; real upgrades require the same signer and data migration proof.
 
 ## Gated or not fabricated
 - Real-device acceptance on Infinix Zero 30 and Realme C31 remains mandatory;
@@ -37,12 +39,14 @@ layout, four-tab navigation and bundled offline hero artwork.
   an existing app to circumvent Android signature mismatch.
 - Nutrition/social tiles are not promised as real features without implementation.
 
-Before an Owner installs the acceptance APK, confirm exact-head GitHub
-verify and emulator API26/API30/API34 runs, APK package, signer, SHA256.
+Do not offer an Owner any development/debug APK for installation. First
+obtain the actual installed signer and prepare a stable update channel. Only
+then verify exact-HEAD CI API26/API30/API34, new APK package, signature and
+SHA256 and perform an update-over-install on physical hardware.
 
 ## Consolidation with the earlier isolated phone-test draft
 
-Draft PR #4 introduces a separate `ru.forma.fitness.physicaltest` package
+Historic draft PR #4 introduces a separate `ru.forma.fitness.physicaltest` package
 and shares Gradle, manifest and instrumentation test files with this branch.
 Do **not** merge its outdated UI test/Gradle changes over this candidate:
 they target the earlier five-tab UI. This branch already provides the
@@ -85,3 +89,12 @@ uninstall the old version to bypass a certificate mismatch. A disposable
 CI debug signing identity cannot prove in-place upgrades of an installed
 0.1.0 application. Final visual approval and release-signing custody
 require separate Owner decisions.
+
+
+### Superseding requirement: no additional installed FORMA variants
+
+The user expressly rejected repeated separate application installations.
+Future Owners will receive only genuine updates to `ru.forma.fitness` after
+certificate compatibility and non-destructive migration are proved. Existing
+`FORMA Тест` / `FORMA Проверка` installations, if any, are left untouched;
+do not uninstall or clear their data automatically.
