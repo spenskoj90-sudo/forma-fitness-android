@@ -113,9 +113,9 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 }
 
 /** Schematic zone highlight only; not an animation of safe exercise technique. */
-@Composable fun MuscleFocusMap(muscle:Muscle,modifier:Modifier=Modifier){
+@Composable fun MuscleFocusMap(muscle:Muscle,modifier:Modifier=Modifier,secondary:Set<Muscle> = emptySet()){
  val green=MaterialTheme.colorScheme.primary
- Canvas(modifier.semantics{contentDescription="Условная схема: "+muscle.label}){
+ Canvas(modifier.semantics{contentDescription="Условная схема: основная "+muscle.label+(if(secondary.isEmpty())"" else "; дополнительные "+secondary.joinToString{it.label})}){
   val w=size.width;val h=size.height;val ink=Color(0xFFB4C4C4).copy(alpha=0.65f)
   drawCircle(ink,w*0.075f,Offset(w*0.50f,h*0.16f))
   drawLine(ink,Offset(w*0.50f,h*0.24f),Offset(w*0.50f,h*0.65f),2.dp.toPx())
@@ -124,7 +124,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   drawLine(ink,Offset(w*0.73f,h*0.31f),Offset(w*0.80f,h*0.67f),2.dp.toPx())
   drawLine(ink,Offset(w*0.41f,h*0.65f),Offset(w*0.33f,h*0.94f),2.dp.toPx())
   drawLine(ink,Offset(w*0.59f,h*0.65f),Offset(w*0.67f,h*0.94f),2.dp.toPx())
-  val zones=when(muscle){
+  fun zones(group:Muscle)=when(group){
    Muscle.BACK->listOf(0.40f to 0.42f,0.60f to 0.42f)
    Muscle.CHEST->listOf(0.41f to 0.37f,0.59f to 0.37f)
    Muscle.SHOULDERS->listOf(0.28f to 0.31f,0.72f to 0.31f)
@@ -132,7 +132,10 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    Muscle.CORE->listOf(0.50f to 0.52f)
    Muscle.LEGS->listOf(0.39f to 0.78f,0.61f to 0.78f)
   }
-  zones.forEach{(x,y)->drawCircle(green.copy(alpha=0.22f),w*0.12f,Offset(w*x,h*y));drawCircle(green,w*0.048f,Offset(w*x,h*y))}
+  secondary.filter{it!=muscle}.forEach{group->
+   zones(group).forEach{(x,y)->drawCircle(green.copy(alpha=0.13f),w*0.11f,Offset(w*x,h*y));drawCircle(ink,w*0.03f,Offset(w*x,h*y))}
+  }
+  zones(muscle).forEach{(x,y)->drawCircle(green.copy(alpha=0.26f),w*0.12f,Offset(w*x,h*y));drawCircle(green,w*0.048f,Offset(w*x,h*y))}
  }
 }
 
@@ -277,7 +280,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF0B1B20))){
       FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
       Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
-       MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(145.dp))
+       MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(145.dp),secondaryMuscles(current.exercise))
        Text("Зона нагрузки",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
       }
       Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color(0xFF091217)))).padding(14.dp)){
