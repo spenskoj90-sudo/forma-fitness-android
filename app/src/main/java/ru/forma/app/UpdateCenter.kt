@@ -21,6 +21,7 @@ import java.io.File
 import java.net.URL
 import java.security.MessageDigest
 import javax.net.ssl.HttpsURLConnection
+import ru.forma.domain.validateUpdateCandidate
 
 /** Non-Play/sideload release channel; the system installer retains final control. */
 private const val MAX_UPDATE_APK_BYTES = 200L * 1024 * 1024
@@ -38,7 +39,8 @@ data class FormaRelease(
 private fun validHttps(url: String): Uri {
     val uri = Uri.parse(url)
     require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
-        uri.userInfo == null && uri.fragment == null) { "Разрешён только прямой HTTPS-адрес обновлений" }
+        uri.userInfo == null && uri.fragment == null &&
+        (uri.port == -1 || uri.port == 443)) { "Разрешён только стандартный HTTPS-порт обновлений" }
     return uri
 }
 
@@ -115,15 +117,12 @@ class FormaUpdateClient(private val context: Context) {
             require(apk.host.equals(feed.host, ignoreCase = true)) {
                 "APK должен размещаться на том же защищённом сервере"
             }
-            require(next.applicationId == context.packageName) { "Пакет обновления не совпадает с установленным" }
-            require(next.sha256.matches(Regex("[0-9a-f]{64}")) &&
-                next.certificateSha256.matches(Regex("[0-9a-f]{64}"))) {
-                "Некорректные контрольные суммы обновления"
-            }
-            require(next.certificateSha256 == certificateFingerprint(androidPackageInfo(context))) {
-                "Подпись нового выпуска не совпадает с подписью установленной FORMA"
-            }
-            next.takeIf { it.versionCode > versionCode(androidPackageInfo(context)) }
+            val installed = androidPackageInfo(context)
+            val newer = validateUpdateCandidate(
+                context.packageName, versionCode(installed), certificateFingerprint(installed),
+                next.applicationId, next.versionCode, next.sha256, next.certificateSha256
+            )
+            next.takeIf { newer }
         } finally { connection.disconnect() }
     }
 
@@ -131,9 +130,11 @@ class FormaUpdateClient(private val context: Context) {
         val base = validHttps(context.getString(R.string.forma_update_feed_url).trim())
         val source = validHttps(release.apkUrl)
         require(source.host.equals(base.host, ignoreCase = true))
-        require(release.applicationId == context.packageName)
-        require(release.versionCode > versionCode(androidPackageInfo(context)))
-        require(release.certificateSha256 == certificateFingerprint(androidPackageInfo(context)))
+        val installed = androidPackageInfo(context)
+        require(validateUpdateCandidate(
+            context.packageName, versionCode(installed), certificateFingerprint(installed),
+            release.applicationId, release.versionCode, release.sha256, release.certificateSha256
+        )) { "Обновление уже установлено или имеет неверную версию" }
         val dir = File(context.cacheDir, "verified-updates").apply { mkdirs() }
         val temp = File(dir, "forma-update.apk")
         temp.delete()
