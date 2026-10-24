@@ -54,9 +54,9 @@ fun suggestWeight(previous:Double,minReps:Int,target:Int,effort:Int,pain:Boolean
  if(recovery<3)return previous
  return if(minReps>=target&&effort<=7&&previous>0)kotlin.math.round(previous*1.05*10)/10 else previous
 }
-fun generateProgram(p:Profile,now:Long=System.currentTimeMillis()):List<TrainingDay>{
+fun generateProgram(p:Profile,now:Long=System.currentTimeMillis(),place:TrainingPlace=TrainingPlace.COMBINED):List<TrainingDay>{
  if(!p.valid()||p.limitations.isNotBlank()||p.recovery<=1||p.active?.painReported==true)return emptyList()
- val available=exerciseCatalog.filter{it.equipment in p.equipment||it.equipment==Equipment.BODYWEIGHT};val strengthDays=mutableListOf<Int>()
+ val gear=availableEquipment(p,place);val available=exerciseCatalog.filter{it.equipment in gear};val strengthDays=mutableListOf<Int>()
  for(d in p.days.sorted())if(strengthDays.size<3&&strengthDays.none{val gap=kotlin.math.abs(d-it);gap<=1||gap==6})strengthDays+=d
  val returning=p.history.filter{it.status==Phase.DONE&&it.day.cardio==null}.maxOfOrNull{it.finishedMs}?.let{now-it>21L*86400000}?:true
  val reps=when(p.primary){Goal.STRENGTH->8;Goal.ENDURANCE->15;else->12};val sets=if(p.experience==Experience.BEGINNER||returning)2 else 3
@@ -77,5 +77,5 @@ fun generateProgram(p:Profile,now:Long=System.currentTimeMillis()):List<Training
   val last=p.history.sortedByDescending{it.finishedMs}.firstOrNull{it.status==Phase.DONE&&it.sets.any{s->s.exerciseId==ex.id}}?.sets?.filter{it.exerciseId==ex.id}.orEmpty()
   val previous=last.lastOrNull()?.weight?:0.0;val weight=suggestWeight(previous,if(last.size>=sets)last.minOf{it.reps}else 0,reps,last.maxOfOrNull{it.effort}?:10,last.any{it.pain}||holdProgression,p.recovery,returning)
   Prescription(ex,sets,reps,weight,if(p.primary==Goal.STRENGTH)120 else 90,"${p.primary.label}; ${p.experience.label}. "+if(returning)"Возвращение: 2 подхода, 70% прошлого веса."else if(holdProgression)"Последнее силовое занятие остановлено: нагрузка не повышается."else if(weight>previous)"Все подходы выполнены: предлагается +5%, подтвердите вес."else"Вес сохранён, корректируйте по самочувствию.")
- },explanation="Всё тело и доступные акценты. Силовые дни разделены отдыхом. Вес: на одну гантель или общий вес штанги.")}
+ },explanation="Всё тело и доступные акценты. Место: ${place.label}. Силовые дни разделены отдыхом. Вес: на одну гантель или общий вес штанги.")}
 }
