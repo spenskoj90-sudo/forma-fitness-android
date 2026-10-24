@@ -7,6 +7,7 @@ android {
  signingConfigs {
   getByName("debug") { storeFile=rootProject.file(".forma-signing/debug.keystore") }
   create("formaRelease") {
+   storeType="pkcs12"
    System.getenv("FORMA_RELEASE_KEYSTORE_PATH")?.let { storeFile=file(it) }
    storePassword=System.getenv("FORMA_RELEASE_STORE_PASSWORD")
    keyAlias=System.getenv("FORMA_RELEASE_KEY_ALIAS")
