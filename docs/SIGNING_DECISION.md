@@ -20,7 +20,12 @@ installation are historical only. They must not block the FIRST new install.
 
 ## Secure one-time signing setup
 
-1. Generate a new 3072/4096-bit RSA Android release key **locally under the
+1. From an Owner-controlled computer, run
+   `bash scripts/create-release-signer.sh /absolute/private/path/forma-release.p12`.
+   This one-time script refuses to put a signing key inside the repository or
+   overwrite an existing one. Password entry is interactive and not placed
+   in a command-line argument. Do not run it in GitHub CI.
+   Generate a new 3072/4096-bit RSA Android release key **locally under the
    Owner's control** using JDK `keytool`; a release password and key material
    must never be included in the repository, issue, ChatGPT, workflow logs,
    Android APK assets, or public release feed.
