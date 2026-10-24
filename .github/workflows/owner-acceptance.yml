@@ -21,8 +21,8 @@ jobs:
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Owner Acceptance,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
-      - name: Build separately installable APK
-        run: ./gradlew :app:assembleDebug -PformaAcceptance=true --console=plain
+      - name: Run unit tests and lint before building isolated acceptance APK
+        run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug -PformaAcceptance=true --console=plain
       - name: Check isolated package, version, cryptographic signature and hash
         shell: bash
         run: |
