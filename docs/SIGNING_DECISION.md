@@ -1,18 +1,73 @@
-# FORMA stable update channel — prepared Owner decision
+# FORMA — permanent signing and first installation baseline
 
-Package: ru.forma.fitness. Candidate 0.2.0/versionCode 2; prior 0.1.0/code 1. Debug CI currently uses a newly generated signer on each run. These artifacts are functional test builds, not a compatible update channel for previously installed builds.
+Owner status update (2026-10-24): **neither Infinix nor the new Poco
+currently has FORMA installed**. Infinix was factory-reset. Therefore
+there is NO current app data or installed certificate on those two devices
+to preserve or compare. Earlier concerns about migrating a live v0.1.0
+installation are historical only. They must not block the FIRST new install.
 
-## Concrete proposal
-Use one FORMA-only release signing key. Owner retains an encrypted offline master copy plus a separately held recovery copy/password. Configure repository-scoped GitHub Actions secrets: FORMA_RELEASE_KEYSTORE_B64, FORMA_RELEASE_STORE_PASSWORD, FORMA_RELEASE_KEY_ALIAS and FORMA_RELEASE_KEY_PASSWORD. Key material must never enter Git, chat, reports or build artifacts. Release workflow is manual; it verifies all four secrets exist, builds and verifies the release APK, emits only certificate fingerprint/package/version/hash, and deletes runner temporary key files after completion. No public publication or key creation is performed by preparing the workflow.
+## Permanent identity
 
-Gradle consumes FORMА_RELEASE_* environment variables and FORMА_RELEASE_KEYSTORE_PATH (ASCII FORMA in implementation). Missing custody fails closed, not fallback to debug. Public store publication is outside this decision.
+- One product and one Android package: `ru.forma.fitness`.
+- One owner-controlled, permanent FORMA-only signing identity.
+- Every future update retains the same package/certificate, uses strictly
+  increasing `versionCode`, and keeps Room and DataStore data in place.
+- No separately installed "FORMA Тест", "FORMA Проверка" or other application
+  ID is created as the update mechanism. CI debug APKs remain for CI evidence,
+  **not** user distribution.
+- On first installation, verify signer SHA-256 and back up its encrypted
+  keystore before considering the first build a supported release.
 
-## Owner decision still required
-Approve this custody arrangement and provide a secure approved destination for encrypted master/recovery copies. Key generation and filling permanent secrets occur only after that decision. No password or key needs to be sent in this chat.
+## Secure one-time signing setup
 
-## Existing installation
-The exact certificate of the Owner's installed APK must be compared with the new certificate before claiming update compatibility. Previously inspected run 38388029382 used certificate SHA-256 f64c119c6bcc34e33f2061cf8873f6c57e9b186a10c13644c3a0719467605225; this does not establish which APK is currently installed. If the original private signer was discarded, the new signer cannot update it in place.
+1. Generate a new 3072/4096-bit RSA Android release key **locally under the
+   Owner's control** using JDK `keytool`; a release password and key material
+   must never be included in the repository, issue, ChatGPT, workflow logs,
+   Android APK assets, or public release feed.
+2. Keep an encrypted offline master copy and a separately protected recovery
+   copy (plus documented passphrase custody). Restrict access to the owner.
+   If this key is lost, directly updating already-installed APKs will become
+   impossible unless a separately validated signing-rotation mechanism exists.
+3. Configure repository/environment secrets in GitHub Actions:
+   `FORMA_RELEASE_KEYSTORE_B64`,
+   `FORMA_RELEASE_STORE_PASSWORD`,
+   `FORMA_RELEASE_KEY_ALIAS`,
+   `FORMA_RELEASE_KEY_PASSWORD`.
+   Base64 is only an encoding, **not** encryption; it must stay protected
+   as a secret. Protect the `forma-release` environment with owner approval.
+4. Once approved changes and tests are merged into `main`, launch the
+   **manual** `.github/workflows/signed-release.yml` workflow with a new
+   integer `version_code` and a semantic `version_name`. It never pushes
+   a public APK automatically. The workflow checks unit tests/lint, signing,
+   exact application ID, version and APK SHA-256, then uploads a **private**
+   signed APK artifact and verification metadata. No keystore is uploaded.
+5. The owner should install only the verified signed APK from the private
+   artifact after acceptance. Never use a CI debug APK as the first official
+   installation.
+6. Configure an Owner-controlled HTTPS file host and signed-release manifest
+   only after successful identity checks. The in-app `Обновление` tab will
+   remain disabled while `forma_update_feed_url` is empty.
+7. Verify a second **higher-version, same-key** signed build installs over
+   the first one on Infinix and Poco and preserves profile/history/measurement
+   records. Record both signers, SHA256, and retained record counts.
 
-Safe migration requires export from the old installed app before replacing it. The old 0.1.0 app has no file export, so options must preserve its database first: recover the original key if it exists, or test an Owner-assisted Android backup/extraction path for that debuggable build and restore the validated data into a separately installed migration build. Until such a path is verified, keep the old installation and history intact. Do not suggest uninstalling as a fix. New export/import protects data for all future installations of the new build.
+The first release signing and first installation are intentionally **not**
+reported as completed by merely adding source code or workflows.
 
-CI update-over-install with a single temporary signer proves the code/version/database behavior under a compatible certificate only; it does not recover old key custody or prove compatibility with the Owner's current installation.
+## Release gates
+
+- CI: `domain:test`, `app:testDebugUnitTest`, `app:lintDebug`, and
+  emulator API26/API30/API34 acceptance at the final SHA.
+- Security: a signing certificate on which the Owner holds private custody,
+  protected release secrets, and no undeclared permissions or silent install.
+- Data continuity: fresh install → create a profile/record set → update over
+  install to a higher version → assert exact saved records and independent
+  profiles are intact after app process restart.
+- Physical: Infinix + Poco, offline workout + optional sync once implemented,
+  background training, spoken prompts, visuals and update UI.
+- Server: auth/sync and exercise-specific media are separate gates; adding
+  them in a source branch does not make them operational.
+
+An update may be initiated from within FORMA, but Android presents its own
+installation confirmation. A third-party app cannot silently bypass Android's
+package installation and signature controls.
