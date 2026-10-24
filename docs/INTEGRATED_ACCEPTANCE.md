@@ -11,6 +11,11 @@ layout, four-tab navigation and bundled offline hero artwork.
 - Muscle-zone schematic during exercise, instructions on demand, precise
   manual weights/repetitions and a foreground timed runner with safe pain-stop.
 - Room transactional profile/history backup/restore, measurements and progress.
+- Home reports both all completed workouts and separately the number of distinct
+  scheduled plan days completed this week. Optional cardio, a repeated session
+  on one scheduled day and stopped workouts cannot inflate the plan indicator.
+  Regression tests cover repeated/off-plan workouts, scheduled cardio mode
+  changes and week-boundary cases.
 - One-tap **explicit manual** weekly text report sharing for the current profile.
   Personal data is not sent anywhere automatically.
 - Instrumentation recovery test now actually sends a stop command after
@@ -34,3 +39,49 @@ layout, four-tab navigation and bundled offline hero artwork.
 
 Before an Owner installs the acceptance APK, confirm exact-head GitHub
 verify and emulator API26/API30/API34 runs, APK package, signer, SHA256.
+
+## Consolidation with the earlier isolated phone-test draft
+
+Draft PR #4 introduces a separate `ru.forma.fitness.physicaltest` package
+and shares Gradle, manifest and instrumentation test files with this branch.
+Do **not** merge its outdated UI test/Gradle changes over this candidate:
+they target the earlier five-tab UI. This branch already provides the
+independent `ru.forma.fitness.acceptance` package as `FORMA Проверка`,
+with the current four-tab flow. Keep the original `ru.forma.fitness` and
+existing `FORMA Тест` untouched. PR #4 can be retired only after its
+unique requirements have been checked against this candidate.
+
+## Owner physical acceptance checklist
+
+Use a **successful exact-HEAD** acceptance APK only; record the HEAD SHA,
+workflow run, APK SHA-256 and signer fingerprint before any installation.
+Installation must offer a **new** `FORMA Проверка` icon, never replacement
+of a pre-existing FORMA or FORMA Тест installation. Otherwise stop.
+
+1. Launch without a network connection. Create two fictitious profiles.
+   The new default must be Mon/Wed/Fri strength, with optional cardio;
+   switching profiles must not reveal another profile's private history.
+2. Compare Home, Training, exercise runner, Statistics and Profile against
+   the approved image. Check actual typography, cropping, light/dark mode,
+   Android system insets, font scaling and accessible touch targets.
+3. Complete one strength workout with sets, rest, pause/resume, save and
+   relaunch; verify session timing and saved weights/repetitions. On Home,
+   redoing the same scheduled session must change completed-workout count
+   but **not** the distinct scheduled-day progress count.
+4. Complete voluntary cardio on a scheduled strength day; verify cardio
+   appears in history while plan adherence does not increase. A scheduled
+   cardio day, if enabled in Profile, may count once after completion.
+5. Check lock-screen and app-background timers, notification pause/stop,
+   Russian offline voice and audio interruptions, with notification
+   permission both granted and denied.
+6. Enter sample measurements, export a local backup, import into separate
+   profiles, close and relaunch. Check editing, data isolation and
+   rollback behavior if an invalid import is deliberately selected.
+7. Repeat on Infinix Zero 30 and Realme C31, recording OS version,
+   screenshots and each outcome as PASS / FAIL / OBSERVED / SKIPPED.
+
+Do not induce actual pain to test pain-stop. Do not clear app data or
+uninstall the old version to bypass a certificate mismatch. A disposable
+CI debug signing identity cannot prove in-place upgrades of an installed
+0.1.0 application. Final visual approval and release-signing custody
+require separate Owner decisions.
