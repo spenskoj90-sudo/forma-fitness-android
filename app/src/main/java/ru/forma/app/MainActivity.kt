@@ -145,8 +145,11 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
 }
 @Composable fun Home(p:Profile,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
- val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs>=weekStart(System.currentTimeMillis())}
- val plan=generateProgram(p);val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.minByOrNull{(it.day-today+7)%7}
+ val now=System.currentTimeMillis();val weekStartMs=weekStart(now)
+ val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs in weekStartMs..now}
+ val plan=generateProgram(p)
+ val plannedCompleted=countCompletedPlannedDays(p.history,plan,weekStartMs,now)
+ val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.minByOrNull{(it.day-today+7)%7}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
   Text("Твой путь к сильной и здоровой версии себя",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
   Box(Modifier.fillMaxWidth().height(316.dp).clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
@@ -178,8 +181,11 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   }
   Panel("На этой неделе"){
    Text(weekly.toString()+" завершённых занятий",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-   Text("План: "+plan.size+" занятий · "+p.primary.label,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-   LinearProgressIndicator(progress={if(p.days.isEmpty())0f else (weekly.toFloat()/p.days.size).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())
+   if(plan.isEmpty())Text("Сейчас нет доступного недельного плана.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+   else{
+    Text("По плану: $plannedCompleted из ${plan.size} дней · ${p.primary.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    LinearProgressIndicator(progress={plannedCompleted.toFloat()/plan.size},modifier=Modifier.fillMaxWidth())
+   }
   }
   if(p.limitations.isNotBlank()||p.recovery<=1)Panel("Сначала восстановление"){
    Text("При ограничениях и боли автоматическая программа приостановлена. Уточните допустимые нагрузки и обновите самочувствие.")
