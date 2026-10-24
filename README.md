@@ -43,4 +43,29 @@ See `docs/CHECKPOINT.md` for exact tested SHA, artifacts, results and remaining 
 - Current Owner devices for future physical acceptance: Infinix and Poco.
 
 **Do not install a disposable CI/debug APK over the user's existing app.**
-The original installed signing certificate is not yet proven compatible.
+The Owner confirmed (2026-10-24) that FORMA is not installed on
+either the reset Infinix or the new Poco. No old installed certificate or
+personal data needs migration from those devices. The FIRST installed APK must
+be signed using the one permanent, recoverably backed-up FORMA release key;
+future APKs must use the SAME key. See `docs/SIGNING_DECISION.md`.
+
+
+## Release preparation: one first install, all later versions are updates
+
+The manual `.github/workflows/signed-release.yml` workflow targets only
+`main` and requires a protected GitHub `forma-release` environment with
+one permanent keystore and four secret values. It outputs only a signed APK,
+its hash, signer fingerprint, package identity and version, not the keystore.
+The owner must create/back up the key and configure protected secrets before
+running the workflow. No release APK has been signed or installed yet.
+
+Gradle release parameters:
+`-PformaVersionCode=3 -PformaVersionName=0.3.0` (example only);
+`-PformaUpdateFeedUrl=https://OWNER-HOST/releases/latest.json` is an
+optional build-time value normally supplied by the Actions variable
+`FORMA_UPDATE_FEED_URL`; empty disables the update feed safely.
+
+`domain/SyncMerge.kt` now provides a unit-tested, account-scoped **merge
+algorithm**, NOT account registration, verified authentication, an API or
+working cross-phone sync. Cloud identity and server provisioning are still
+required and will remain separate from SENTINEL.
