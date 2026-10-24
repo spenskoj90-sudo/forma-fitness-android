@@ -36,7 +36,14 @@ class ProfileRepository(private val db:FormaDatabase) {
   val next=op(active);require(next.id==active.id && next.profileId==id)
   put(p.copy(active=next))
  }
- suspend fun exportBackup():String=db.withTransaction {encodeBackup(Backup(profiles=db.profiles().all().map(::decode)))}
+ /** Prefer exporting a single selected profile; all-profile export must be
+  * explicit in UI, since different local profiles may belong to other people.
+  */
+ suspend fun exportBackup(profileId:String?=null):String=db.withTransaction {
+  val selected=if(profileId==null)db.profiles().all().map(::decode)
+   else listOf(load(profileId)?:error("Профиль не найден"))
+  encodeBackup(Backup(profiles=selected))
+ }
  suspend fun importBackup(text:String):List<String> {
   val backup=decodeBackup(text)
   return db.withTransaction {
