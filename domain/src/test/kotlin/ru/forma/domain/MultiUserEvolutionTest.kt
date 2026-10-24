@@ -38,6 +38,43 @@ class MultiUserEvolutionTest {
         assertEquals(Muscle.entries.toSet(), exercises.map { it.exercise.muscle }.toSet())
     }
 
+    @Test fun homeAndGymPlansNeverSelectUnavailableEquipment() {
+        val p = Profile(name = "Mixed", equipment = setOf(
+            Equipment.BODYWEIGHT, Equipment.DUMBBELL, Equipment.BARBELL,
+            Equipment.LEG_PRESS_MACHINE, Equipment.SEATED_ROW_MACHINE
+        ))
+        val home = generateProgram(p, place = TrainingPlace.HOME)
+        val gym = generateProgram(p, place = TrainingPlace.GYM)
+        val mixed = generateProgram(p, place = TrainingPlace.COMBINED)
+        val homeGear = availableEquipment(p, TrainingPlace.HOME)
+        val gymGear = availableEquipment(p, TrainingPlace.GYM)
+        assertFalse(Equipment.LEG_PRESS_MACHINE in homeGear)
+        assertTrue(Equipment.LEG_PRESS_MACHINE in gymGear)
+        assertTrue(home.flatMap { it.exercises }.all { it.exercise.equipment in homeGear })
+        assertTrue(gym.flatMap { it.exercises }.all { it.exercise.equipment in gymGear })
+        assertTrue(mixed.flatMap { it.exercises }.all { it.exercise.equipment in p.equipment })
+        assertTrue(mixed.flatMap { it.exercises }.any { it.exercise.equipment == Equipment.LEG_PRESS_MACHINE })
+        assertFalse(home.flatMap { it.exercises }.any { it.exercise.equipment == Equipment.LEG_PRESS_MACHINE })
+    }
+
+    @Test fun homeTrainingStillWorksForGymOnlyProfiles() {
+        val p = Profile(name = "Gym", equipment = setOf(
+            Equipment.LEG_PRESS_MACHINE, Equipment.LAT_PULLDOWN
+        ))
+        val home = generateProgram(p, place = TrainingPlace.HOME).flatMap { it.exercises }
+        assertTrue(home.isNotEmpty())
+        assertTrue(home.all { it.exercise.equipment == Equipment.BODYWEIGHT })
+    }
+
+    @Test fun addedTrainingPlacesDoNotChangeLegacySavedWorkoutEquipment() {
+        val legacy = Profile(name = "Legacy", equipment = setOf(
+            Equipment.BODYWEIGHT, Equipment.DUMBBELL, Equipment.BARBELL
+        ))
+        val migrated = Json.decodeFromString<Profile>(Json.encodeToString(legacy))
+        assertEquals(legacy.equipment, migrated.equipment)
+        assertEquals(TrainingPlace.HOME, TrainingPlace.valueOf("HOME"))
+    }
+
     @Test fun mannequinUsesLatestMeasurementsAndClampsOutliers() {
         val base = Profile(name = "Demo", heightCm = 178.0, weightKg = 75.0)
         val original = bodyShape(base)
