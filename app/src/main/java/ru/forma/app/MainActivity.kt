@@ -72,7 +72,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
      p?.active!=null->Runner(p!!.active!!,vm)
      p==null->Text("Загрузка…")
-     else->when(tab){0->Home(p!!,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
+     else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,settings.trainingPlace,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
     }
    }
   }
@@ -147,10 +147,10 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   }
  }
 }
-@Composable fun Home(p:Profile,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
+@Composable fun Home(p:Profile,place:TrainingPlace,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
  val now=System.currentTimeMillis();val weekStartMs=weekStart(now)
  val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs in weekStartMs..now}
- val plan=generateProgram(p)
+ val plan=generateProgram(p,place=place)
  val plannedCompleted=countCompletedPlannedDays(p.history,plan,weekStartMs,now)
  val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.minByOrNull{(it.day-today+7)%7}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
@@ -166,6 +166,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
      if(next!=null){
       Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
+       Text("Место: "+place.label,color=Color(0xFFC8D6D8),style=MaterialTheme.typography.labelSmall)
       Action("▶  Начать тренировку",{vm.start(next)})
      }else Action("Открыть профиль",onProfile)
     }
@@ -222,9 +223,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid());if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()}){Text("Отмена")}
  }
 }
-@Composable fun TrainingScreen(p:Profile,vm:FormaViewModel){val plan=generateProgram(p);Page("Тренировки","Оборудование, восстановление и твои цели."){
+@Composable fun TrainingScreen(p:Profile,place:TrainingPlace,vm:FormaViewModel){val plan=generateProgram(p,place=place);Page("Тренировки","Оборудование, восстановление и твои цели."){
+ Panel("Где тренируемся"){
+  FlowRow{TrainingPlace.entries.forEach{option->FilterChip(place==option,{vm.trainingPlace(option)},label={Text(option.label)},modifier=Modifier.padding(end=6.dp))}}
+  Text("Выбранное место сохраняется и для кнопки «Начать тренировку» на главной. При тренировке дома заловые тренажёры не предлагаются.",style=MaterialTheme.typography.bodySmall)
+ }
  if(plan.isEmpty())Text("Выберите дни и проверьте ограничения и восстановление в профиле.")
- plan.forEach{day->TrainingDayCard(day,p,vm)}
+ plan.forEach{day->TrainingDayCard(day,p,vm,place)}
  // New profiles start with three spaced strength days. Optional cardio is
  // still directly accessible without changing the user's saved schedule.
  if(plan.isNotEmpty() && plan.none{it.cardio!=null})Panel("Кардио по желанию"){
@@ -233,17 +238,17 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
  Panel("Техника упражнений"){
   Text("${exerciseCatalog.size} упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
-  exerciseCatalog.filter{it.equipment in p.equipment||it.equipment==Equipment.BODYWEIGHT}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
+  exerciseCatalog.filter{it.equipment in availableEquipment(p,place)}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
  }
 }}
-@Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel){
+@Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel,place:TrainingPlace){
  var replacements by remember(day,p.equipment){mutableStateOf<Map<Int,Exercise>>(emptyMap())}
  val chosen=day.copy(exercises=day.exercises.mapIndexed{i,item->replacements[i]?.let{item.copy(exercise=it,weight=0.0,reason="Замена выбрана вручную. Начните с лёгкого веса.")}?:item})
  Panel("${dayNames[day.day-1]} · ${day.name}"){
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
    Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
-   val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && (it.equipment==Equipment.BODYWEIGHT||it.equipment in p.equipment)}
+   val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
    if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
   }
   if(day.cardio!=null)CardioControls(chosen,vm)else Action("Начать тренировку",{vm.start(chosen)})
