@@ -106,4 +106,25 @@ class StorageTest {
   db.close()
  }
 
+ @Test fun scopedBackupExcludesOtherLocalUsersAndRetainsMeasurements()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val alice=Profile(id="alice",name="Alice",measurements=listOf(
+    Measurement(id="a-measurement",dateMs=1000,values=mapOf("weight" to 77.0))
+   ))
+   val bob=Profile(id="bob",name="Bob",measurements=listOf(
+    Measurement(id="b-measurement",dateMs=1000,values=mapOf("weight" to 91.0))
+   ))
+   repo.saveProfile(alice)
+   repo.saveProfile(bob)
+   val scoped=decodeBackup(repo.exportBackup("alice"))
+   assertEquals(listOf("alice"),scoped.profiles.map{it.id})
+   assertEquals(alice.measurements,scoped.profiles.single().measurements)
+   assertEquals(2,decodeBackup(repo.exportBackup()).profiles.size)
+   assertTrue(runCatching{repo.exportBackup("missing-profile")}.isFailure)
+   assertEquals(2,repo.profiles.first().size)
+  } finally { db.close() }
+ }
+
 }
