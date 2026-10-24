@@ -44,12 +44,12 @@ class MultiUserEvolutionTest {
         assertFalse(original.hasMeasurements)
         val withMeasurements = base.copy(measurements = listOf(
             Measurement(id = "a", dateMs = 100, values = mapOf("waist" to 88.0)),
-            Measurement(id = "b", dateMs = 200, values = mapOf("waist" to 110.0, "chest" to 120.0))
+            Measurement(id = "b", dateMs = 200, values = mapOf("waist" to 110.0, "chest" to 150.0))
         ))
         val modified = bodyShape(withMeasurements)
         assertTrue(modified.hasMeasurements)
         assertTrue(modified.waistFactor > original.waistFactor)
-        assertEquals(1.35f, modified.chestFactor, 0.01f, /* ceiling is intentionally capped */)
+        assertEquals(1.35f, modified.chestFactor, 0.01f)
     }
 
     @Test fun backupsSupportMoreThanTwoIndependentProfiles() {
