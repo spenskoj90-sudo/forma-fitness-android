@@ -127,6 +127,30 @@ Implementation order:
 7. Permanent signing, verified updates, device physical acceptance.
 Do not mark cross-device login working before end-to-end tests of the live service.
 
+## Current iteration: safe local-user export and workout location (2026-10-24)
+
+- New preferences key `training_place` stores HOME, GYM or COMBINED;
+  existing DataStore records default safely to HOME and retain all previous
+  preferences without database reset. The selection affects the main dashboard
+  CTA, workout plan, exercise catalog and substitution choices consistently.
+- HOME permits only selected home items + unconditional bodyweight movement.
+  GYM includes selected machine equipment and usable freeweights;
+  COMBINED opts into all selected user equipment. Saved exercise results are
+  unaffected when the preference changes.
+- Room profile contents and legacy serializable enum values remain intact.
+- The in-app file-export control now defaults to the currently selected
+  local profile. Export of **all** local profiles requires a separate warning
+  and explicit confirmation, because measurements and limitations may belong
+  to other people. Existing repository-wide backup/export remains available
+  only behind that explicit action.
+- Tests assert that a scoped export omits other profiles but retains its own
+  measurements. This local file process is NOT cloud authentication.
+- Android updater shares a strict and unit-tested update identity policy:
+  same package, SHA-256 fingerprints, unchanged signing certificate and
+  monotonic versionCode; unknown certificate or different app ID fails closed.
+  HTTPS feeds and APKs are constrained to standard port 443. The channel is
+  still disabled pending permanent signing custody and release hosting.
+
 ## Per-exercise visualization and body model
 
 The Android candidate includes a **schematic** silhouette whose proportions
