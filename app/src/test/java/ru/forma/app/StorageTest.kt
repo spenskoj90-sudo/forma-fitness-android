@@ -123,7 +123,7 @@ class StorageTest {
    assertEquals(alice.measurements,scoped.profiles.single().measurements)
    assertEquals(2,decodeBackup(repo.exportBackup()).profiles.size)
    assertTrue(runCatching{repo.exportBackup("missing-profile")}.isFailure)
-   assertEquals(2,repo.profiles.first().size)
+   assertEquals(2,db.profiles().all().size)
   } finally { db.close() }
  }
 
