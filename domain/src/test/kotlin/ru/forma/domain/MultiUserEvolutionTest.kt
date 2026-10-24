@@ -53,8 +53,22 @@ class MultiUserEvolutionTest {
         assertTrue(home.flatMap { it.exercises }.all { it.exercise.equipment in homeGear })
         assertTrue(gym.flatMap { it.exercises }.all { it.exercise.equipment in gymGear })
         assertTrue(mixed.flatMap { it.exercises }.all { it.exercise.equipment in p.equipment })
-        assertTrue(mixed.flatMap { it.exercises }.any { it.exercise.equipment == Equipment.LEG_PRESS_MACHINE })
-        assertFalse(home.flatMap { it.exercises }.any { it.exercise.equipment == Equipment.LEG_PRESS_MACHINE })
+        // Combined mode makes all chosen equipment eligible; it need not
+        // prescribe every machine when free weights are also available.
+        assertTrue(Equipment.LEG_PRESS_MACHINE in availableEquipment(p, TrainingPlace.COMBINED))
+        val machineOnly = p.copy(equipment = setOf(
+            Equipment.LEG_PRESS_MACHINE, Equipment.SEATED_ROW_MACHINE
+        ))
+        val gymMachinePlan = generateProgram(machineOnly, place = TrainingPlace.GYM)
+        assertTrue(gymMachinePlan.flatMap { it.exercises }.any {
+            it.exercise.equipment == Equipment.LEG_PRESS_MACHINE
+        })
+        assertTrue(gymMachinePlan.flatMap { it.exercises }.any {
+            it.exercise.equipment == Equipment.SEATED_ROW_MACHINE
+        })
+        assertFalse(home.flatMap { it.exercises }.any {
+            it.exercise.equipment == Equipment.LEG_PRESS_MACHINE
+        })
     }
 
     @Test fun homeTrainingStillWorksForGymOnlyProfiles() {
