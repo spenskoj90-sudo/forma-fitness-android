@@ -52,7 +52,7 @@ def derived_account_id(identity: Identity, secret: bytes) -> UUID:
     """Stable server-only identity; secret rotation needs an explicit migration."""
     if len(secret) < 32:
         raise ValueError("Account derivation key must be at least 256 bits")
-    message = (identity.issuer + "\\x00" + identity.subject).encode("utf-8")
+    message = (identity.issuer + "\x00" + identity.subject).encode("utf-8")
     digest = hmac.new(secret, message, hashlib.sha256).digest()
     return UUID(bytes=digest[:16], version=4)
 
