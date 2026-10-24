@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
-import hmac
 import json
 import os
 from contextlib import asynccontextmanager, contextmanager
@@ -23,22 +21,13 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from auth import Identity, TokenVerifier
+from auth import Identity, TokenVerifier, derived_account_id
 
 DB_POOL: ConnectionPool | None = None
 TOKEN_VERIFIER: TokenVerifier | None = None
 ACCOUNT_DERIVATION_KEY: bytes | None = None
 MAX_PROFILE_JSON = 32768
 MAX_RECORD_JSON = 262144
-
-
-def derived_account_id(identity: Identity, secret: bytes) -> UUID:
-    if len(secret) < 32:
-        raise ValueError("Account derivation key must be at least 256 bits")
-    msg = (identity.issuer + "\x00" + identity.subject).encode("utf-8")
-    digest = hmac.new(secret, msg, hashlib.sha256).digest()
-    # Deterministic opaque UUID. Its secret must be retained through upgrades.
-    return UUID(bytes=digest[:16], version=4)
 
 
 def validate_record(identity: UUID, payload: dict[str, Any], limit: int) -> dict[str, Any]:
