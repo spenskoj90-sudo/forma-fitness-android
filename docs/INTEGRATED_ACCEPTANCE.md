@@ -28,7 +28,7 @@ layout, four-tab navigation and bundled offline hero artwork.
   CI-signed build; real upgrades require the same signer and data migration proof.
 
 ## Gated or not fabricated
-- Real-device acceptance on Infinix Zero 30 and Realme C31 remains mandatory;
+- Real-device acceptance on Infinix Zero 30 and Poco (точная модель уточняется при проверке) remains mandatory;
   emulator success cannot prove OEM background audio or battery behavior.
 - No exercise-specific video/animated instruction library has been validated;
   the muscle diagram is schematic, never exercise-technique proof.
@@ -81,7 +81,7 @@ of a pre-existing FORMA or FORMA Тест installation. Otherwise stop.
 6. Enter sample measurements, export a local backup, import into separate
    profiles, close and relaunch. Check editing, data isolation and
    rollback behavior if an invalid import is deliberately selected.
-7. Repeat on Infinix Zero 30 and Realme C31, recording OS version,
+7. Repeat on Infinix Zero 30 and Poco (точная модель уточняется при проверке), recording OS version,
    screenshots and each outcome as PASS / FAIL / OBSERVED / SKIPPED.
 
 Do not induce actual pain to test pain-stop. Do not clear app data or
