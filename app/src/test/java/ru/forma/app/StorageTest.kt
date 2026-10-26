@@ -74,6 +74,27 @@ class StorageTest {
   assertEquals(s.id,stopped.id)
   db.close()
  }
+ @Test fun stopBeforeAsyncRecoveryKeepsOfflineGapOutOfPersistedHistory()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val p=Profile(id="cold-start",name="User")
+   repo.saveProfile(p)
+   val original=repo.start(p.id,generateProgram(p).first(),1000L)
+   // The ViewModel recovery action has not yet run; STOP must recover
+   // the old session inside the same transaction that persists STOPPED.
+   repo.mutateSession(p.id,original.id){
+    val now=110_000L
+    stopSession(recoverIfPreviousProcess(it,100_000L,now),false,now)
+   }
+   val stopped=repo.load(p.id)!!.active!!
+   assertEquals(Phase.STOPPED,stopped.phase)
+   assertEquals(original.activeSeconds,stopped.activeSeconds)
+   repo.mutate(p.id){finishSession(it,it.active!!,110_001L)}
+   val saved=repo.load(p.id)!!
+   assertEquals(1,saved.history.size)
+   assertEquals(0,saved.history.single().activeSeconds)
+  } finally { db.close() }
+ }
  @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()

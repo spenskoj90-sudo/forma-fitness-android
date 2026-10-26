@@ -43,7 +43,12 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   action{
    try{
     // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
-    app.repository.mutateSession(p.id,expected){resumeSession(it,app.workoutNow())}
+    app.repository.mutateSession(p.id,expected){
+     val now=app.workoutNow()
+     // A cold-start Resume may beat the asynchronous ViewModel recovery.
+     // Recover first, then resume atomically so the offline gap is never credited.
+     resumeSession(recoverIfPreviousProcess(it,app.processStartedMs,now),now)
+    }
     val active=app.repository.load(p.id)?.active
     traceResume("persisted matches=${active?.id==expected} paused=${active?.paused} terminal=${active?.terminal}")
     if(active?.id==expected&&!active.terminal&&!active.paused){
@@ -65,7 +70,13 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun painStop(expected:String){mutateSession(expected,stageBound=false){stopSession(it,true,app.workoutNow())}}
  private fun mutateSession(expected:String,stageBound:Boolean=true,op:(Session)->Session){
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
-  action{app.repository.mutateSession(p.id,expected,if(stageBound)sessionStage(s) else null,op)}
+  action{
+   app.repository.mutateSession(p.id,expected,if(stageBound)sessionStage(s) else null){
+    // STOP/PAUSE can be tapped before the cold-start init coroutine completes.
+    // Both recovery and the command must see the same Room transaction.
+    op(recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow()))
+   }
+  }
  }
  fun finish(expected:String){
   val p=current.value?:return
