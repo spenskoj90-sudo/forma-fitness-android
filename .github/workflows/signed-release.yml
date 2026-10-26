@@ -27,6 +27,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Verify unique protected FORMA signing route before secrets
+        run: python3 scripts/check-release-workflows.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

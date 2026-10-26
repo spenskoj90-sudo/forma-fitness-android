@@ -33,14 +33,20 @@ installation are historical only. They must not block the FIRST new install.
    copy (plus documented passphrase custody). Restrict access to the owner.
    If this key is lost, directly updating already-installed APKs will become
    impossible unless a separately validated signing-rotation mechanism exists.
-3. Configure repository/environment secrets in GitHub Actions:
+3. **Only after the legacy signing workflow has been removed from live `main`**, configure the four credentials exclusively as **environment-scoped secrets** in a verified Owner-approved `forma-release` environment, not as unrestricted repository secrets. Confirm that protection genuinely requires Owner review before any secret is available to the job. Otherwise block production signing.
    `FORMA_RELEASE_KEYSTORE_B64`,
    `FORMA_RELEASE_STORE_PASSWORD`,
    `FORMA_RELEASE_KEY_ALIAS`,
    `FORMA_RELEASE_KEY_PASSWORD`.
    Base64 is only an encoding, **not** encryption; it must stay protected
-   as a secret. Protect the `forma-release` environment with owner approval.
-4. Once approved changes and tests are merged into `main`, launch the
+   as a secret. Removing existing repository-wide duplicate secrets is a
+   separate Owner-controlled custody operation, never a CI or chat action.
+4. The legacy `.github/workflows/release-candidate.yml` must be absent
+   from live main before configuring real signing secrets. PR #6 deletes this
+   route in source, but an unmerged draft PR **does not disable it on main**.
+   Only `.github/workflows/signed-release.yml` may consume `FORMA_RELEASE_*`
+   secrets. The Android PR CI checks that source-level invariant.
+   Once approved changes and tests are merged into `main`, launch the
    **manual** `.github/workflows/signed-release.yml` workflow with a new
    integer `version_code` and a semantic `version_name`. It never pushes
    a public APK automatically. The workflow checks unit tests/lint, signing,
@@ -52,7 +58,11 @@ installation are historical only. They must not block the FIRST new install.
 6. Configure an Owner-controlled HTTPS file host and signed-release manifest
    only after successful identity checks. The in-app `Обновление` tab will
    remain disabled while `forma_update_feed_url` is empty.
-7. Verify a second **higher-version, same-key** signed build installs over
+7. Before signing, the Owner must verify the requested versionCode is
+   **higher than the last production-signed version**, not merely above 2;
+   retain the exact frozen source SHA, APK hash, certificate SHA-256 and
+   versionCode in a protected release ledger. Verify a second
+   **higher-version, same-key** signed build installs over
    the first one on Infinix and Poco and preserves profile/history/measurement
    records. Record both signers, SHA256, and retained record counts.
 

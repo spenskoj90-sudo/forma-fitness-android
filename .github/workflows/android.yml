@@ -20,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Verify one protected FORMA release route
+        run: python3 scripts/check-release-workflows.py
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |
