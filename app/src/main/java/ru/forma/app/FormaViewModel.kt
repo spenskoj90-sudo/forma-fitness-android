@@ -15,7 +15,7 @@ import ru.forma.domain.*
 
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
- val error=MutableStateFlow<String?>(null)
+ val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  val coachStatus=app.coachStatus
  val profiles=app.repository.profiles.catch{error.value="Не удалось прочитать локальные данные"}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
@@ -29,8 +29,13 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
  fun saveProfile(p:Profile,onSaved:()->Unit={}){action{require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" };if(app.repository.load(p.id)==null)app.repository.saveProfile(p)else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)};app.settings.select(p.id);onSaved()}}
- fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startService(p.id,s.id)}}
+ fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
+ private suspend fun startServiceOrPause(id:String,session:String){
+  val epoch=app.audioFocusEpoch.snapshot()
+  requestWorkoutServiceOrPause(app.repository,id,session,app::workoutNow,
+   {app.audioFocusEpoch.isCurrent(epoch)}){startService(id,session)}
+ }
  // Callbacks include the session actually rendered in Runner. A queued tap
  // from an old screen must never act on whichever workout is current later.
  private fun traceResume(message:String){
@@ -54,7 +59,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
     val active=app.repository.load(p.id)?.active
     traceResume("persisted matches=${active?.id==expected} paused=${active?.paused} terminal=${active?.terminal}")
     if(active?.id==expected&&!active.terminal&&!active.paused){
-     startService(p.id,expected)
+     startServiceOrPause(p.id,expected)
      traceResume("foreground start requested")
     }
    }catch(e:Exception){

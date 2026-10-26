@@ -36,6 +36,16 @@ class ProfileRepository(private val db:FormaDatabase) {
   val next=op(active);require(next.id==active.id && next.profileId==id)
   put(p.copy(active=next))
  }
+ /**
+  * The service never established reliable foreground supervision. Preserve
+  * the entire session, but don't count any time since its last durable tick.
+  * The guard is evaluated inside the Room transaction to reject late failures.
+  */
+ suspend fun pauseWhenServiceUnavailable(
+  id:String,sessionId:String,now:Long,isCurrent:()->Boolean={true}
+ )=mutateSession(id,sessionId){s->
+  if(isCurrent())recoverSession(s,now) else s
+ }
  /** Prefer exporting a single selected profile; all-profile export must be
   * explicit in UI, since different local profiles may belong to other people.
   */
@@ -72,6 +82,7 @@ class FormaApp:Application(){
  @Volatile var serviceRunning=false
  internal val audioFocusEpoch=AudioFocusEpoch()
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
+ val serviceError=MutableStateFlow<String?>(null)
  val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)

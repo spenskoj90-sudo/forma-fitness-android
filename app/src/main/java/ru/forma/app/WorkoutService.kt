@@ -80,12 +80,42 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  }
  override fun onBind(intent:Intent?):IBinder?=null
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
-  // Keep each Android startId: an old loop must never stop a newer START.
-  startForeground(1,notification("Подготовка тренировки",null))
   val id=intent?.getStringExtra("profile")
   val expected=intent?.getStringExtra("session")
+  // Keep each Android startId: an old loop must never stop a newer START.
   lastRequestedSession=expected
   lastStartId=startId
+  try{startForeground(1,notification("Подготовка тренировки",null))}
+  catch(e:RuntimeException){
+   // Android 12+ may refuse background starts; Android 14+ can reject an
+   // invalid foreground-service promotion. Never leave Room timing active.
+   val failureEpoch=app.audioFocusEpoch.invalidate()
+   scope.launch{
+    try{
+     if(id!=null&&expected!=null){
+      if(intent.action=="STOP"){
+       app.repository.mutateSession(id,expected){s->
+        val now=app.workoutNow()
+        stopSession(recoverSession(s,now),false,now)
+       }
+      }else{
+       app.repository.pauseWhenServiceUnavailable(id,expected,app.workoutNow()){
+        lastStartId==startId&&lastRequestedSession==expected&&
+         app.audioFocusEpoch.isCurrent(failureEpoch)
+       }
+      }
+     }
+     app.serviceError.value="Не удалось включить фоновое сопровождение. Тренировка сохранена; проверьте её состояние."
+    }catch(cancel:CancellationException){throw cancel}
+    catch(error:Exception){
+     app.serviceError.value="Не удалось включить фоновое сопровождение и подтвердить сохранение паузы. Проверьте тренировку."
+    }finally{
+     // Preserve a newer Android START; never stop a newer request.
+     if(lastStartId==startId){app.serviceRunning=false;stopSelf(startId)}
+    }
+   }
+   return START_NOT_STICKY
+  }
   if(id==null||expected==null){
    if(job?.isActive!=true)stopSelf(startId)
    return START_NOT_STICKY

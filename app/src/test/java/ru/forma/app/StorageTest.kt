@@ -121,6 +121,50 @@ class StorageTest {
    assertTrue(repo.load(p.id)!!.active!!.paused)
   }finally{db.close()}
  }
+ @Test fun refusedForegroundStartPausesWithoutCreditingElapsedTimeAndSurvivesReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication();val name="forma-service-start-failure-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val repo=ProfileRepository(db)
+  val p=Profile(id="start-failed",name="User");repo.saveProfile(p)
+  val s=repo.start(p.id,generateProgram(p).first(),1_000L)
+  val failed=runCatching{
+   requestWorkoutServiceOrPause(repo,p.id,s.id,{101_000L},{true}){
+    throw IllegalStateException("Synthetic Android foreground rejection")
+   }
+  }.exceptionOrNull()
+  assertTrue(failed is IllegalStateException)
+  assertTrue(failed!!.message!!.contains("поставлена на паузу"))
+  val paused=repo.load(p.id)!!.active!!
+  assertTrue(paused.paused)
+  assertEquals(0,paused.activeSeconds)
+  assertEquals(300_000L,paused.pausedRemainingMs)
+  assertEquals(101_000L,paused.lastTickMs)
+  db.close()
+  db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  assertEquals(paused,ProfileRepository(db).load(p.id)!!.active)
+  db.close();ctx.deleteDatabase(name)
+ }
+ @Test fun staleServiceFailureCannotPauseOwnerResumedSessionOrAnotherProfile():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   val p=Profile(id="profile-one",name="User")
+   val other=Profile(id="profile-two",name="Other")
+   repo.saveProfile(p);repo.saveProfile(other)
+   val s=repo.start(p.id,generateProgram(p).first(),1_000L)
+   val commands=AudioFocusEpoch()
+   val epoch=commands.snapshot()
+   repo.mutateSession(p.id,s.id){pauseSession(it,1_200L)}
+   commands.invalidate()
+   repo.mutateSession(p.id,s.id){resumeSession(it,2_000L)}
+   val before=repo.load(p.id)!!.active!!
+   repo.pauseWhenServiceUnavailable(p.id,s.id,100_000L){commands.isCurrent(epoch)}
+   assertEquals(before,repo.load(p.id)!!.active)
+   repo.pauseWhenServiceUnavailable(other.id,s.id,100_000L)
+   assertEquals(other,repo.load(other.id))
+  }finally{db.close()}
+ }
  @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
