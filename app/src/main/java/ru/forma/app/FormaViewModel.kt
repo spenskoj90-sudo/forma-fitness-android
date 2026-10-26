@@ -29,7 +29,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
  fun saveProfile(p:Profile,onSaved:()->Unit={}){action{require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" };if(app.repository.load(p.id)==null)app.repository.saveProfile(p)else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)};app.settings.select(p.id);onSaved()}}
- fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());startService(p.id,s.id)}}
+ fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startService(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  // Callbacks include the session actually rendered in Runner. A queued tap
  // from an old screen must never act on whichever workout is current later.
@@ -40,6 +40,8 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   // Debug evidence contains only transition outcomes, never profile/session data.
   traceResume("tap current=${current.value!=null} matches=${current.value?.active?.id==expected}")
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
+  // Invalidate queued audio-focus losses before scheduling the Room Resume.
+  app.audioFocusEpoch.invalidate()
   action{
    try{
     // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
@@ -63,13 +65,14 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  }
  // Stage guard stays for set/skip actions; session-bound pause/stop remains
  // valid across asynchronously advancing phases (and rapid Resume -> Stop).
- fun pause(expected:String){mutateSession(expected,stageBound=false){pauseSession(it,app.workoutNow())}}
+ fun pause(expected:String){mutateSession(expected,stageBound=false,invalidateFocus=true){pauseSession(it,app.workoutNow())}}
  fun skip(expected:String){mutateSession(expected){skipStage(it,app.workoutNow())}}
  fun done(expected:String,w:Double,r:Int,e:Int,pain:Boolean){mutateSession(expected){logSet(it,w,r,e,pain,app.workoutNow())}}
- fun stop(expected:String){mutateSession(expected,stageBound=false){stopSession(it,false,app.workoutNow())}}
- fun painStop(expected:String){mutateSession(expected,stageBound=false){stopSession(it,true,app.workoutNow())}}
- private fun mutateSession(expected:String,stageBound:Boolean=true,op:(Session)->Session){
+ fun stop(expected:String){mutateSession(expected,stageBound=false,invalidateFocus=true){stopSession(it,false,app.workoutNow())}}
+ fun painStop(expected:String){mutateSession(expected,stageBound=false,invalidateFocus=true){stopSession(it,true,app.workoutNow())}}
+ private fun mutateSession(expected:String,stageBound:Boolean=true,invalidateFocus:Boolean=false,op:(Session)->Session){
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
+  if(invalidateFocus)app.audioFocusEpoch.invalidate()
   action{
    app.repository.mutateSession(p.id,expected,if(stageBound)sessionStage(s) else null){
     // STOP/PAUSE can be tapped before the cold-start init coroutine completes.

@@ -14,12 +14,16 @@ import ru.forma.domain.*
 
 class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+ private val audioFocusGate by lazy{AudioFocusLeaseGate(app.audioFocusEpoch)}
  private var job:Job?=null
  // Android may dispatch a new START before the previous workout loop exits.
  private val commandMutex=Mutex()
  private var tts:TextToSpeech?=null
  @Volatile private var ready=false
  @Volatile private var focusGranted=false
+ @Volatile private var focusLossPending=false
+ @Volatile private var focusRequest:AudioFocusRequest?=null
+ @Volatile private var focusLease:AudioFocusLease?=null
  private var tone:ToneGenerator?=null
  private var toneVolume=-1
  private var wake:PowerManager.WakeLock?=null
@@ -33,12 +37,39 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private var nextBeat=0L
  private val app get()=application as FormaApp
  private val manager by lazy{getSystemService(AUDIO_SERVICE) as AudioManager}
- private val focus by lazy{AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-  .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-  .setOnAudioFocusChangeListener({change->
-   if(change!=AudioManager.AUDIOFOCUS_GAIN){focusGranted=false;silence();val id=profileId;val session=sessionId;if(id!=null&&session!=null)scope.launch{app.repository.mutateSession(id,session){pauseSession(it,app.workoutNow())}}}
-   else focusGranted=true
-  },Handler(Looper.getMainLooper())).build()}
+ private fun requestFocus(){
+  val lease=audioFocusGate.open()
+  val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+   .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+   .setOnAudioFocusChangeListener(AudioManager.OnAudioFocusChangeListener{change->onFocusChanged(lease,change)},Handler(Looper.getMainLooper()))
+   .build()
+  focusLease=lease
+  focusRequest=request
+  focusGranted=manager.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED&&audioFocusGate.isCurrent(lease)
+ }
+ private fun onFocusChanged(lease:AudioFocusLease,change:Int){
+  // Android may deliver an abandoned request's callback after the Owner resumes.
+  if(!audioFocusGate.isCurrent(lease))return
+  if(change==AudioManager.AUDIOFOCUS_GAIN){focusGranted=true;return}
+  if(!focusGranted)return
+  focusGranted=false
+  silence()
+  val id=profileId;val session=sessionId
+  if(id!=null&&session!=null){
+   focusLossPending=true
+   scope.launch{
+    try{
+     app.repository.mutateSession(id,session){active->
+      // Check while holding the Room transaction: a later Resume or new
+      // request invalidates queued losses before they can re-pause the session.
+      if(audioFocusGate.isCurrent(lease))pauseSession(active,app.workoutNow()) else active
+     }
+    }catch(e:CancellationException){throw e}
+    catch(e:Exception){app.coachStatus.value="Не удалось сохранить паузу после потери звука. Проверьте тренировку."}
+    finally{focusLossPending=false}
+   }
+  }
+ }
  override fun onCreate(){super.onCreate()
   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(NotificationChannel("workout","Тренировка FORMA",NotificationManager.IMPORTANCE_LOW))
   tts=TextToSpeech(this,this)
@@ -78,6 +109,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
     }
     if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
     profileId=id;sessionId=expected
+    if(intent.action=="PAUSE"||intent.action=="STOP")app.audioFocusEpoch.invalidate()
     when(intent.action){
      "PAUSE"->{app.repository.mutateSession(id,expected){pauseSession(it,app.workoutNow())};silence()}
      "STOP"->{app.repository.mutateSession(id,expected){stopSession(it,false,app.workoutNow())};silence()}
@@ -106,7 +138,11 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
    if(s.paused){silence();releaseFocus();if(wake?.isHeld==true)wake?.release()}
    else{
     if(wake?.isHeld!=true)wake?.acquire(10800000)
-    if((prefs.sound||prefs.voice)&&!focusGranted)focusGranted=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    // Rotate stale grants after a user command; never overwrite a pending
+    // focus-loss pause with an immediate re-request.
+    val existing=focusLease
+    if(existing!=null&&!audioFocusGate.isCurrent(existing))releaseFocus()
+    if((prefs.sound||prefs.voice)&&!focusGranted&&!focusLossPending){releaseFocus();requestFocus()}
     if(toneVolume!=prefs.volume){tone?.release();tone=runCatching{ToneGenerator(AudioManager.STREAM_MUSIC,prefs.volume)}.getOrNull();toneVolume=prefs.volume}
    }
    val stage=sessionStage(s);val title=if(s.paused)"Пауза"else stageLabel(s)
@@ -127,7 +163,14 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   }
  }
  private fun silence(){tts?.stop();tone?.stopTone();nextBeat=0}
- private fun releaseFocus(){if(focusGranted){manager.abandonAudioFocusRequest(focus);focusGranted=false}}
+ private fun releaseFocus(){
+  val request=focusRequest?:return
+  audioFocusGate.expire()
+  focusRequest=null
+  focusLease=null
+  focusGranted=false
+  manager.abandonAudioFocusRequest(request)
+ }
  private fun cue(text:String,p:Preferences){if(!focusGranted)return;if(p.sound)tone?.startTone(ToneGenerator.TONE_PROP_ACK,160);if(p.voice&&ready){tts?.setSpeechRate(p.speechRate);tts?.speak(text,TextToSpeech.QUEUE_FLUSH,Bundle().apply{putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME,p.volume/100f)},"forma-stage")}}
  private fun notification(text:String,s:Session?):Notification{
   val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

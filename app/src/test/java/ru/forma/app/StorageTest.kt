@@ -95,6 +95,32 @@ class StorageTest {
    assertEquals(0,saved.history.single().activeSeconds)
   } finally { db.close() }
  }
+ @Test fun queuedOldFocusLossCannotRepauseResumedRoomSession()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val p=Profile(id="focus",name="User")
+   repo.saveProfile(p)
+   val started=repo.start(p.id,generateProgram(p).first(),1000L)
+   repo.mutateSession(p.id,started.id){pauseSession(it,1200L)}
+   val commands=AudioFocusEpoch();val gate=AudioFocusLeaseGate(commands)
+   val queuedLoss=gate.open()
+   // Resume was tapped before the queued focus callback acquired Room.
+   commands.invalidate()
+   repo.mutateSession(p.id,started.id){resumeSession(it,2000L)}
+   repo.mutateSession(p.id,started.id){
+    if(gate.isCurrent(queuedLoss))pauseSession(it,2100L) else it
+   }
+   val active=repo.load(p.id)!!.active!!
+   assertFalse(active.paused)
+   assertEquals(2000L,active.lastTickMs)
+   // A genuine loss from the new request must still pause durably.
+   val freshLoss=gate.open()
+   repo.mutateSession(p.id,started.id){
+    if(gate.isCurrent(freshLoss))pauseSession(it,2400L) else it
+   }
+   assertTrue(repo.load(p.id)!!.active!!.paused)
+  }finally{db.close()}
+ }
  @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
