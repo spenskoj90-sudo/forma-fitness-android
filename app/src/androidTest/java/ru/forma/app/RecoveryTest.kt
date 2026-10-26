@@ -26,9 +26,19 @@ class RecoveryTest{
   val app=rule.activity.application as FormaApp
   val p=runBlocking{app.repository.profiles.first()}.first{it.active!=null}
   val before=p.active!!;assertTrue(before.paused);assertFalse(app.serviceRunning)
-  rule.onNodeWithText("Продолжить сопровождение").performScrollTo().assertIsDisplayed()
+  // A semantics node may exist while clipped/hidden after API26 process recovery.
+  // Preserve the visibility gate and capture the live Activity before teardown.
+  val resumeButton=rule.onNodeWithText("Продолжить сопровождение")
+  try{
+   resumeButton.performScrollTo()
+   rule.waitForIdle()
+   resumeButton.assertIsDisplayed()
+  }catch(e:AssertionError){
+   runCatching{captureEvidence("resume-not-visible")}
+   throw e
+  }
   runCatching{captureEvidence("before-resume")}
-  rule.onNodeWithText("Продолжить сопровождение").performClick()
+  resumeButton.performClick()
   // Verify durable resume, a live service tick, then stop deliberately.
   try{rule.waitUntil(20000){runBlocking{app.repository.load(p.id)}?.active?.paused==false}}
   catch(e:androidx.compose.ui.test.ComposeTimeoutException){
