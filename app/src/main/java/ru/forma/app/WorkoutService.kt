@@ -93,7 +93,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
    scope.launch{
     try{
      if(id!=null&&expected!=null){
-      if(intent.action=="STOP"){
+      if(intent?.action=="STOP"){
        app.repository.mutateSession(id,expected){s->
         val now=app.workoutNow()
         stopSession(recoverSession(s,now),false,now)
@@ -110,8 +110,15 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
     catch(error:Exception){
      app.serviceError.value="Не удалось включить фоновое сопровождение и подтвердить сохранение паузы. Проверьте тренировку."
     }finally{
-     // Preserve a newer Android START; never stop a newer request.
-     if(lastStartId==startId){app.serviceRunning=false;stopSelf(startId)}
+     // A rejected service must not leave an older workout loop ticking.
+     // Preserve a newer Android START and its foreground lifecycle.
+     if(lastStartId==startId){
+      lastRequestedSession=null
+      job?.cancelAndJoin()
+      job=null
+      app.serviceRunning=false
+      stopSelf(startId)
+     }
     }
    }
    return START_NOT_STICKY
