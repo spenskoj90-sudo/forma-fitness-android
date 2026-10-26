@@ -5,6 +5,9 @@ import androidx.room.*
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -81,6 +84,11 @@ class SettingsRepository(private val context:Context) {
 class FormaApp:Application(){
  @Volatile var serviceRunning=false
  internal val audioFocusEpoch=AudioFocusEpoch()
+ internal val serviceInterruptions=ServiceInterruptionTracker()
+ internal val applicationScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+ internal suspend fun mutateWorkoutSession(
+  profileId:String,sessionId:String,stage:String?=null,op:(Session)->Session
+ )=mutateWithServiceInterruption(repository,serviceInterruptions,profileId,sessionId,stage,::workoutNow,op)
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
  val serviceError=MutableStateFlow<String?>(null)
  val processStartedMs=System.currentTimeMillis()

@@ -165,6 +165,77 @@ class StorageTest {
    assertEquals(other,repo.load(other.id))
   }finally{db.close()}
  }
+ @Test fun serviceOnlyTeardownPausesPersistedRoomWithoutCreditForAbsence():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-service-interrupted.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val repo=ProfileRepository(db)
+  val owner=Profile(id="owner",name="Owner")
+  repo.saveProfile(owner)
+  val s=repo.start(owner.id,generateProgram(owner).first(),1000L)
+  // Android destroyed just the service; processStartedMs remains unchanged.
+  val tracker=ServiceInterruptionTracker()
+  tracker.record(owner.id,s.id)
+  mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={100_000L}){it}
+  val saved=repo.load(owner.id)!!.active!!
+  assertTrue(saved.paused)
+  assertEquals(0,saved.activeSeconds)
+  assertEquals(300_000L,saved.pausedRemainingMs)
+  assertEquals(100_000L,saved.lastTickMs)
+  assertNull(tracker.pending(owner.id,s.id))
+  db.close()
+  db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val persisted=ProfileRepository(db).load(owner.id)!!.active!!
+  assertEquals(saved,persisted)
+  db.close();ctx.deleteDatabase(name)
+ }
+ @Test fun immediateOwnerResumeConsumesPendingInterruptionBeforeOldWrite()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val owner=Profile(id="owner",name="Owner")
+   repo.saveProfile(owner)
+   val s=repo.start(owner.id,generateProgram(owner).first(),1000L)
+   val tracker=ServiceInterruptionTracker()
+   tracker.record(owner.id,s.id)
+   // UI Resume races with application-scope onDestroy persistence.
+   mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={100_000L}){
+    resumeSession(it,100_000L)
+   }
+   // Delayed onDestroy callback must not re-pause the owner's live workout.
+   mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={120_000L}){it}
+   val resumed=repo.load(owner.id)!!.active!!
+   assertFalse(resumed.paused)
+   assertEquals(0,resumed.activeSeconds)
+   assertEquals(100_000L,resumed.lastTickMs)
+   assertEquals(400_000L,resumed.deadlineMs)
+  }finally{db.close()}
+ }
+ @Test fun staleInterruptionDoesNotTouchNewSessionOrOtherProfile()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val owner=Profile(id="owner",name="Owner")
+   val other=Profile(id="other",name="Other")
+   repo.saveProfile(owner);repo.saveProfile(other)
+   val old=repo.start(owner.id,generateProgram(owner).first(),1000L)
+   repo.mutateSession(owner.id,old.id){stopSession(it,false,1100L)}
+   repo.mutate(owner.id){finishSession(it,it.active!!,1200L)}
+   val next=repo.start(owner.id,generateProgram(owner).first(),2000L)
+   val tracker=ServiceInterruptionTracker()
+   tracker.record(owner.id,old.id)
+   mutateWithServiceInterruption(repo,tracker,owner.id,next.id,now={100_000L}){it}
+   mutateWithServiceInterruption(repo,tracker,other.id,old.id,now={100_000L}){it}
+   assertEquals(next,repo.load(owner.id)!!.active)
+   assertEquals(other,repo.load(other.id))
+   assertEquals(1,repo.load(owner.id)!!.history.size)
+   // An explicit stop cannot be undone by any late teardown.
+   repo.mutateSession(owner.id,next.id){stopSession(it,false,2500L)}
+   val stopped=repo.load(owner.id)!!.active!!
+   tracker.record(owner.id,next.id)
+   mutateWithServiceInterruption(repo,tracker,owner.id,next.id,now={100_000L}){it}
+   assertEquals(stopped,repo.load(owner.id)!!.active)
+  }finally{db.close()}
+ }
  @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()

@@ -33,6 +33,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  // start id, so a completed session can stop after PAUSE/STOP commands too.
  @Volatile private var lastRequestedSession:String?=null
  @Volatile private var lastStartId:Int=0
+ @Volatile private var acceptedCommandEpoch:Long=-1L
  private var lastStage=""
  private var nextBeat=0L
  private val app get()=application as FormaApp
@@ -85,6 +86,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   // Keep each Android startId: an old loop must never stop a newer START.
   lastRequestedSession=expected
   lastStartId=startId
+  acceptedCommandEpoch=app.audioFocusEpoch.snapshot()
   try{startForeground(1,notification("Подготовка тренировки",null))}
   catch(e:RuntimeException){
    // Android 12+ may refuse background starts; Android 14+ can reject an
@@ -144,7 +146,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      lastStage=""
      nextBeat=0L
     }
-    if(active.lastTickMs<app.processStartedMs)app.repository.mutateSession(id,expected){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
+    app.mutateWorkoutSession(id,expected){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
     profileId=id;sessionId=expected
     if(intent.action=="PAUSE"||intent.action=="STOP")app.audioFocusEpoch.invalidate()
     when(intent.action){
@@ -168,7 +170,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private suspend fun runWorkout(id:String,expected:String){
   wake=(getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout")
   try{while(currentCoroutineContext().isActive){
-   app.repository.mutateSession(id,expected){advanceTimed(it,app.workoutNow())}
+   app.mutateWorkoutSession(id,expected){advanceTimed(it,app.workoutNow())}
    val s=app.repository.load(id)?.active?.takeIf{it.id==expected}?:break
    if(s.terminal){silence();break}
    val prefs=app.settings.settings.first()
@@ -219,6 +221,29 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   }
   return builder.build()
  }
- override fun onDestroy(){app.serviceRunning=false;job?.cancel();scope.cancel();if(wake?.isHeld==true)wake?.release();silence();releaseFocus();tts?.shutdown();tone?.release();super.onDestroy()}
+ override fun onDestroy(){
+  val id=profileId
+  val expected=sessionId
+  // This callback is not delivered after a full process kill. Process-death
+  // recovery handles that case; this covers same-process service teardown.
+  // Ignore an old instance if a newer user command invalidated its epoch.
+  if(id!=null&&expected!=null&&app.audioFocusEpoch.isCurrent(acceptedCommandEpoch)){
+   app.serviceInterruptions.record(id,expected)
+   // Service scope is about to be cancelled. The application owns this write.
+   // The in-memory mark also makes an immediate Resume/STOP/next tick recover
+   // before it can credit any time after service supervision was lost.
+   app.applicationScope.launch{
+    try{app.mutateWorkoutSession(id,expected){it}}
+    catch(e:CancellationException){throw e}
+    catch(e:Exception){app.serviceError.value="Сопровождение завершилось. Не удалось подтвердить паузу — проверьте тренировку."}
+   }
+  }
+  app.serviceRunning=false
+  job?.cancel()
+  scope.cancel()
+  if(wake?.isHeld==true)wake?.release()
+  silence();releaseFocus();tts?.shutdown();tone?.release()
+  super.onDestroy()
+ }
 }
 fun stageLabel(s:Session)=when(s.phase){Phase.WARMUP->"Разминка";Phase.WORK->"${s.current?.exercise?.name} · подход ${s.setNumber}";Phase.REST->"Отдых";Phase.CARDIO->if(s.day.cardio==CardioKind.INTERVAL)if(s.cardioIndex%2==0)"Ходьба"else"Лёгкий бег"else s.day.cardio?.label.orEmpty();Phase.DONE->"Завершено";Phase.STOPPED->"Остановлено"}
