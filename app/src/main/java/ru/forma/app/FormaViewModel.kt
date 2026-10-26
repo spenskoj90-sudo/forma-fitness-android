@@ -33,13 +33,27 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  // Callbacks include the session actually rendered in Runner. A queued tap
  // from an old screen must never act on whichever workout is current later.
+ private fun traceResume(message:String){
+  if(app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)android.util.Log.d("FORMA-RESUME",message)
+ }
  fun resume(expected:String){
+  // Debug evidence contains only transition outcomes, never profile/session data.
+  traceResume("tap current=${current.value!=null} matches=${current.value?.active?.id==expected}")
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
   action{
-   // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
-   app.repository.mutateSession(p.id,expected){resumeSession(it,app.workoutNow())}
-   val active=app.repository.load(p.id)?.active
-   if(active?.id==expected&&!active.terminal&&!active.paused)startService(p.id,expected)
+   try{
+    // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
+    app.repository.mutateSession(p.id,expected){resumeSession(it,app.workoutNow())}
+    val active=app.repository.load(p.id)?.active
+    traceResume("persisted matches=${active?.id==expected} paused=${active?.paused} terminal=${active?.terminal}")
+    if(active?.id==expected&&!active.terminal&&!active.paused){
+     startService(p.id,expected)
+     traceResume("foreground start requested")
+    }
+   }catch(e:Exception){
+    traceResume("failed type=${e.javaClass.simpleName}")
+    throw e
+   }
   }
  }
  // Stage guard stays for set/skip actions; session-bound pause/stop remains

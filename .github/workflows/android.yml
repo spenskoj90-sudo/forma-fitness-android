@@ -1,15 +1,15 @@
 name: FORMA Android
 on:
   push:
-    branches: [main, 'forma/**']
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: forma-${{ github.ref }}
-  # Only the latest integration-branch SHA needs a full emulator matrix.
-  # Never interrupt protected-main evidence runs.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: forma-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == 1 && github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+  # Cancel superseded initial PR runs only; preserve main/manual/rerun evidence.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 jobs:
   verify:
     runs-on: ubuntu-latest
