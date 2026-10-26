@@ -70,7 +70,7 @@ class SettingsRepository(private val context:Context) {
 }
 class FormaApp:Application(){
  @Volatile var serviceRunning=false
- val audioFocusEpoch=AudioFocusEpoch()
+ internal val audioFocusEpoch=AudioFocusEpoch()
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
  val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
