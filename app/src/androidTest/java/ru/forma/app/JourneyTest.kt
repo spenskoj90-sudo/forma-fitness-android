@@ -60,7 +60,25 @@ class JourneyTest{
   screenshot("home-dark-default");click("Тренировки");screenshot("training-light")
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
-  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Статистика")
+  // Do not tap STOP through the outgoing paused Runner: its Compose key is
+  // replaced asynchronously when Room publishes the durable Resume transition.
+  try{composeRule.waitUntil(20000){current().active?.paused==false}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("journey-resume-not-persisted")}
+   throw AssertionError("Journey Resume did not persist before STOP",e)
+  }
+  waitText("Пауза")
+  click("Остановить тренировку")
+  // Distinguish a real Room/service STOP failure from a slow UI recomposition.
+  try{composeRule.waitUntil(20000){current().active?.terminal==true}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("journey-stop-not-persisted")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-STOP-TIMEOUT")}
+   val actual=current().active
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Journey STOP did not persist: phase=${actual?.phase}, paused=${actual?.paused}, hasError=${vm.error.value!=null}",e)
+  }
+  waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");composeRule.waitUntil(20000){current().name=="Тест Б"};waitNavigation();waitText("Тест Б")
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
