@@ -80,7 +80,34 @@ class JourneyTest{
   }
   waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");composeRule.waitUntil(20000){current().name=="Тест Б"};waitNavigation();waitText("Тест Б")
+  click("Профиль")
+  click("Тёмное")
+  click("Добавить пользователя")
+  waitText("Имя")
+  composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
+  composeRule.onNodeWithText("Сохранить профиль").assertIsEnabled()
+  click("Сохранить профиль")
+  // The API26 failure here was previously attributed to one long source line:
+  // distinguish Room persistence, selected-profile DataStore, and rendered UI.
+  // Keep the original 20-second gate, without weakening the isolation checks.
+  try {
+   composeRule.waitUntil(20000) {
+    val saved=runBlocking{app.repository.profiles.first().firstOrNull{it.name=="Тест Б"}}
+    saved!=null && runBlocking{app.settings.settings.first().selected}==saved.id &&
+     current().id==saved.id
+   }
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("second-profile-selection-timeout")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SECOND-PROFILE-TIMEOUT")}
+   val profiles=runBlocking{app.repository.profiles.first()}
+   val selected=runBlocking{app.settings.settings.first().selected}
+   val second=profiles.firstOrNull{it.name=="Тест Б"}
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Second profile selection did not persist: roomHasSecond=${second!=null}, "+
+    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}",e)
+  }
+  waitNavigation()
+  waitText("Тест Б")
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
   click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
