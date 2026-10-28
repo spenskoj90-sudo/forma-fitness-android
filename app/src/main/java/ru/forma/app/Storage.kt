@@ -68,7 +68,7 @@ class ProfileRepository(private val db:FormaDatabase) {
   }
  }
  private suspend fun put(p:Profile)=db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
- suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());put(next)}
+ suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());if(next!=old)put(next)}
 }
 private val Context.store by preferencesDataStore(name="forma_preferences")
 data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME)

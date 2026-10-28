@@ -289,6 +289,35 @@ class StorageTest {
   } finally { db.close() }
  }
 
+ @Test fun unchangedProfileMutationSkipsSqliteUpdateAndRealChangeSurvivesReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-noop-profile-mutation.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  try {
+   val repo=ProfileRepository(db)
+   val original=Profile(id="noop-mutate",name="Original")
+   repo.saveProfile(original)
+   val sqlite=db.openHelper.writableDatabase
+   sqlite.execSQL("CREATE TABLE profile_update_counts (n INTEGER NOT NULL)")
+   sqlite.execSQL("INSERT INTO profile_update_counts(n) VALUES (0)")
+   sqlite.execSQL("CREATE TRIGGER count_profile_mutations AFTER UPDATE ON profiles " +
+    "BEGIN UPDATE profile_update_counts SET n=n+1; END")
+   fun writes():Int=sqlite.query("SELECT n FROM profile_update_counts").use{cursor->
+    assertTrue(cursor.moveToFirst());cursor.getInt(0)
+   }
+   repo.mutate(original.id){it}
+   repo.mutate(original.id){it.copy(name=it.name)}
+   assertEquals(0,writes())
+   assertEquals(original,repo.load(original.id))
+   repo.mutate(original.id){it.copy(name="Updated")}
+   assertEquals(1,writes())
+   assertEquals("Updated",repo.load(original.id)!!.name)
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   assertEquals("Updated",ProfileRepository(db).load(original.id)!!.name)
+  }finally{db.close();ctx.deleteDatabase(name)}
+ }
+
  @Test fun unchangedPausedTicksAndStaleCallbacksDoNotWriteRoom():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
