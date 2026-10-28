@@ -81,6 +81,13 @@ class JourneyTest{
   waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль")
+  // F2 accessibility: the label and switch are one accessible touch target.
+  // Verify both directions persist through DataStore.
+  val voiceBefore=runBlocking{app.settings.settings.first().voice}
+  composeRule.onNodeWithText("Голос Android").performScrollTo().assertHasClickAction().performClick()
+  composeRule.waitUntil(20000){runBlocking{app.settings.settings.first().voice!=voiceBefore}}
+  composeRule.onNodeWithText("Голос Android").performScrollTo().assertHasClickAction().performClick()
+  composeRule.waitUntil(20000){runBlocking{app.settings.settings.first().voice==voiceBefore}}
   click("Тёмное")
   click("Добавить пользователя")
   waitText("Имя")
