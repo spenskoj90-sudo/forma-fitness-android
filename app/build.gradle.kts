@@ -23,6 +23,8 @@ android {
  buildFeatures {compose=true}
  testOptions {unitTests.isIncludeAndroidResources=true;unitTests.all {it.systemProperty("robolectric.dependency.repo.url","https://repo.maven.apache.org/maven2")}}
 }
+// Persist compiler-generated Room schemas for non-destructive future migrations.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
  implementation(project(":domain"))
  implementation(libs.androidx.core.ktx);implementation(libs.androidx.lifecycle.runtime.ktx);implementation(libs.androidx.lifecycle.viewmodel.compose);implementation(libs.androidx.activity.compose)

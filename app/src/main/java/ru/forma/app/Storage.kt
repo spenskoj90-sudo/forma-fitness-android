@@ -19,7 +19,7 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
-@Database(entities=[ProfileRow::class],version=1,exportSchema=false) abstract class FormaDatabase:RoomDatabase() {abstract fun profiles():ProfileDao}
+@Database(entities=[ProfileRow::class],version=1,exportSchema=true) abstract class FormaDatabase:RoomDatabase() {abstract fun profiles():ProfileDao}
 class ProfileRepository(private val db:FormaDatabase) {
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}

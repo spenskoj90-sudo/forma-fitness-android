@@ -28,6 +28,8 @@ jobs:
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
       - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+      - name: Verify compiler-generated Room v1 schema baseline
+        run: python3 scripts/check-room-schema.py
       - name: APK identity and signature evidence
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk

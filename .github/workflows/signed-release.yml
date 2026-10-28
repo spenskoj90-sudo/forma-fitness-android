@@ -78,6 +78,8 @@ jobs:
           chmod +x gradlew
           ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleRelease \
             "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" --console=plain
+      - name: Verify compiler-generated Room v1 schema baseline
+        run: python3 scripts/check-room-schema.py
       - name: Verify immutable APK identity, signer and SHA-256
         shell: bash
         env:
