@@ -37,7 +37,8 @@ class ProfileRepository(private val db:FormaDatabase) {
   val active=p.active?:return@withTransaction
   if(active.id!=sessionId || (stage!=null && sessionStage(active)!=stage))return@withTransaction
   val next=op(active);require(next.id==active.id && next.profileId==id)
-  put(p.copy(active=next))
+  // Paused ticks and stale callbacks must not rewrite an unchanged profile.
+  if(next!=active)put(p.copy(active=next))
  }
  /**
   * The service never established reliable foreground supervision. Preserve
