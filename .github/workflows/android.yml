@@ -40,14 +40,18 @@ jobs:
           test -n "$APKSIGNER" && test -n "$AAPT"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$OUT/APK_SIGNATURE.txt"
           "$AAPT" dump badging "$APK" > "$OUT/APK_BADGING.txt"
+      # Debug APKs are only short-lived manual diagnostic artifacts, not a public distribution channel.
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: forma-debug-${{ github.sha }}
+          retention-days: 14
           path: app/build/outputs/apk/debug/
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: reports-${{ github.sha }}
+          retention-days: 14
           path: |
             domain/build/reports/
             app/build/reports/
@@ -113,6 +117,7 @@ jobs:
         if: always()
         with:
           name: instrumentation-api${{ matrix.api }}-${{ github.sha }}
+          retention-days: 14
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
