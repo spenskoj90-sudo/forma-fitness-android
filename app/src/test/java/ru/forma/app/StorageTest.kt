@@ -300,7 +300,7 @@ class StorageTest {
    val sqlite=db.openHelper.writableDatabase
    sqlite.execSQL("CREATE TABLE profile_update_counts (n INTEGER NOT NULL)")
    sqlite.execSQL("INSERT INTO profile_update_counts(n) VALUES (0)")
-   sqlite.execSQL("CREATE TRIGGER count_profile_mutations AFTER UPDATE ON profiles " +
+   sqlite.execSQL("CREATE TRIGGER count_profile_mutations AFTER INSERT ON profiles " +
     "BEGIN UPDATE profile_update_counts SET n=n+1; END")
    fun writes():Int=sqlite.query("SELECT n FROM profile_update_counts").use{cursor->
     assertTrue(cursor.moveToFirst());cursor.getInt(0)
@@ -329,11 +329,11 @@ class StorageTest {
    val paused=repo.load(p.id)!!.active!!
    assertTrue(paused.paused)
 
-   // Count SQLite UPDATEs, not possibly conflated Flow emissions.
+   // ProfileDao.put uses INSERT OR REPLACE: count SQL inserts, not Flow emissions.
    val sqlite=db.openHelper.writableDatabase
    sqlite.execSQL("CREATE TABLE session_update_counts (n INTEGER NOT NULL)")
    sqlite.execSQL("INSERT INTO session_update_counts(n) VALUES (0)")
-   sqlite.execSQL("CREATE TRIGGER count_session_updates AFTER UPDATE ON profiles " +
+   sqlite.execSQL("CREATE TRIGGER count_session_updates AFTER INSERT ON profiles " +
     "BEGIN UPDATE session_update_counts SET n=n+1; END")
    fun writes():Int=sqlite.query("SELECT n FROM session_update_counts").use{cursor->
     assertTrue(cursor.moveToFirst())
