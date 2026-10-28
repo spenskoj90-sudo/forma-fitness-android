@@ -11,6 +11,57 @@ import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StorageTest {
+ @Test fun legacyV1DatabasePreservesHistoryMeasurementsAndPausedWorkout():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-legacy-v1-compatibility.db"
+  ctx.deleteDatabase(name)
+  val historical=Profile(id="old-user",name="Historical",
+   measurements=listOf(Measurement(id="old-weight",dateMs=1_500L,
+    values=mapOf("weight" to 82.0))))
+  val finished=stopSession(
+   startSession(historical.id,generateProgram(historical).first(),1_000L),
+   false,1_700L)
+  val original=finishSession(historical,finished,1_800L)
+  val second=Profile(id="paused-user",name="Another",
+   active=pauseSession(
+    startSession("paused-user",generateProgram(Profile(id="paused-user",name="Another")).first(),2_000L),
+    2_500L))
+  // Seed the original, version-1 on-disk SQLite layout, not Room's current
+  // createAllTables callback. This locks down upgrade-over-install semantics.
+  val legacy=ctx.openOrCreateDatabase(name,android.content.Context.MODE_PRIVATE,null)
+  try {
+   legacy.execSQL("CREATE TABLE profiles (id TEXT NOT NULL, name TEXT NOT NULL, " +
+    "document TEXT NOT NULL, PRIMARY KEY(id))")
+   legacy.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY, identity_hash TEXT)")
+   legacy.execSQL("INSERT INTO room_master_table (id, identity_hash) VALUES " +
+    "(42, '4863845aa8163bf8ac2c52e4fc5f0304')")
+   listOf(original,second).forEach { profile->
+    legacy.execSQL("INSERT INTO profiles(id, name, document) VALUES(?, ?, ?)",
+     arrayOf(profile.id,profile.name,
+      kotlinx.serialization.json.Json.encodeToString(
+       ru.forma.domain.Profile.serializer(),profile)))
+   }
+   legacy.version=1
+  } finally { legacy.close() }
+
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  try {
+   var repo=ProfileRepository(db)
+   assertEquals(original,repo.load(original.id))
+   assertEquals(second,repo.load(second.id))
+   repo.mutate(original.id){it.copy(weightKg=83.0)}
+   assertEquals(second,repo.load(second.id))
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   repo=ProfileRepository(db)
+   assertEquals(original.history,repo.load(original.id)!!.history)
+   assertEquals(original.measurements,repo.load(original.id)!!.measurements)
+   assertEquals(83.0,repo.load(original.id)!!.weightKg,0.0)
+   assertTrue(repo.load(second.id)!!.active!!.paused)
+   assertEquals(second,repo.load(second.id))
+  } finally { db.close();ctx.deleteDatabase(name) }
+ }
+
  @Test fun isolatedProfilesSurviveDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-isolation-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build();var repo=ProfileRepository(db)
