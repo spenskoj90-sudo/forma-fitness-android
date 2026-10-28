@@ -289,4 +289,41 @@ class StorageTest {
   } finally { db.close() }
  }
 
+ @Test fun unchangedPausedTicksAndStaleCallbacksDoNotWriteRoom():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val p=Profile(id="noop-profile",name="Tester")
+   repo.saveProfile(p)
+   val started=repo.start(p.id,generateProgram(p).first(),1_000L)
+   repo.mutateSession(p.id,started.id){pauseSession(it,1_200L)}
+   val paused=repo.load(p.id)!!.active!!
+   assertTrue(paused.paused)
+
+   // Count SQLite UPDATEs, not possibly conflated Flow emissions.
+   val sqlite=db.openHelper.writableDatabase
+   sqlite.execSQL("CREATE TABLE session_update_counts (n INTEGER NOT NULL)")
+   sqlite.execSQL("INSERT INTO session_update_counts(n) VALUES (0)")
+   sqlite.execSQL("CREATE TRIGGER count_session_updates AFTER UPDATE ON profiles " +
+    "BEGIN UPDATE session_update_counts SET n=n+1; END")
+   fun writes():Int=sqlite.query("SELECT n FROM session_update_counts").use{cursor->
+    assertTrue(cursor.moveToFirst())
+    cursor.getInt(0)
+   }
+   repeat(5){index->
+    repo.mutateSession(p.id,started.id){advanceTimed(it,10_000L+index*1_000L)}
+   }
+   repo.pauseWhenServiceUnavailable(p.id,started.id,100_000L){false}
+   assertEquals(0,writes())
+   assertEquals(paused,repo.load(p.id)!!.active)
+
+   // A genuine Resume still persists exactly once.
+   repo.mutateSession(p.id,started.id){resumeSession(it,20_000L)}
+   assertEquals(1,writes())
+   assertFalse(repo.load(p.id)!!.active!!.paused)
+   repo.mutateSession(p.id,started.id){it}
+   assertEquals(1,writes())
+  }finally{db.close()}
+ }
+
 }
