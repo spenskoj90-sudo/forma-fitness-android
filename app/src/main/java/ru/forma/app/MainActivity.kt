@@ -290,7 +290,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  Page(if(s.paused)"Пауза"else if(s.phase==Phase.WORK)s.current?.exercise?.name?:stageLabel(s) else stageLabel(s),if(s.phase==Phase.WORK)(s.current?.exercise?.muscle?.label?:s.day.name)+" · "+s.sets.size+" сохранённых подходов" else s.day.name+" · "+s.sets.size+" сохранённых подходов",compact=true){
   WorkoutJourneyProgress(s)
   if(s.terminal)Panel("Результат"){
-   Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.")
+   Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Записанные подходы находятся в текущей сессии. Сохраните занятие в историю.")
    Text("Записано подходов: "+s.sets.size+" · активное время: "+s.activeSeconds/60+" мин "+s.activeSeconds%60+" сек.")
    Action("Сохранить и завершить",{vm.finish(s.id)})
    OutlinedButton({vm.finish(s.id,onOpenHistory)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Сохранить и открыть историю")}
@@ -326,7 +326,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
        Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."},style=MaterialTheme.typography.bodySmall)
       }
       Panel("Подходы"){
-       WorkoutSetCards(s,current,weight,reps)
+       WorkoutSetCards(s,current)
        Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
       if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
       NumericField("Повторения",reps){reps=it}
