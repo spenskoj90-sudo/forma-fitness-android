@@ -25,19 +25,26 @@ import ru.forma.domain.*
 @Composable fun WorkoutSetCards(session:Session,current:Prescription,weight:String,reps:String) {
  val logged=session.sets.filter{it.exerciseId==current.exercise.id}
  for(index in 1..current.sets) {
-  val result=logged.getOrNull(index-1)
-  val status=if(result!=null)"Готово" else if(index==session.setNumber)"Текущий" else "Впереди"
-  val load=if(current.exercise.equipment==Equipment.BODYWEIGHT)"собственный вес"
-   else (result?.weight?.toString()?:if(index==session.setNumber)weight else "—")+" "+recordedLoadUnit(current.exercise.equipment)
-  val count=result?.reps?.toString()?:if(index==session.setNumber)reps else "—"
+  val slot=workoutSetSlotStatus(session,index)
+  val status=when(slot) {
+   WorkoutSetSlotStatus.PASSED -> "Пройден"
+   WorkoutSetSlotStatus.CURRENT -> "Текущий"
+   WorkoutSetSlotStatus.UPCOMING -> "Впереди"
+  }
   Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-     Text("Подход $index из ${current.sets}",style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.SemiBold)
-     Text(status,style=MaterialTheme.typography.labelLarge,color=if(result!=null)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    Text("Нагрузка: $load · Повторения: $count",style=MaterialTheme.typography.bodyMedium)
+    Text("Подход $index из ${current.sets}",style=MaterialTheme.typography.labelLarge,fontWeight=FontWeight.SemiBold)
+    Text(status,style=MaterialTheme.typography.labelLarge,color=if(slot==WorkoutSetSlotStatus.CURRENT)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    if(slot==WorkoutSetSlotStatus.CURRENT) Text("План: ${current.reps} повторений",style=MaterialTheme.typography.bodyMedium)
    }
+  }
+ }
+ if(session.setNumber>1) Text("Пройденный подход мог быть выполнен или пропущен. Сохранённые результаты приведены отдельно.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+ if(logged.isNotEmpty()) {
+  Text("Записанные результаты упражнения",style=MaterialTheme.typography.titleSmall)
+  logged.forEachIndexed { recordIndex,result ->
+   val load=if(current.exercise.equipment==Equipment.BODYWEIGHT)"собственный вес" else "${result.weight} ${recordedLoadUnit(current.exercise.equipment)}"
+   Text("Запись ${recordIndex+1}: $load · ${result.reps} повторений · сложность ${result.effort}/10",style=MaterialTheme.typography.bodyMedium)
   }
  }
 }
