@@ -52,7 +52,26 @@ class JourneyTest{
  private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.filesDir,"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
-  waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твой путь к сильной и здоровой версии себя")
+  waitText("Имя")
+  composeRule.onNodeWithText("Имя").performTextInput("Тест А")
+  // API26 evidence: Gboard's first-run overlay remained open over the form
+  // and the on-screen save never reached Room. Exercise the real Done action,
+  // close focus and then require the button to be visible before tapping it.
+  composeRule.onNodeWithText("Имя").performImeAction()
+  composeRule.onNodeWithText("Сохранить профиль").performScrollTo()
+   .assertIsEnabled().assertIsDisplayed().performClick()
+  // Separate genuine Room write failure from delayed Home recomposition.
+  try {
+   composeRule.waitUntil(20000) {
+    runBlocking { app.repository.profiles.first().any { it.name=="Тест А" } }
+   }
+  } catch(e:androidx.compose.ui.test.ComposeTimeoutException) {
+   runCatching{screenshot("initial-profile-save-not-persisted")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-PROFILE-SAVE-TIMEOUT")}
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Initial profile save missing in Room: hasError=${vm.error.value!=null}",e)
+  }
+  waitText("Твой путь к сильной и здоровой версии себя")
   // Room may show the profile before DataStore updates the selection.
   // Assert the durable default from Room, independent of selection timing.
   assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
