@@ -73,7 +73,7 @@ fun recordedLoadVolumeByEquipment(workouts:List<Workout>):Map<Equipment,Double>{
   val equipmentById=workout.day.exercises.associate{it.exercise.id to it.exercise.equipment}
   workout.sets.forEach{set->
    val equipment=equipmentById[set.exerciseId]
-   if(equipment!=null && set.weight.isFinite() && set.weight>0 && set.reps>0){
+   if(equipment!=null && equipment !in setOf(Equipment.BODYWEIGHT, Equipment.RESISTANCE_BAND, Equipment.PULL_UP_BAR, Equipment.MAT, Equipment.BENCH) && set.weight.isFinite() && set.weight>0 && set.reps>0){
     volumes[equipment]=(volumes[equipment]?:0.0)+set.weight*set.reps
    }
   }
