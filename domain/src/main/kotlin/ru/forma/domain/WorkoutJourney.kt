@@ -50,3 +50,13 @@ fun workoutSetSlotStatus(session: Session, number: Int): WorkoutSetSlotStatus {
         else -> WorkoutSetSlotStatus.UPCOMING
     }
 }
+
+/** Preserve every historic record; limit only the number of cards initially composed. */
+fun recentWorkoutHistory(history: List<Workout>, limit: Int): List<Workout> =
+    history.sortedWith(compareByDescending<Workout> { it.finishedMs }
+        .thenByDescending { it.startedMs }.thenBy { it.id }).take(limit.coerceAtLeast(0))
+
+/** Zero for bodyweight is a storage convention, not a claim of zero exercise load. */
+fun recordedSetLoadDisplay(set: SetResult, equipment: Equipment?): String =
+    if (equipment == Equipment.BODYWEIGHT) "собственный вес"
+    else "${set.weight} ${equipment?.let(::recordedLoadUnit) ?: "кг (единица не определена)"}"
