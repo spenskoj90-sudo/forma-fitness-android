@@ -74,7 +74,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
     if(error!=null)Panel("Не удалось выполнить действие"){Text(error!!);TextButton({vm.error.value=null}){Text("Понятно")}}
     when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
-     p?.active!=null->Runner(p!!.active!!,vm)
+     p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
      else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,settings.trainingPlace,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
     }
@@ -271,7 +271,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  Action("Начать кардио",{vm.start(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
 }
 
-@Composable fun Runner(s:Session,vm:FormaViewModel){
+@Composable fun Runner(s:Session,vm:FormaViewModel,onOpenHistory:()->Unit){
  val app=LocalContext.current.applicationContext as FormaApp
  var now by remember{mutableLongStateOf(app.workoutNow())}
  LaunchedEffect(s.id){while(true){kotlinx.coroutines.delay(500);now=app.workoutNow()}}
@@ -282,9 +282,12 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){focus.clearFocus(force=true);keyboard?.hide()}
  key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
  Page(if(s.paused)"Пауза"else if(s.phase==Phase.WORK)s.current?.exercise?.name?:stageLabel(s) else stageLabel(s),if(s.phase==Phase.WORK)(s.current?.exercise?.muscle?.label?:s.day.name)+" · "+s.sets.size+" сохранённых подходов" else s.day.name+" · "+s.sets.size+" сохранённых подходов",compact=true){
+  WorkoutJourneyProgress(s)
   if(s.terminal)Panel("Результат"){
    Text(if(s.phase==Phase.DONE)"Занятие завершено."else"Остановлено. Выполненные подходы сохранены.")
+   Text("Записано подходов: "+s.sets.size+" · активное время: "+s.activeSeconds/60+" мин "+s.activeSeconds%60+" сек.")
    Action("Сохранить и завершить",{vm.finish(s.id)})
+   OutlinedButton({vm.finish(s.id,onOpenHistory)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Сохранить и открыть историю")}
   }else{
    if(s.phase==Phase.WORK){
     val current=s.current
@@ -303,7 +306,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      var techniqueExpanded by rememberSaveable(s.id,s.exerciseIndex){mutableStateOf(false)}
      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){
       FilledTonalButton({techniqueExpanded=!techniqueExpanded},modifier=Modifier.weight(1f)){
-       Text(if(techniqueExpanded)"Скрыть инструкцию"else"Инструкция")
+       Text(if(techniqueExpanded)"Скрыть ошибки"else"Инструкция и ошибки")
       }
       Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer){
        Text(current.exercise.muscle.label,Modifier.padding(horizontal=14.dp,vertical=11.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSecondaryContainer)
@@ -312,31 +315,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      val secondary=secondaryMuscles(current.exercise)
      if(secondary.isNotEmpty())Text("Дополнительно работают: "+secondary.joinToString { it.label },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
      Text("Схема мышц не заменяет демонстрацию техники. Проверенные видео для отдельных упражнений пока готовятся.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-     if(techniqueExpanded)Panel("Техника упражнения"){
-      Text(current.exercise.cue)
-      if(current.exercise.mistakes.isNotBlank()){
-       Text("Частые ошибки",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.primary)
-       Text(current.exercise.mistakes,style=MaterialTheme.typography.bodySmall)
+     Panel("Как выполнять"){Text(current.exercise.cue)}
+      if(techniqueExpanded)Panel("Частые ошибки"){
+       Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."},style=MaterialTheme.typography.bodySmall)
       }
-     }
-     Panel("Подходы"){
-      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-       Text("№",modifier=Modifier.weight(0.3f),style=MaterialTheme.typography.labelMedium)
-       Text("Вес, кг",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
-       Text("Повторы",modifier=Modifier.weight(1f),style=MaterialTheme.typography.labelMedium)
-       Text("Статус",modifier=Modifier.weight(0.8f),style=MaterialTheme.typography.labelMedium)
-      }
-      val logged=s.sets.filter{it.exerciseId==current.exercise.id}
-      for(index in 1..current.sets){
-       val result=logged.getOrNull(index-1)
-       Row(Modifier.fillMaxWidth().padding(vertical=3.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-        Text(index.toString(),modifier=Modifier.weight(0.3f))
-        Text(result?.weight?.toString()?:if(index==s.setNumber)weight else "—",modifier=Modifier.weight(1f))
-        Text(result?.reps?.toString()?:if(index==s.setNumber)reps else "—",modifier=Modifier.weight(1f))
-        Text(if(result!=null)"✓"else if(index==s.setNumber)"●"else "○",modifier=Modifier.weight(0.8f),color=if(result!=null)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-       }
-      }
-      Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
+      Panel("Подходы"){
+       WorkoutSetCards(s,current,weight,reps)
+       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
       if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
@@ -348,7 +333,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    }else{
     Panel("Текущий этап"){
      if(s.phase in listOf(Phase.WARMUP,Phase.REST,Phase.CARDIO)){
-      Text((remainingSeconds(s,now)/60).toString().padStart(2,'0')+":"+(remainingSeconds(s,now)%60).toString().padStart(2,'0'),style=MaterialTheme.typography.displayMedium,fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)
+      Text((remainingSeconds(s,now)/60).toString().padStart(2,'0')+":"+(remainingSeconds(s,now)%60).toString().padStart(2,'0'),Modifier.semantics{contentDescription="Осталось ${remainingSeconds(s,now)} секунд"},style=MaterialTheme.typography.displayMedium,fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)
      }
      if(s.phase==Phase.WARMUP)Text("Лёгкая ходьба на месте, плавные движения плеч и таза. Без боли и рывков.")
      if(s.phase==Phase.CARDIO)Text("Комфортный темп. При дискомфорте остановитесь.")
