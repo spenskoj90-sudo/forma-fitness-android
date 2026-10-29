@@ -333,7 +333,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
        }
       }
       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
-      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(if(current.exercise.equipment==Equipment.BARBELL)"Вес, кг · штанга целиком" else "Вес, кг · одна гантель",weight){weight=it}
+      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
       Slider(effort,{effort=it},valueRange=1f..10f,steps=8)

@@ -41,10 +41,16 @@ fun dateLabel(ms:Long)=Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).f
    context.startActivity(Intent.createChooser(send,"Отчёт FORMA"))
   })
  }
- listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");Text("Нагрузка: ${"%.1f".format(sets.sumOf{it.weight*it.reps})} кг·повт (на гантель)");Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
- p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){Text("Максимум: ${sets.maxOf{it.weight}} кг · ${sets.maxOf{it.reps}} повторений");HistoryChart(sets.sortedBy{it.timeMs}.map{it.weight})}}
+ listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByGear=recordedLoadVolumeByEquipment(records);Text("Записанный объём: кг × повторения; значения разных снарядов не суммируются.")
+ if(loadByGear.isEmpty())Text("Подходы без записанного дополнительного веса.")
+ else loadByGear.forEach{(gear,total)->
+  Text("${gear.label}: ${"%.1f".format(total)} кг·повт (${recordedLoadUnit(gear)})")
+ };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
+ p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){val savedEquipment=p.history.asSequence().flatMap{it.day.exercises.asSequence()}
+  .firstOrNull{it.exercise.id==id}?.exercise?.equipment
+ Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений");HistoryChart(sets.sortedBy{it.timeMs}.map{it.weight})}}
  if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
- p.history.sortedByDescending{it.finishedMs}.forEach{w->Panel(w.day.name){Text(dateLabel(w.finishedMs));Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов");w.sets.forEach{s->Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${s.weight} кг × ${s.reps} · сложность ${s.effort}")}}}
+ p.history.sortedByDescending{it.finishedMs}.forEach{w->Panel(w.day.name){Text(dateLabel(w.finishedMs));Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов");w.sets.forEach{s->Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${s.weight} ${w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} × ${s.reps} · сложность ${s.effort}")}}}
 }}
 
 /** Local-only export: no automatic server upload of personal fitness data. */

@@ -77,5 +77,5 @@ fun generateProgram(p:Profile,now:Long=System.currentTimeMillis(),place:Training
   val last=p.history.sortedByDescending{it.finishedMs}.firstOrNull{it.status==Phase.DONE&&it.sets.any{s->s.exerciseId==ex.id}}?.sets?.filter{it.exerciseId==ex.id}.orEmpty()
   val previous=last.lastOrNull()?.weight?:0.0;val weight=suggestWeight(previous,if(last.size>=sets)last.minOf{it.reps}else 0,reps,last.maxOfOrNull{it.effort}?:10,last.any{it.pain}||holdProgression,p.recovery,returning)
   Prescription(ex,sets,reps,weight,if(p.primary==Goal.STRENGTH)120 else 90,"${p.primary.label}; ${p.experience.label}. "+if(returning)"Возвращение: 2 подхода, 70% прошлого веса."else if(holdProgression)"Последнее силовое занятие остановлено: нагрузка не повышается."else if(weight>previous)"Все подходы выполнены: предлагается +5%, подтвердите вес."else"Вес сохранён, корректируйте по самочувствию.")
- },explanation="Всё тело и доступные акценты. Место: ${place.label}. Силовые дни разделены отдыхом. Вес: на одну гантель или общий вес штанги.")}
+ },explanation="Всё тело и доступные акценты. Место: ${place.label}. Силовые дни разделены отдыхом. Вес вводится по единице выбранного снаряда: одна гантель, вся штанга, одна гиря или показание тренажёра.")}
 }

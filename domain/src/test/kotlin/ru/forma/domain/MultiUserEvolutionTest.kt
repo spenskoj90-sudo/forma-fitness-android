@@ -7,6 +7,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MultiUserEvolutionTest {
+    @Test fun recordedLoadUsesSpecificEquipmentUnitsWithoutRewritingHistoricalWeights() {
+        val expected = mapOf(
+            Equipment.DUMBBELL to "Вес одной гантели, кг",
+            Equipment.BARBELL to "Вес всей штанги, кг",
+            Equipment.KETTLEBELL to "Вес одной гири, кг",
+            Equipment.SMITH_MACHINE to "Общий вес грифа Смита, кг",
+            Equipment.LEG_PRESS_MACHINE to "Указанный вес тренажёра, кг",
+            Equipment.RESISTANCE_BAND to "Дополнительный вес, кг (если есть)"
+        )
+        expected.forEach { (gear,label) ->
+            assertEquals(label, recordedLoadInputLabel(gear))
+        }
+        assertTrue(Equipment.entries.all {
+            recordedLoadInputLabel(it).isNotBlank() && recordedLoadUnit(it).contains("кг")
+        })
+        val db = exerciseCatalog.first { it.id == "goblet" }
+        val bb = exerciseCatalog.first { it.id == "bb_row" }
+        val machine = exerciseCatalog.first { it.id == "leg_press" }
+        val cable = exerciseCatalog.first { it.id == "lat_pulldown" }
+        val day = TrainingDay(1,"Legacy",exercises = listOf(db,bb,machine,cable).map {
+            Prescription(it,sets=1,reps=10)
+        })
+        val sets = listOf(
+            SetResult("goblet",8,10.0,7,false,100),
+            SetResult("bb_row",5,30.0,7,false,101),
+            SetResult("leg_press",10,50.0,7,false,102),
+            SetResult("lat_pulldown",8,25.0,7,false,103)
+        )
+        val snapshot = Workout("legacy-volume",day,0,200,sets,Phase.DONE)
+        val totals = recordedLoadVolumeByEquipment(listOf(snapshot))
+        assertEquals(80.0, totals[Equipment.DUMBBELL]!!,0.0) // not pair-doubled
+        assertEquals(150.0, totals[Equipment.BARBELL]!!,0.0)
+        assertEquals(500.0, totals[Equipment.LEG_PRESS_MACHINE]!!,0.0)
+        assertEquals(200.0, totals[Equipment.LAT_PULLDOWN]!!,0.0)
+        assertEquals(4,totals.size) // different machines never combined
+        assertEquals(10.0,snapshot.sets.first().weight,0.0)
+        assertTrue(recordedLoadVolumeByEquipment(emptyList()).isEmpty())
+    }
+
     @Test fun previousEquipmentNamesSurviveJsonRoundTrip() {
         val previous = Profile(name = "Existing", equipment =
             setOf(Equipment.BODYWEIGHT, Equipment.DUMBBELL, Equipment.BARBELL))

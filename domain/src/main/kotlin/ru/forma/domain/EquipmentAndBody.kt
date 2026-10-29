@@ -38,6 +38,49 @@ fun availableEquipment(profile: Profile, place: TrainingPlace): Set<Equipment> {
     return all intersect allowed
 }
 
+/** Unit of the numeric weight the owner actually typed. No legacy value is converted. */
+fun recordedLoadInputLabel(equipment:Equipment):String=when(equipment){
+ Equipment.DUMBBELL->"Вес одной гантели, кг"
+ Equipment.BARBELL->"Вес всей штанги, кг"
+ Equipment.KETTLEBELL->"Вес одной гири, кг"
+ Equipment.SMITH_MACHINE->"Общий вес грифа Смита, кг"
+ Equipment.CABLE_MACHINE,Equipment.LAT_PULLDOWN,Equipment.LEG_PRESS_MACHINE,
+ Equipment.CHEST_PRESS_MACHINE,Equipment.SEATED_ROW_MACHINE,Equipment.LEG_CURL_MACHINE->
+  "Указанный вес тренажёра, кг"
+ else->"Дополнительный вес, кг (если есть)"
+}
+
+/** Human-readable context for old and new recorded values, without guessing pairs. */
+fun recordedLoadUnit(equipment:Equipment):String=when(equipment){
+ Equipment.DUMBBELL->"кг на одну гантель"
+ Equipment.BARBELL->"кг всего на штанге"
+ Equipment.KETTLEBELL->"кг на одну гирю"
+ Equipment.SMITH_MACHINE->"кг на грифе Смита"
+ Equipment.CABLE_MACHINE,Equipment.LAT_PULLDOWN,Equipment.LEG_PRESS_MACHINE,
+ Equipment.CHEST_PRESS_MACHINE,Equipment.SEATED_ROW_MACHINE,Equipment.LEG_CURL_MACHINE->
+  "кг по шкале тренажёра"
+ else->"кг дополнительного веса"
+}
+
+/** Numeric kg×reps is only comparable within the recorded equipment category.
+ * The historical TrainingDay, not today's catalog, determines the equipment.
+ * In particular, a single-dumbbell value is NOT silently doubled.
+ * Body weight and elastic-band resistance are not estimated as kilograms.
+ */
+fun recordedLoadVolumeByEquipment(workouts:List<Workout>):Map<Equipment,Double>{
+ val volumes=linkedMapOf<Equipment,Double>()
+ workouts.forEach{workout->
+  val equipmentById=workout.day.exercises.associate{it.exercise.id to it.exercise.equipment}
+  workout.sets.forEach{set->
+   val equipment=equipmentById[set.exerciseId]
+   if(equipment!=null && set.weight.isFinite() && set.weight>0 && set.reps>0){
+    volumes[equipment]=(volumes[equipment]?:0.0)+set.weight*set.reps
+   }
+  }
+ }
+ return volumes
+}
+
 /** Anatomy labels are teaching aids, not a clinical motion analysis. */
 fun secondaryMuscles(exercise: Exercise): Set<Muscle> = when (exercise.id) {
     "squat", "goblet", "chair_squat", "leg_press", "smith_squat", "kettlebell_squat" -> setOf(Muscle.CORE)
