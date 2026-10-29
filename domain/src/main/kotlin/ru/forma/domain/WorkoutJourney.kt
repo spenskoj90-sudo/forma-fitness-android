@@ -35,3 +35,18 @@ fun workoutJourneyOverview(session: Session): WorkoutJourneyOverview {
         nextStep = nextStep
     )
 }
+
+/** The active set index is known; prior indices may have been skipped.
+ * Never label a particular slot DONE without persisted per-slot evidence.
+ */
+enum class WorkoutSetSlotStatus { PASSED, CURRENT, UPCOMING }
+
+fun workoutSetSlotStatus(session: Session, number: Int): WorkoutSetSlotStatus {
+    val planned = session.current?.sets ?: 0
+    require(number in 1..planned) { "Set number outside current exercise" }
+    return when {
+        number < session.setNumber -> WorkoutSetSlotStatus.PASSED
+        number == session.setNumber -> WorkoutSetSlotStatus.CURRENT
+        else -> WorkoutSetSlotStatus.UPCOMING
+    }
+}
