@@ -86,10 +86,14 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }
   }
  }
- fun finish(expected:String){
+ fun finish(expected:String,onSaved:()->Unit={}){
   val p=current.value?:return
   if(p.active?.id!=expected)return
-  action{app.repository.mutate(p.id){v->v.active?.takeIf{it.id==expected}?.let{finishSession(v,it,app.workoutNow())}?:v}}
+  action{
+   app.repository.mutate(p.id){v->v.active?.takeIf{it.id==expected}?.let{finishSession(v,it,app.workoutNow())}?:v}
+   // Navigate only after Room confirms this exact workout reached persisted history.
+   if(app.repository.load(p.id)?.history?.any{it.id==expected}==true)onSaved()
+  }
  }
  fun measurement(values:Map<String,Double>,id:String?=null,dateMs:Long=System.currentTimeMillis(),onSaved:()->Unit={}){val profile=current.value?.id?:return;action{val m=Measurement(id=id?:java.util.UUID.randomUUID().toString(),dateMs=dateMs,values=values);require(m.valid());app.repository.mutate(profile){p->require(id==null||p.measurements.any{it.id==id}){"Замер больше не существует"};val records=if(id==null)p.measurements+m else p.measurements.map{if(it.id==id)m else it};val latest=records.sortedBy{it.dateMs};p.copy(measurements=records,weightKg=latest.lastOrNull{it.values.containsKey("weight")}?.values?.get("weight")?:p.weightKg,heightCm=latest.lastOrNull{it.values.containsKey("height")}?.values?.get("height")?:p.heightCm)};onSaved()}}
  fun exportBackup(uri:Uri,allProfiles:Boolean=false){val id:String?=if(allProfiles)null else (current.value?.id?:return);action{withContext(Dispatchers.IO){val text=app.repository.exportBackup(id);val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value=if(allProfiles)"Копия всех локальных профилей сохранена. Она содержит персональные данные других пользователей — храните её в защищённом месте." else "Копия текущего профиля сохранена. Храните её в защищённом месте: она содержит историю и замеры."}}
