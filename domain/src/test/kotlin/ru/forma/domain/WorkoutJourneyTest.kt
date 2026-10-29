@@ -44,6 +44,25 @@ class WorkoutJourneyTest {
         assertEquals(WorkoutSetSlotStatus.PASSED,workoutSetSlotStatus(recorded,1))
         assertEquals(WorkoutSetSlotStatus.CURRENT,workoutSetSlotStatus(recorded,2))
     }
+
+    @Test fun bodyweightLoadLabelUsesRecordedEquipmentWithoutEstimatingBodyMass() {
+        val set = SetResult("push", 12, 0.0, 7, false, 1_000L)
+        assertEquals("собственный вес", recordedSetLoadDisplay(set, Equipment.BODYWEIGHT))
+        assertEquals("0.0 кг на одну гантель", recordedSetLoadDisplay(set, Equipment.DUMBBELL))
+        assertEquals("0.0 кг (единица не определена)", recordedSetLoadDisplay(set, null))
+    }
+
+    @Test fun historyPaginationIsNewestFirstStableAndNeverMutatesStorage() {
+        val records = (1..23).map { i -> Workout("w$i", day, i.toLong(), i.toLong(), emptyList(), Phase.DONE) }.reversed()
+        val before = records.toList()
+        assertEquals(listOf("w23", "w22", "w21"), recentWorkoutHistory(records, 3).map { it.id })
+        assertEquals(23, recentWorkoutHistory(records, 100).size)
+        assertTrue(recentWorkoutHistory(records, -1).isEmpty())
+        assertEquals(before, records)
+        val tied = listOf(Workout("z", day, 4, 9, emptyList(), Phase.DONE), Workout("a", day, 4, 9, emptyList(), Phase.DONE))
+        assertEquals(listOf("a", "z"), recentWorkoutHistory(tied, 2).map { it.id })
+    }
+
     @Test fun pausedAndStoppedSessionsHaveHonestGuidanceAndNoPhantomResults() {
         val active = skipStage(startSession("a",day,1_000L),1_000L)
         val paused = pauseSession(active,1_100L)
