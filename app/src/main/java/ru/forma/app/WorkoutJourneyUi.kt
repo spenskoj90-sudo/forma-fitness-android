@@ -22,7 +22,7 @@ import ru.forma.domain.*
 }
 
 /** Text statuses replace glyph-only status cells and avoid cramped fixed-width columns. */
-@Composable fun WorkoutSetCards(session:Session,current:Prescription,weight:String,reps:String) {
+@Composable fun WorkoutSetCards(session:Session,current:Prescription) {
  val logged=session.sets.filter{it.exerciseId==current.exercise.id}
  for(index in 1..current.sets) {
   val slot=workoutSetSlotStatus(session,index)
@@ -43,7 +43,7 @@ import ru.forma.domain.*
  if(logged.isNotEmpty()) {
   Text("Записанные результаты упражнения",style=MaterialTheme.typography.titleSmall)
   logged.forEachIndexed { recordIndex,result ->
-   val load=if(current.exercise.equipment==Equipment.BODYWEIGHT)"собственный вес" else "${result.weight} ${recordedLoadUnit(current.exercise.equipment)}"
+   val load=recordedSetLoadDisplay(result,current.exercise.equipment)
    Text("Запись ${recordIndex+1}: $load · ${result.reps} повторений · сложность ${result.effort}/10",style=MaterialTheme.typography.bodyMedium)
   }
  }
