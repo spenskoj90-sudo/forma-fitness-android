@@ -32,6 +32,18 @@ class WorkoutJourneyTest {
         assertTrue(workoutJourneyOverview(done).nextStep.contains("Сохраните"))
     }
 
+    @Test fun skippedFirstSetNeverClaimsRecordedResultsForThatSlot() {
+        val first = skipStage(startSession("a",day,1_000L),1_000L)
+        val skipped = skipStage(first,1_000L)
+        assertEquals(0,skipped.sets.size)
+        assertEquals(2,skipped.setNumber)
+        assertEquals(WorkoutSetSlotStatus.PASSED,workoutSetSlotStatus(skipped,1))
+        assertEquals(WorkoutSetSlotStatus.CURRENT,workoutSetSlotStatus(skipped,2))
+        val recorded = logSet(skipped,8.0,12,7,false,1_100L)
+        assertEquals(1,workoutJourneyOverview(recorded).loggedSets)
+        assertEquals(WorkoutSetSlotStatus.PASSED,workoutSetSlotStatus(recorded,1))
+        assertEquals(WorkoutSetSlotStatus.CURRENT,workoutSetSlotStatus(recorded,2))
+    }
     @Test fun pausedAndStoppedSessionsHaveHonestGuidanceAndNoPhantomResults() {
         val active = skipStage(startSession("a",day,1_000L),1_000L)
         val paused = pauseSession(active,1_100L)
