@@ -1,0 +1,37 @@
+package ru.forma.domain
+
+/** Read-only guidance derived from the persisted workout, never a second timer or state store. */
+data class WorkoutJourneyOverview(
+    val loggedSets: Int,
+    val plannedSets: Int,
+    val exerciseNumber: Int,
+    val exerciseCount: Int,
+    val nextStep: String
+)
+
+fun workoutJourneyOverview(session: Session): WorkoutJourneyOverview {
+    val exercises = session.day.exercises
+    val current = session.current
+    val next = exercises.getOrNull(session.exerciseIndex + 1)
+    val nextStep = when {
+        session.phase == Phase.DONE -> "Все этапы выполнены. Сохраните тренировку в историю."
+        session.phase == Phase.STOPPED -> "Тренировка остановлена. Выполненные подходы можно сохранить."
+        session.paused -> "Тренировка на паузе. Продолжите, когда будете готовы."
+        session.phase == Phase.WARMUP -> "Разминка перед основной частью тренировки."
+        session.phase == Phase.REST && current != null && session.setNumber < current.sets ->
+            "Далее: подход ${session.setNumber + 1} из ${current.sets} — ${current.exercise.name}."
+        session.phase == Phase.REST && next != null ->
+            "Далее: ${next.exercise.name}, подход 1 из ${next.sets}."
+        session.phase == Phase.WORK && current != null ->
+            "Подход ${session.setNumber} из ${current.sets} — ${current.exercise.name}."
+        session.phase == Phase.CARDIO -> "Кардио: ${session.day.cardio?.label.orEmpty()}."
+        else -> "Следуйте текущему этапу тренировки."
+    }
+    return WorkoutJourneyOverview(
+        loggedSets = session.sets.size,
+        plannedSets = exercises.sumOf { it.sets },
+        exerciseNumber = if (exercises.isEmpty()) 0 else (session.exerciseIndex + 1).coerceIn(1, exercises.size),
+        exerciseCount = exercises.size,
+        nextStep = nextStep
+    )
+}
