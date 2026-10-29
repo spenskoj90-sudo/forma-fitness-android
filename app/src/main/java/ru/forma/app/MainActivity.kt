@@ -278,6 +278,12 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  var weight by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.weight?:s.current?.weight?:0.0).toString())}
  var reps by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableStateOf((s.sets.lastOrNull{it.exerciseId==s.current?.exercise?.id}?.reps?:s.current?.reps?:12).toString())}
  var effort by rememberSaveable(s.id,s.exerciseIndex,s.setNumber){mutableFloatStateOf(7f)}
+ var confirmStop by rememberSaveable(s.id){mutableStateOf(false)}
+ if(confirmStop)AlertDialog(onDismissRequest={confirmStop=false},
+  title={Text("Остановить тренировку?")},
+  text={Text("Сопровождение завершится. Уже записанные подходы останутся в тренировке; для истории подтвердите сохранение на следующем экране.")},
+  confirmButton={TextButton({confirmStop=false;vm.stop(s.id)},modifier=Modifier.heightIn(min=48.dp)){Text("Подтвердить остановку",color=MaterialTheme.colorScheme.error)}},
+  dismissButton={TextButton({confirmStop=false},modifier=Modifier.heightIn(min=48.dp)){Text("Не останавливать")}})
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  LaunchedEffect(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){focus.clearFocus(force=true);keyboard?.hide()}
  key(s.id,s.phase,s.exerciseIndex,s.setNumber,s.paused){
@@ -346,7 +352,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     OutlinedButton({vm.skip(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){
      Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")
     }
-    TextButton({vm.stop(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
+    TextButton({confirmStop=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Остановить тренировку")}
    }
   }
  }
