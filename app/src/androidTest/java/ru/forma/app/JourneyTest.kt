@@ -77,7 +77,7 @@ class JourneyTest{
   assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
   composeRule.waitUntil(20000){composeRule.onAllNodesWithTag("shortcut-body",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
   screenshot("home-dark-default");click("Тренировки");screenshot("training-light")
-  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
+  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");composeRule.onAllNodesWithText("Текущий").onFirst().assertExists();screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.
@@ -97,7 +97,7 @@ class JourneyTest{
    val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
    throw AssertionError("Journey STOP did not persist: phase=${actual?.phase}, paused=${actual?.paused}, hasError=${vm.error.value!=null}",e)
   }
-  waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Статистика")
+  waitText("Сохранить и открыть историю");click("Сохранить и открыть историю");composeRule.waitUntil(20000){current().active==null};waitNavigation();waitText("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   click("Профиль")
   // F2 accessibility: the label and switch are one accessible touch target.
