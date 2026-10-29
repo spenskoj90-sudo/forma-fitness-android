@@ -88,6 +88,10 @@ class JourneyTest{
   }
   waitText("Пауза")
   click("Остановить тренировку")
+  composeRule.onNodeWithText("Не останавливать").assertIsDisplayed().performClick()
+  assertFalse(current().active!!.terminal)
+  click("Остановить тренировку")
+  composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed().performClick()
   // Distinguish a real Room/service STOP failure from a slow UI recomposition.
   try{composeRule.waitUntil(20000){current().active?.terminal==true}}
   catch(e:androidx.compose.ui.test.ComposeTimeoutException){
