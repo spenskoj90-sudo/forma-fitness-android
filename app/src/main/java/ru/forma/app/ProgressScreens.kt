@@ -5,6 +5,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
@@ -82,7 +83,10 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
  Panel("Динамика"){measurementLabels.forEach{(key,label)->TextButton({selected=key}){Text(if(selected==key)"✓ $label"else label)}};val samples=p.measurements.mapNotNull{m->m.values[selected]?.let{ChartSample(m.dateMs,it)}}.sortedBy{it.timeMs};val unit=if(selected=="weight")"кг"else"см";Text(measurementLabels[selected].orEmpty());HistoryChart(samples,measurementLabels[selected].orEmpty(),unit);if(samples.isNotEmpty())Text("Первый: ${samples.first().value} $unit · последний: ${samples.last().value} $unit")}
  p.measurements.sortedByDescending{it.dateMs}.forEach{m->Panel(dateLabel(m.dateMs)){m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")};TextButton({editing=m;values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}}){Text("Исправить запись")}}}
 }}
-@Composable fun ProgressScreen(p:Profile){val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
+@Composable fun ProgressScreen(p:Profile){
+ var visibleCount by rememberSaveable(p.id){mutableIntStateOf(10)}
+ val visibleHistory=remember(p.history,visibleCount){recentWorkoutHistory(p.history,visibleCount)}
+ val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
  val context=LocalContext.current
  Panel("Еженедельный отчёт"){
   Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
@@ -98,9 +102,26 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
  };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
  p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){val savedEquipment=p.history.asSequence().flatMap{it.day.exercises.asSequence()}
   .firstOrNull{it.exercise.id==id}?.exercise?.equipment
- Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений");HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")}}
+ if(savedEquipment==Equipment.BODYWEIGHT){
+  Text("Собственный вес · максимум: ${sets.maxOf{it.reps}} повторений")
+  HistoryChart(sets.map{ChartSample(it.timeMs,it.reps.toDouble())},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,"повторений")
+ }else{
+  Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
+  HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")
+ }}
  if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
- p.history.sortedByDescending{it.finishedMs}.forEach{w->Panel(w.day.name){Text(dateLabel(w.finishedMs));Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов");w.sets.forEach{s->Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${s.weight} ${w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} × ${s.reps} · сложность ${s.effort}")}}}
+ visibleHistory.forEach{w->Panel(w.day.name){
+  Text(dateLabel(w.finishedMs))
+  Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов")
+  w.sets.forEach{s->
+   val recordedEquipment=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment
+   Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${recordedSetLoadDisplay(s,recordedEquipment)} × ${s.reps} · сложность ${s.effort}")
+  }
+ }}
+ if(p.history.size>10){
+  Text("Показано ${visibleHistory.size} из ${p.history.size} сохранённых тренировок.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+  if(visibleHistory.size<p.history.size)OutlinedButton({visibleCount=(visibleCount+10).coerceAtMost(p.history.size)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Показать ещё тренировки")}
+ }
 }}
 
 /** Local-only export: no automatic server upload of personal fitness data. */
