@@ -299,6 +299,17 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     val current=s.current
     if(current!=null){
      Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+     Panel("Как выполнять"){Text(current.exercise.cue)}
+      Panel("Подходы"){
+       WorkoutSetCards(s,current)
+       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
+      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
+      NumericField("Повторения",reps){reps=it}
+      Text("Сложность: "+effort.toInt()+"/10")
+      Slider(effort,{effort=it},modifier=Modifier.semantics{contentDescription="Сложность подхода от 1 до 10"},valueRange=1f..10f,steps=8)
+      val w=number(weight);val n=reps.toIntOrNull()
+      Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
+     }
      Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF0B1B20))){
       FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
       Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
@@ -321,20 +332,9 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      val secondary=secondaryMuscles(current.exercise)
      if(secondary.isNotEmpty())Text("Дополнительно работают: "+secondary.joinToString { it.label },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
      Text("Схема мышц не заменяет демонстрацию техники. Проверенные видео для отдельных упражнений пока готовятся.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-     Panel("Как выполнять"){Text(current.exercise.cue)}
       if(techniqueExpanded)Panel("Частые ошибки"){
        Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."},style=MaterialTheme.typography.bodySmall)
       }
-      Panel("Подходы"){
-       WorkoutSetCards(s,current)
-       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
-      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
-      NumericField("Повторения",reps){reps=it}
-      Text("Сложность: "+effort.toInt()+"/10")
-      Slider(effort,{effort=it},valueRange=1f..10f,steps=8)
-      val w=number(weight);val n=reps.toIntOrNull()
-      Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
-     }
     }
    }else{
     Panel("Текущий этап"){
