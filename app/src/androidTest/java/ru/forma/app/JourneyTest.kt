@@ -111,16 +111,22 @@ class JourneyTest{
   composeRule.onAllNodesWithText("Текущий").onFirst().assertExists()
   composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
   composeRule.onNodeWithText("Пауза").assertIsDisplayed()
-  // The primary set action precedes the informational list, even on a small screen.
-  val saveTop=composeRule.onNodeWithText("Подход выполнен").fetchSemanticsNode().boundsInRoot.top
-  val planTop=composeRule.onNodeWithText("План и записи подходов").fetchSemanticsNode().boundsInRoot.top
-  assertTrue("Set action must precede the plan cards",saveTop<planTop)
+  // Large plan cards are not composed before the primary set action by default.
+  // Check real disclosure interaction, not viewport-clipped node coordinates.
+  composeRule.onNodeWithText("Показать план подходов").assertExists()
+  composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
   screenshot("workout-dark",expectedLight=false)
   useTheme(false)
   composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
   composeRule.onNodeWithText("Пауза").assertIsDisplayed()
   screenshot("workout-light",expectedLight=true)
   useTheme(true)
+  composeRule.onNodeWithText("Показать план подходов").performScrollTo().performClick()
+  composeRule.onNodeWithText("План и записи подходов").assertExists()
+  composeRule.onAllNodesWithText("План:",substring=true).onFirst().assertExists()
+  composeRule.onNodeWithText("Скрыть план подходов").performScrollTo().performClick()
+  composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
+  composeRule.onAllNodesWithText("План:",substring=true).assertCountEquals(0)
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.
