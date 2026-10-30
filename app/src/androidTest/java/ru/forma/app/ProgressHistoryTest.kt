@@ -25,6 +25,8 @@ class ProgressHistoryTest {
         val profile = Profile(name = "Тест", history = workouts)
         rule.setContent { MaterialTheme { ProgressScreen(profile) } }
 
+        rule.onNodeWithText("Последняя сохранённая тренировка").assertExists()
+        rule.onNodeWithText("Записанные подходы: 1 · активное время: 0 мин 0 сек").assertExists()
         rule.onNodeWithText("Показано 10 из 23 сохранённых тренировок.").assertExists()
         rule.onNodeWithText("Тренировка 23").assertExists()
         rule.onNodeWithText("Тренировка 1").assertDoesNotExist()

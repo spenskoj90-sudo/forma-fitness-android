@@ -88,6 +88,14 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
  val visibleHistory=remember(p.history,visibleCount){recentWorkoutHistory(p.history,visibleCount)}
  val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
  val context=LocalContext.current
+ // After "Save and open history", confirm the durable newest workout immediately.
+ visibleHistory.firstOrNull()?.let { latest ->
+  Panel("Последняя сохранённая тренировка"){
+   Text("${latest.day.name} · ${dateLabel(latest.finishedMs)}",style=MaterialTheme.typography.titleMedium)
+   Text(if(latest.status==Phase.DONE)"Завершена"else"Остановлена")
+   Text("Записанные подходы: ${latest.sets.size} · активное время: ${latest.activeSeconds/60} мин ${latest.activeSeconds%60} сек")
+  }
+ }
  Panel("Еженедельный отчёт"){
   Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
   Action("Поделиться отчётом",{
