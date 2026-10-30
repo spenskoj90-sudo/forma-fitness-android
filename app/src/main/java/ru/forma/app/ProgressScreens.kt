@@ -108,7 +108,7 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
  }else{
   Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
   HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")
- }}
+ }}}
  if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
  visibleHistory.forEach{w->Panel(w.day.name){
   Text(dateLabel(w.finishedMs))
