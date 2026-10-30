@@ -85,6 +85,7 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
 }}
 @Composable fun ProgressScreen(p:Profile){
  var visibleCount by rememberSaveable(p.id){mutableIntStateOf(10)}
+ var chartsExpanded by rememberSaveable(p.id){mutableStateOf(false)}
  val visibleHistory=remember(p.history,visibleCount){recentWorkoutHistory(p.history,visibleCount)}
  val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
  val context=LocalContext.current
@@ -95,6 +96,20 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
    Text(if(latest.status==Phase.DONE)"Завершена"else"Остановлена")
    Text("Записанные подходы: ${latest.sets.size} · активное время: ${latest.activeSeconds/60} мин ${latest.activeSeconds%60} сек")
   }
+ }
+ Text("История тренировок",style=MaterialTheme.typography.titleLarge)
+ if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
+ visibleHistory.forEach{w->Panel(w.day.name){
+  Text(dateLabel(w.finishedMs))
+  Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов")
+  w.sets.forEach{s->
+   val recordedEquipment=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment
+   Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${recordedSetLoadDisplay(s,recordedEquipment)} × ${s.reps} · сложность ${s.effort}")
+  }
+ }}
+ if(p.history.size>10){
+  Text("Показано ${visibleHistory.size} из ${p.history.size} сохранённых тренировок.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+  if(visibleHistory.size<p.history.size)OutlinedButton({visibleCount=(visibleCount+10).coerceAtMost(p.history.size)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Показать ещё тренировки")}
  }
  Panel("Еженедельный отчёт"){
   Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
@@ -108,6 +123,12 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
  else loadByGear.forEach{(gear,total)->
   Text("${gear.label}: ${"%.1f".format(total)} кг·повт (${recordedLoadUnit(gear)})")
  };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
+
+ if(p.history.any{it.sets.isNotEmpty()}){
+  OutlinedButton({chartsExpanded=!chartsExpanded},Modifier.fillMaxWidth().heightIn(min=52.dp)){
+   Text(if(chartsExpanded)"Скрыть динамику упражнений"else"Динамика упражнений")
+  }
+  if(chartsExpanded){
  p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){val savedEquipment=p.history.asSequence().flatMap{it.day.exercises.asSequence()}
   .firstOrNull{it.exercise.id==id}?.exercise?.equipment
  if(savedEquipment==Equipment.BODYWEIGHT){
@@ -117,18 +138,7 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
   Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
   HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")
  }}}
- if(p.history.isEmpty())Text("История появится после первой сохранённой тренировки.")
- visibleHistory.forEach{w->Panel(w.day.name){
-  Text(dateLabel(w.finishedMs))
-  Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов")
-  w.sets.forEach{s->
-   val recordedEquipment=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment
-   Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${recordedSetLoadDisplay(s,recordedEquipment)} × ${s.reps} · сложность ${s.effort}")
   }
- }}
- if(p.history.size>10){
-  Text("Показано ${visibleHistory.size} из ${p.history.size} сохранённых тренировок.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-  if(visibleHistory.size<p.history.size)OutlinedButton({visibleCount=(visibleCount+10).coerceAtMost(p.history.size)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Показать ещё тренировки")}
  }
 }}
 

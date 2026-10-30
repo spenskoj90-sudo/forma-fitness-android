@@ -30,7 +30,7 @@ class ProgressHistoryTest {
         rule.onNodeWithText("Показано 10 из 23 сохранённых тренировок.").assertExists()
         rule.onNodeWithText("Тренировка 23").assertExists()
         rule.onNodeWithText("Тренировка 1").assertDoesNotExist()
-        rule.onNodeWithText("Собственный вес · максимум: 12 повторений").assertExists()
+        rule.onNodeWithText("Собственный вес · максимум: 12 повторений").assertDoesNotExist()
 
         rule.onNodeWithText("Показать ещё тренировки").performScrollTo().performClick()
         rule.onNodeWithText("Показано 20 из 23 сохранённых тренировок.").assertExists()
@@ -40,6 +40,17 @@ class ProgressHistoryTest {
         rule.onNodeWithText("Показано 23 из 23 сохранённых тренировок.").assertExists()
         rule.onNodeWithText("Тренировка 1").assertExists()
         rule.onNodeWithText("Показать ещё тренировки").assertDoesNotExist()
+        rule.onNodeWithText("Динамика упражнений").performScrollTo().performClick()
+        rule.onNodeWithText("Собственный вес · максимум: 12 повторений").assertExists()
+        rule.onNodeWithText("Скрыть динамику упражнений").performScrollTo().performClick()
+        rule.onNodeWithText("Собственный вес · максимум: 12 повторений").assertDoesNotExist()
         rule.onNodeWithText("0.0 кг дополнительного веса", substring = true).assertDoesNotExist()
     }
+    @Test fun emptyProfileDoesNotInventWorkoutSummaryOrCharts() {
+        rule.setContent { MaterialTheme { ProgressScreen(Profile(name = "Пустой")) } }
+        rule.onNodeWithText("Последняя сохранённая тренировка").assertDoesNotExist()
+        rule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
+        rule.onNodeWithText("Динамика упражнений").assertDoesNotExist()
+    }
+
 }
