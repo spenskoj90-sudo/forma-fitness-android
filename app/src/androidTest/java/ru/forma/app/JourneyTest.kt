@@ -49,7 +49,23 @@ class JourneyTest{
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
- private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.filesDir,"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
+ private fun screenshot(name:String,expectedLight:Boolean?=null){
+  composeRule.waitForIdle()
+  val inst=InstrumentationRegistry.getInstrumentation()
+  val file=java.io.File(app.filesDir,"evidence/$name.png")
+  file.parentFile!!.mkdirs()
+  inst.uiAutomation.takeScreenshot().let{bitmap->
+   try{
+    file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
+    // Assert the real composed background, not just the theme preference or filename.
+    if(expectedLight!=null){
+     val pixel=bitmap.getPixel(5,bitmap.height/2)
+     val brightness=(android.graphics.Color.red(pixel)+android.graphics.Color.green(pixel)+android.graphics.Color.blue(pixel))/3
+     assertEquals("Screenshot $name does not match the expected visual theme",expectedLight,brightness>128)
+    }
+   }finally{bitmap.recycle()}
+  }
+ }
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
   waitText("Имя")
@@ -76,8 +92,28 @@ class JourneyTest{
   // Assert the durable default from Room, independent of selection timing.
   assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
   composeRule.waitUntil(20000){composeRule.onAllNodesWithTag("shortcut-body",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
-  screenshot("home-dark-default");click("Тренировки");screenshot("training-light")
-  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");composeRule.onAllNodesWithText("Текущий").onFirst().assertExists();composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed();composeRule.onNodeWithText("Пауза").assertIsDisplayed();screenshot("workout-light")
+  screenshot("home-dark-default");click("Тренировки")
+  val themeVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  fun useTheme(dark:Boolean){
+   themeVm.dark(dark)
+   composeRule.waitUntil(20000){
+    runBlocking{app.settings.settings.first().dark==dark}&&themeVm.prefs.value.dark==dark
+   }
+   composeRule.waitForIdle()
+  }
+  useTheme(true)
+  screenshot("training-dark",expectedLight=false)
+  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick()
+  waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен")
+  composeRule.onAllNodesWithText("Текущий").onFirst().assertExists()
+  composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
+  composeRule.onNodeWithText("Пауза").assertIsDisplayed()
+  screenshot("workout-dark",expectedLight=false)
+  useTheme(false)
+  composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
+  composeRule.onNodeWithText("Пауза").assertIsDisplayed()
+  screenshot("workout-light",expectedLight=true)
+  useTheme(true)
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.
@@ -91,6 +127,7 @@ class JourneyTest{
   composeRule.onNodeWithText("Не останавливать").assertIsDisplayed().performClick()
   assertFalse(current().active!!.terminal)
   click("Остановить тренировку")
+  screenshot("stop-confirm-dark",expectedLight=false)
   composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed().performClick()
   // Distinguish a real Room/service STOP failure from a slow UI recomposition.
   try{composeRule.waitUntil(20000){current().active?.terminal==true}}
