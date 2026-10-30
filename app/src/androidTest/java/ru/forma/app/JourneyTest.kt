@@ -74,8 +74,11 @@ class JourneyTest{
   // and the on-screen save never reached Room. Exercise the real Done action,
   // close focus and then require the button to be visible before tapping it.
   composeRule.onNodeWithText("Имя").performImeAction()
+  // On API26 an IME-owned focused field can leave a semantics-only Click
+  // without a durable Room write. Exercise the user's actual touch path.
+  // Keep the original Room persistence assertion and timeout unchanged.
   composeRule.onNodeWithText("Сохранить профиль").performScrollTo()
-   .assertIsEnabled().assertIsDisplayed().performClick()
+   .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
    composeRule.waitUntil(20000) {
