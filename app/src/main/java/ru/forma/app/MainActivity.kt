@@ -303,9 +303,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     if(current!=null){
      Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
      Panel("Как выполнять"){Text(current.exercise.cue)}
-      Panel("Подходы"){
-       WorkoutSetCards(s,current)
-       Text("Текущий подход: "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
+      Panel("Текущий подход"){
+       Text("Подход "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
       if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
@@ -313,6 +312,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
       val w=number(weight);val n=reps.toIntOrNull()
       Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
      }
+     // Keep the read-only plan and recorded sets, but never put them before the primary action.
+     Panel("План и записи подходов"){WorkoutSetCards(s,current)}
      Box(Modifier.fillMaxWidth().height(205.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xFF0B1B20))){
       FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
       Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){

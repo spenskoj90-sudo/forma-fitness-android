@@ -111,6 +111,10 @@ class JourneyTest{
   composeRule.onAllNodesWithText("Текущий").onFirst().assertExists()
   composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
   composeRule.onNodeWithText("Пауза").assertIsDisplayed()
+  // The primary set action precedes the informational list, even on a small screen.
+  val saveTop=composeRule.onNodeWithText("Подход выполнен").fetchSemanticsNode().boundsInRoot.top
+  val planTop=composeRule.onNodeWithText("План и записи подходов").fetchSemanticsNode().boundsInRoot.top
+  assertTrue("Set action must precede the plan cards",saveTop<planTop)
   screenshot("workout-dark",expectedLight=false)
   useTheme(false)
   composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
