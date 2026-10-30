@@ -77,7 +77,7 @@ class JourneyTest{
   assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
   composeRule.waitUntil(20000){composeRule.onAllNodesWithTag("shortcut-body",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
   screenshot("home-dark-default");click("Тренировки");screenshot("training-light")
-  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");composeRule.onAllNodesWithText("Текущий").onFirst().assertExists();screenshot("workout-light")
+  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");composeRule.onAllNodesWithText("Текущий").onFirst().assertExists();composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed();composeRule.onNodeWithText("Пауза").assertIsDisplayed();screenshot("workout-light")
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.

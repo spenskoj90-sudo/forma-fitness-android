@@ -295,6 +295,9 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    Action("Сохранить и завершить",{vm.finish(s.id)})
    OutlinedButton({vm.finish(s.id,onOpenHistory)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Сохранить и открыть историю")}
   }else{
+   // Always reachable without scrolling past exercise artwork or set cards.
+   OutlinedButton({vm.painStop(s.id)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
+   Action(if(s.paused)"Продолжить сопровождение"else"Пауза",{if(s.paused)vm.resume(s.id) else vm.pause(s.id)})
    if(s.phase==Phase.WORK){
     val current=s.current
     if(current!=null){
@@ -346,9 +349,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      if(s.phase==Phase.REST)Text("Восстановите дыхание перед следующим подходом.")
     }
    }
-   Panel("Управление"){
-    OutlinedButton({vm.painStop(s.id)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Боль / дискомфорт — стоп")}
-    Action(if(s.paused)"Продолжить сопровождение"else"Пауза",{if(s.paused)vm.resume(s.id) else vm.pause(s.id)})
+   Panel("Другие действия"){
     OutlinedButton({vm.skip(s.id)},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!s.paused){
      Text(if(s.phase==Phase.WORK)"Пропустить подход"else"Пропустить этап")
     }
