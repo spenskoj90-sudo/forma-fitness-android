@@ -304,6 +304,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
      Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
      Panel("Как выполнять"){Text(current.exercise.cue)}
       Panel("Текущий подход"){
+       Text("Текущий",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
        Text("Подход "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
       if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
       NumericField("Повторения",reps){reps=it}
