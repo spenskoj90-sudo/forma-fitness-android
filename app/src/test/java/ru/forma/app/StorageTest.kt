@@ -11,6 +11,57 @@ import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StorageTest {
+ @Test fun legacyV1DatabasePreservesHistoryMeasurementsAndPausedWorkout():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-legacy-v1-compatibility.db"
+  ctx.deleteDatabase(name)
+  val historical=Profile(id="old-user",name="Historical",
+   measurements=listOf(Measurement(id="old-weight",dateMs=1_500L,
+    values=mapOf("weight" to 82.0))))
+  val finished=stopSession(
+   startSession(historical.id,generateProgram(historical).first(),1_000L),
+   false,1_700L)
+  val original=finishSession(historical,finished,1_800L)
+  val second=Profile(id="paused-user",name="Another",
+   active=pauseSession(
+    startSession("paused-user",generateProgram(Profile(id="paused-user",name="Another")).first(),2_000L),
+    2_500L))
+  // Seed the original, version-1 on-disk SQLite layout, not Room's current
+  // createAllTables callback. This locks down upgrade-over-install semantics.
+  val legacy=ctx.openOrCreateDatabase(name,android.content.Context.MODE_PRIVATE,null)
+  try {
+   legacy.execSQL("CREATE TABLE profiles (id TEXT NOT NULL, name TEXT NOT NULL, " +
+    "document TEXT NOT NULL, PRIMARY KEY(id))")
+   legacy.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY, identity_hash TEXT)")
+   legacy.execSQL("INSERT INTO room_master_table (id, identity_hash) VALUES " +
+    "(42, '4863845aa8163bf8ac2c52e4fc5f0304')")
+   listOf(original,second).forEach { profile->
+    legacy.execSQL("INSERT INTO profiles(id, name, document) VALUES(?, ?, ?)",
+     arrayOf(profile.id,profile.name,
+      kotlinx.serialization.json.Json.encodeToString(
+       ru.forma.domain.Profile.serializer(),profile)))
+   }
+   legacy.version=1
+  } finally { legacy.close() }
+
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  try {
+   var repo=ProfileRepository(db)
+   assertEquals(original,repo.load(original.id))
+   assertEquals(second,repo.load(second.id))
+   repo.mutate(original.id){it.copy(weightKg=83.0)}
+   assertEquals(second,repo.load(second.id))
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   repo=ProfileRepository(db)
+   assertEquals(original.history,repo.load(original.id)!!.history)
+   assertEquals(original.measurements,repo.load(original.id)!!.measurements)
+   assertEquals(83.0,repo.load(original.id)!!.weightKg,0.0)
+   assertTrue(repo.load(second.id)!!.active!!.paused)
+   assertEquals(second,repo.load(second.id))
+  } finally { db.close();ctx.deleteDatabase(name) }
+ }
+
  @Test fun isolatedProfilesSurviveDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-isolation-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build();var repo=ProfileRepository(db)
@@ -74,6 +125,168 @@ class StorageTest {
   assertEquals(s.id,stopped.id)
   db.close()
  }
+ @Test fun stopBeforeAsyncRecoveryKeepsOfflineGapOutOfPersistedHistory()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val p=Profile(id="cold-start",name="User")
+   repo.saveProfile(p)
+   val original=repo.start(p.id,generateProgram(p).first(),1000L)
+   // The ViewModel recovery action has not yet run; STOP must recover
+   // the old session inside the same transaction that persists STOPPED.
+   repo.mutateSession(p.id,original.id){
+    val now=110_000L
+    stopSession(recoverIfPreviousProcess(it,100_000L,now),false,now)
+   }
+   val stopped=repo.load(p.id)!!.active!!
+   assertEquals(Phase.STOPPED,stopped.phase)
+   assertEquals(original.activeSeconds,stopped.activeSeconds)
+   repo.mutate(p.id){finishSession(it,it.active!!,110_001L)}
+   val saved=repo.load(p.id)!!
+   assertEquals(1,saved.history.size)
+   assertEquals(0,saved.history.single().activeSeconds)
+  } finally { db.close() }
+ }
+ @Test fun queuedOldFocusLossCannotRepauseResumedRoomSession()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val p=Profile(id="focus",name="User")
+   repo.saveProfile(p)
+   val started=repo.start(p.id,generateProgram(p).first(),1000L)
+   repo.mutateSession(p.id,started.id){pauseSession(it,1200L)}
+   val commands=AudioFocusEpoch();val gate=AudioFocusLeaseGate(commands)
+   val queuedLoss=gate.open()
+   // Resume was tapped before the queued focus callback acquired Room.
+   commands.invalidate()
+   repo.mutateSession(p.id,started.id){resumeSession(it,2000L)}
+   repo.mutateSession(p.id,started.id){
+    if(gate.isCurrent(queuedLoss))pauseSession(it,2100L) else it
+   }
+   val active=repo.load(p.id)!!.active!!
+   assertFalse(active.paused)
+   assertEquals(2000L,active.lastTickMs)
+   // A genuine loss from the new request must still pause durably.
+   val freshLoss=gate.open()
+   repo.mutateSession(p.id,started.id){
+    if(gate.isCurrent(freshLoss))pauseSession(it,2400L) else it
+   }
+   assertTrue(repo.load(p.id)!!.active!!.paused)
+  }finally{db.close()}
+ }
+ @Test fun refusedForegroundStartPausesWithoutCreditingElapsedTimeAndSurvivesReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication();val name="forma-service-start-failure-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val repo=ProfileRepository(db)
+  val p=Profile(id="start-failed",name="User");repo.saveProfile(p)
+  val s=repo.start(p.id,generateProgram(p).first(),1_000L)
+  val failed=runCatching{
+   requestWorkoutServiceOrPause(repo,p.id,s.id,{101_000L},{true}){
+    throw IllegalStateException("Synthetic Android foreground rejection")
+   }
+  }.exceptionOrNull()
+  assertTrue(failed is IllegalStateException)
+  assertTrue(failed!!.message!!.contains("поставлена на паузу"))
+  val paused=repo.load(p.id)!!.active!!
+  assertTrue(paused.paused)
+  assertEquals(0,paused.activeSeconds)
+  assertEquals(300_000L,paused.pausedRemainingMs)
+  assertEquals(101_000L,paused.lastTickMs)
+  db.close()
+  db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  assertEquals(paused,ProfileRepository(db).load(p.id)!!.active)
+  db.close();ctx.deleteDatabase(name)
+ }
+ @Test fun staleServiceFailureCannotPauseOwnerResumedSessionOrAnotherProfile():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   val p=Profile(id="profile-one",name="User")
+   val other=Profile(id="profile-two",name="Other")
+   repo.saveProfile(p);repo.saveProfile(other)
+   val s=repo.start(p.id,generateProgram(p).first(),1_000L)
+   val commands=AudioFocusEpoch()
+   val epoch=commands.snapshot()
+   repo.mutateSession(p.id,s.id){pauseSession(it,1_200L)}
+   commands.invalidate()
+   repo.mutateSession(p.id,s.id){resumeSession(it,2_000L)}
+   val before=repo.load(p.id)!!.active!!
+   repo.pauseWhenServiceUnavailable(p.id,s.id,100_000L){commands.isCurrent(epoch)}
+   assertEquals(before,repo.load(p.id)!!.active)
+   repo.pauseWhenServiceUnavailable(other.id,s.id,100_000L)
+   assertEquals(other,repo.load(other.id))
+  }finally{db.close()}
+ }
+ @Test fun serviceOnlyTeardownPausesPersistedRoomWithoutCreditForAbsence():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-service-interrupted.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val repo=ProfileRepository(db)
+  val owner=Profile(id="owner",name="Owner")
+  repo.saveProfile(owner)
+  val s=repo.start(owner.id,generateProgram(owner).first(),1000L)
+  // Android destroyed just the service; processStartedMs remains unchanged.
+  val tracker=ServiceInterruptionTracker()
+  tracker.record(owner.id,s.id)
+  mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={100_000L}){it}
+  val saved=repo.load(owner.id)!!.active!!
+  assertTrue(saved.paused)
+  assertEquals(0,saved.activeSeconds)
+  assertEquals(300_000L,saved.pausedRemainingMs)
+  assertEquals(100_000L,saved.lastTickMs)
+  assertNull(tracker.pending(owner.id,s.id))
+  db.close()
+  db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  val persisted=ProfileRepository(db).load(owner.id)!!.active!!
+  assertEquals(saved,persisted)
+  db.close();ctx.deleteDatabase(name)
+ }
+ @Test fun immediateOwnerResumeConsumesPendingInterruptionBeforeOldWrite()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db);val owner=Profile(id="owner",name="Owner")
+   repo.saveProfile(owner)
+   val s=repo.start(owner.id,generateProgram(owner).first(),1000L)
+   val tracker=ServiceInterruptionTracker()
+   tracker.record(owner.id,s.id)
+   // UI Resume races with application-scope onDestroy persistence.
+   mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={100_000L}){
+    resumeSession(it,100_000L)
+   }
+   // Delayed onDestroy callback must not re-pause the owner's live workout.
+   mutateWithServiceInterruption(repo,tracker,owner.id,s.id,now={120_000L}){it}
+   val resumed=repo.load(owner.id)!!.active!!
+   assertFalse(resumed.paused)
+   assertEquals(0,resumed.activeSeconds)
+   assertEquals(100_000L,resumed.lastTickMs)
+   assertEquals(400_000L,resumed.deadlineMs)
+  }finally{db.close()}
+ }
+ @Test fun staleInterruptionDoesNotTouchNewSessionOrOtherProfile()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val owner=Profile(id="owner",name="Owner")
+   val other=Profile(id="other",name="Other")
+   repo.saveProfile(owner);repo.saveProfile(other)
+   val old=repo.start(owner.id,generateProgram(owner).first(),1000L)
+   repo.mutateSession(owner.id,old.id){stopSession(it,false,1100L)}
+   repo.mutate(owner.id){finishSession(it,it.active!!,1200L)}
+   val next=repo.start(owner.id,generateProgram(owner).first(),2000L)
+   val tracker=ServiceInterruptionTracker()
+   tracker.record(owner.id,old.id)
+   mutateWithServiceInterruption(repo,tracker,owner.id,next.id,now={100_000L}){it}
+   mutateWithServiceInterruption(repo,tracker,other.id,old.id,now={100_000L}){it}
+   assertEquals(next,repo.load(owner.id)!!.active)
+   assertEquals(other,repo.load(other.id))
+   assertEquals(1,repo.load(owner.id)!!.history.size)
+   // An explicit stop cannot be undone by any late teardown.
+   repo.mutateSession(owner.id,next.id){stopSession(it,false,2500L)}
+   val stopped=repo.load(owner.id)!!.active!!
+   tracker.record(owner.id,next.id)
+   mutateWithServiceInterruption(repo,tracker,owner.id,next.id,now={100_000L}){it}
+   assertEquals(stopped,repo.load(owner.id)!!.active)
+  }finally{db.close()}
+ }
  @Test fun pausePersistsAcrossTimedCardioTicksAndDatabaseReopen():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication();val name="forma-cardio-pause-test.db";ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
@@ -104,6 +317,93 @@ class StorageTest {
   assertEquals(MAX_BACKUP_PROFILES,db.profiles().all().size)
   assertNull(repo.load("incoming"))
   db.close()
+ }
+
+ @Test fun scopedBackupExcludesOtherLocalUsersAndRetainsMeasurements()=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val alice=Profile(id="alice",name="Alice",measurements=listOf(
+    Measurement(id="a-measurement",dateMs=1000,values=mapOf("weight" to 77.0))
+   ))
+   val bob=Profile(id="bob",name="Bob",measurements=listOf(
+    Measurement(id="b-measurement",dateMs=1000,values=mapOf("weight" to 91.0))
+   ))
+   repo.saveProfile(alice)
+   repo.saveProfile(bob)
+   val scoped=decodeBackup(repo.exportBackup("alice"))
+   assertEquals(listOf("alice"),scoped.profiles.map{it.id})
+   assertEquals(alice.measurements,scoped.profiles.single().measurements)
+   assertEquals(2,decodeBackup(repo.exportBackup()).profiles.size)
+   assertTrue(runCatching{repo.exportBackup("missing-profile")}.isFailure)
+   assertEquals(2,db.profiles().all().size)
+  } finally { db.close() }
+ }
+
+ @Test fun unchangedProfileMutationSkipsSqliteUpdateAndRealChangeSurvivesReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-noop-profile-mutation.db";ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  try {
+   val repo=ProfileRepository(db)
+   val original=Profile(id="noop-mutate",name="Original")
+   repo.saveProfile(original)
+   val sqlite=db.openHelper.writableDatabase
+   sqlite.execSQL("CREATE TABLE profile_update_counts (n INTEGER NOT NULL)")
+   sqlite.execSQL("INSERT INTO profile_update_counts(n) VALUES (0)")
+   sqlite.execSQL("CREATE TRIGGER count_profile_mutations AFTER INSERT ON profiles " +
+    "BEGIN UPDATE profile_update_counts SET n=n+1; END")
+   fun writes():Int=sqlite.query("SELECT n FROM profile_update_counts").use{cursor->
+    assertTrue(cursor.moveToFirst());cursor.getInt(0)
+   }
+   repo.mutate(original.id){it}
+   repo.mutate(original.id){it.copy(name=it.name)}
+   assertEquals(0,writes())
+   assertEquals(original,repo.load(original.id))
+   repo.mutate(original.id){it.copy(name="Updated")}
+   assertEquals(1,writes())
+   assertEquals("Updated",repo.load(original.id)!!.name)
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   assertEquals("Updated",ProfileRepository(db).load(original.id)!!.name)
+  }finally{db.close();ctx.deleteDatabase(name)}
+ }
+
+ @Test fun unchangedPausedTicksAndStaleCallbacksDoNotWriteRoom():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val p=Profile(id="noop-profile",name="Tester")
+   repo.saveProfile(p)
+   val started=repo.start(p.id,generateProgram(p).first(),1_000L)
+   repo.mutateSession(p.id,started.id){pauseSession(it,1_200L)}
+   val paused=repo.load(p.id)!!.active!!
+   assertTrue(paused.paused)
+
+   // ProfileDao.put uses INSERT OR REPLACE: count SQL inserts, not Flow emissions.
+   val sqlite=db.openHelper.writableDatabase
+   sqlite.execSQL("CREATE TABLE session_update_counts (n INTEGER NOT NULL)")
+   sqlite.execSQL("INSERT INTO session_update_counts(n) VALUES (0)")
+   sqlite.execSQL("CREATE TRIGGER count_session_updates AFTER INSERT ON profiles " +
+    "BEGIN UPDATE session_update_counts SET n=n+1; END")
+   fun writes():Int=sqlite.query("SELECT n FROM session_update_counts").use{cursor->
+    assertTrue(cursor.moveToFirst())
+    cursor.getInt(0)
+   }
+   repeat(5){index->
+    repo.mutateSession(p.id,started.id){advanceTimed(it,10_000L+index*1_000L)}
+   }
+   repo.pauseWhenServiceUnavailable(p.id,started.id,100_000L){false}
+   assertEquals(0,writes())
+   assertEquals(paused,repo.load(p.id)!!.active)
+
+   // A genuine Resume still persists exactly once.
+   repo.mutateSession(p.id,started.id){resumeSession(it,20_000L)}
+   assertEquals(1,writes())
+   assertFalse(repo.load(p.id)!!.active!!.paused)
+   repo.mutateSession(p.id,started.id){it}
+   assertEquals(1,writes())
+  }finally{db.close()}
  }
 
 }

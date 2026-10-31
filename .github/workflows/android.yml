@@ -1,15 +1,15 @@
 name: FORMA Android
 on:
   push:
-    branches: [main, 'forma/**']
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: forma-${{ github.ref }}
-  # Only the latest integration-branch SHA needs a full emulator matrix.
-  # Never interrupt protected-main evidence runs.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: forma-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == 1 && github.event.pull_request.number || github.run_id }}-${{ github.run_attempt }}
+  # Cancel superseded initial PR runs only; preserve main/manual/rerun evidence.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -20,12 +20,18 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Verify one protected FORMA release route
+        run: python3 scripts/check-release-workflows.py
+      - name: Check release CI verification logic
+        run: python3 -m unittest discover -s scripts -p "test_check_release_ci.py"
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
       - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+      - name: Verify compiler-generated Room v1 schema baseline
+        run: python3 scripts/check-room-schema.py
       - name: APK identity and signature evidence
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
@@ -36,14 +42,18 @@ jobs:
           test -n "$APKSIGNER" && test -n "$AAPT"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$OUT/APK_SIGNATURE.txt"
           "$AAPT" dump badging "$APK" > "$OUT/APK_BADGING.txt"
+      # Debug APKs are only short-lived manual diagnostic artifacts, not a public distribution channel.
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: forma-debug-${{ github.sha }}
+          retention-days: 14
           path: app/build/outputs/apk/debug/
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: reports-${{ github.sha }}
+          retention-days: 14
           path: |
             domain/build/reports/
             app/build/reports/
@@ -109,6 +119,7 @@ jobs:
         if: always()
         with:
           name: instrumentation-api${{ matrix.api }}-${{ github.sha }}
+          retention-days: 14
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
