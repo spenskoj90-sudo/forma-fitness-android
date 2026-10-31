@@ -2,6 +2,10 @@ name: FORMA signed APK - owner-controlled channel
 on:
   workflow_dispatch:
     inputs:
+      source_sha:
+        description: "Exact tested 40-character SHA on protected main"
+        required: true
+        type: string
       version_code:
         description: "New Android versionCode (integer greater than all earlier signed builds)"
         required: true
@@ -12,6 +16,7 @@ on:
         type: string
 permissions:
   contents: read
+  checks: read
 concurrency:
   group: forma-signed-release
   cancel-in-progress: false
@@ -29,6 +34,18 @@ jobs:
           persist-credentials: false
       - name: Verify unique protected FORMA signing route before secrets
         run: python3 scripts/check-release-workflows.py
+      - name: Require frozen exact main source and its required CI checks before secrets
+        shell: bash
+        env:
+          FROZEN_SHA: ${{ inputs.source_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$FROZEN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be an exact SHA"; exit 1; }
+          [[ "$FROZEN_SHA" == "$GITHUB_SHA" ]] || { echo "::error::Source changed after approval"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$FROZEN_SHA" ]] || { echo "::error::Checkout is not the approved source"; exit 1; }
+          python3 -m unittest discover -s scripts -p 'test_check_release_ci.py'
+          python3 scripts/check-release-ci.py "$GITHUB_REPOSITORY" "$FROZEN_SHA"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -101,17 +118,21 @@ jobs:
           "$SIGNER" verify --verbose --print-certs "$APK" | tee "$OUT/APK_SIGNATURE.txt"
           grep -F "Verified using v2 scheme" "$OUT/APK_SIGNATURE.txt"
           sha256sum "$APK" | tee "$OUT/SHA256SUMS"
-      - name: Upload private signed APK and public verification metadata
+      # PUBLIC Actions artifacts are not private distribution. Never upload a signed APK.
+      - name: Upload public identity metadata only (not signed APK)
         uses: actions/upload-artifact@v4
         with:
-          name: forma-signed-${{ inputs.version_name }}-code${{ inputs.version_code }}-${{ github.sha }}
+          name: forma-signing-metadata-${{ inputs.version_name }}-code${{ inputs.version_code }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
           path: |
-            app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/APK_BADGING.txt
             app/build/outputs/apk/release/APK_SIGNATURE.txt
             app/build/outputs/apk/release/SHA256SUMS
+      # Signed APK remains ephemeral; private delivery requires a separate approved provider.
+      - name: Remove ephemeral signed APK from public CI runner
+        if: always()
+        run: rm -f -- app/build/outputs/apk/release/app-release.apk
       - name: Delete signing material on runner
         if: always()
         shell: bash

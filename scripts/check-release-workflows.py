@@ -30,6 +30,6 @@ require(top_events == ["workflow_dispatch"], "only manual workflow_dispatch is p
 require("if: github.ref == 'refs/heads/main'" in source, "main-only job guard is missing")
 require(re.search(r"(?m)^    environment:\s*forma-release\s*$", source) is not None,
         "protected forma-release environment is required")
-require(re.search(r"(?m)^permissions:\s*\n  contents:\s*read\s*$", source) is not None,
-        "minimal read-only GitHub permissions are required")
+require(re.search(r"(?m)^permissions:\s*\n  contents:\s*read\s*\n  checks:\s*read\s*$", source) is not None,
+        "read-only contents/checks permissions are required")
 print("FORMA signing guard PASS: one manual main-only environment-gated signing route")

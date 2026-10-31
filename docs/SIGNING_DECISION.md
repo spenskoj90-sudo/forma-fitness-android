@@ -86,3 +86,23 @@ reported as completed by merely adding source code or workflows.
 An update may be initiated from within FORMA, but Android presents its own
 installation confirmation. A third-party app cannot silently bypass Android's
 package installation and signature controls.
+
+
+## Source-only release safety hardening (2026-10-31)
+
+The manual release workflow now requires an **exact approved source_sha** equal
+to both the workflow-dispatch commit and checked-out protected main commit.
+Before restoring any signing secret, the source guard checks completed SUCCESS
+results from the GitHub Actions app for all four required Android contexts
+(verify and API26/30/34) on that exact SHA. A missing/failed check blocks signing.
+The GitHub token needs only read-only contents/checks permissions.
+
+**No signed APK is uploaded to public Actions artifacts.** A public-repo run
+cannot honestly label an uploaded signed APK "private". The workflow now
+publishes only public package/signature/hash metadata and deletes the signed APK
+on its ephemeral runner. This is SOURCE_ONLY readiness, not a deliverable
+release pipeline. Before any real signing run, PROJECTS and Owner must approve
+an authenticated private delivery mechanism and monotonic production
+versionCode ledger, then extend and re-review the workflow. Provider-enforced
+reviewers/self-review/bypass restrictions and two E2EE recoveries remain
+separate owner gates. Do not dispatch signing just to test this source.
