@@ -205,3 +205,25 @@ Exercise generation filters by selected equipment, always retaining accessible
 bodyweight fallback. No pain diagnosis, no implicit permission to overtrain.
 Before an exercise is marked production-ready, review technique cues and
 safety with a qualified fitness professional.
+
+
+## Signed manifest envelope — source only (2026-10-31)
+
+The legacy unsigned JSON example above is not accepted by the updated client.
+A configured HTTPS feed must return an envelope with `payload` (Base64-encoded
+UTF-8 JSON bytes) and `signature` (Base64-encoded RSA SHA256 signature over
+those exact bytes, **not** reserialized JSON). Signed payload fields:
+`channel="stable"`, `sourceUrl` (exactly configured feed URL),
+`applicationId`, `versionCode`, `versionName`, `apkUrl`,
+`sha256`, `certificateSha256`, `sizeBytes` and `releaseNotes`.
+
+A separate owner-approved RSA >=3072-bit public SPKI Base64 trust anchor is
+pinned in the APK using `-PformaUpdateManifestPubKey`; release builds may
+receive the **public** value from `FORMA_UPDATE_MANIFEST_PUBKEY`. The private
+publication signer MUST NOT be generated/stored by this source-only engineering
+batch. Without a pinned key or feed URL, check fails closed. The client checks
+signature before interpreting payload, then source binding, channel, HTTPS
+same host/no redirects, package, increasing versionCode, installed certificate,
+APK SHA-256, announced byte length and actual APK signer. User installation
+still requires Android confirmation. The live feed, publishing custody and
+both physical same-cert upgrades remain NOT_RUN.

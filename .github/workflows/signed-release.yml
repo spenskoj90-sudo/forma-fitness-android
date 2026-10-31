@@ -70,14 +70,18 @@ jobs:
           FORMA_RELEASE_KEY_ALIAS: ${{ secrets.FORMA_RELEASE_KEY_ALIAS }}
           FORMA_RELEASE_KEY_PASSWORD: ${{ secrets.FORMA_RELEASE_KEY_PASSWORD }}
           FORMA_UPDATE_FEED_URL: ${{ vars.FORMA_UPDATE_FEED_URL }}
+          FORMA_UPDATE_MANIFEST_PUBKEY: ${{ vars.FORMA_UPDATE_MANIFEST_PUBKEY }}
         run: |
           set -euo pipefail
           if [[ -n "$FORMA_UPDATE_FEED_URL" && ! "$FORMA_UPDATE_FEED_URL" =~ ^https://[^/:@]+(/[^[:space:]]*)?$ ]]; then
             echo "::error::Release feed must be an ordinary HTTPS URL without credentials or custom port"; exit 1
           fi
+          if [[ -n "$FORMA_UPDATE_FEED_URL" && -z "$FORMA_UPDATE_MANIFEST_PUBKEY" ]]; then
+            echo "::error::Signed update feed requires a pinned public verification key"; exit 1
+          fi
           chmod +x gradlew
           ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleRelease \
-            "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" --console=plain
+            "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" "-PformaUpdateManifestPubKey=$FORMA_UPDATE_MANIFEST_PUBKEY" --console=plain
       - name: Verify compiler-generated Room v1 schema baseline
         run: python3 scripts/check-room-schema.py
       - name: Verify immutable APK identity, signer and SHA-256

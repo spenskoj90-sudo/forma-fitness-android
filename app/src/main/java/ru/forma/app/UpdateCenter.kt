@@ -22,6 +22,7 @@ import java.net.URL
 import java.security.MessageDigest
 import javax.net.ssl.HttpsURLConnection
 import ru.forma.domain.validateUpdateCandidate
+import ru.forma.domain.verifySignedReleasePayload
 
 /** Non-Play/sideload release channel; the system installer retains final control. */
 private const val MAX_UPDATE_APK_BYTES = 200L * 1024 * 1024
@@ -33,7 +34,9 @@ data class FormaRelease(
     val versionName: String,
     val apkUrl: String,
     val sha256: String,
-    val certificateSha256: String
+    val certificateSha256: String,
+    val releaseNotes: String,
+    val sizeBytes: Long
 )
 
 private fun validHttps(url: String): Uri {
@@ -94,6 +97,8 @@ class FormaUpdateClient(private val context: Context) {
         require(feedUrl.isNotEmpty()) {
             "Канал обновлений ещё не настроен. Установленная FORMA и её данные остаются без изменений."
         }
+        val pinnedKey = context.getString(R.string.forma_update_manifest_public_key).trim()
+        require(pinnedKey.isNotBlank()) { "Доверенный ключ описания обновления ещё не настроен" }
         val feed = validHttps(feedUrl)
         val connection = (URL(feedUrl).openConnection() as HttpsURLConnection).apply {
             connectTimeout = 10000
@@ -104,14 +109,27 @@ class FormaUpdateClient(private val context: Context) {
         }
         try {
             require(connection.responseCode == 200) { "Сервер обновлений временно недоступен" }
-            val obj = JSONObject(readSmallUtf8(connection))
+            val envelope = JSONObject(readSmallUtf8(connection))
+            // Authenticate raw bytes first: never trust unsigned JSON fields.
+            val payload = verifySignedReleasePayload(
+                envelope.getString("payload"), envelope.getString("signature"), pinnedKey
+            )
+            val obj = JSONObject(String(payload, Charsets.UTF_8))
+            require(obj.getString("channel") == "stable") { "Неподдерживаемый канал обновлений" }
+            require(obj.getString("sourceUrl") == feedUrl) { "Источник обновлений изменён" }
+            val notes = obj.getString("releaseNotes").trim()
+            require(notes.isNotEmpty() && notes.length <= 500) { "Не указано «Что нового»" }
+            val expectedSize = obj.getLong("sizeBytes")
+            require(expectedSize in 1..MAX_UPDATE_APK_BYTES) { "Недопустимый размер APK" }
             val next = FormaRelease(
                 applicationId = obj.getString("applicationId"),
                 versionCode = obj.getLong("versionCode"),
                 versionName = obj.getString("versionName").take(80),
                 apkUrl = obj.getString("apkUrl"),
                 sha256 = obj.getString("sha256").lowercase(),
-                certificateSha256 = obj.getString("certificateSha256").lowercase()
+                certificateSha256 = obj.getString("certificateSha256").lowercase(),
+                releaseNotes = notes,
+                sizeBytes = expectedSize
             )
             val apk = validHttps(next.apkUrl)
             require(apk.host.equals(feed.host, ignoreCase = true)) {
@@ -160,7 +178,8 @@ class FormaUpdateClient(private val context: Context) {
                     }
                 }
             }
-            require(total > 0 && hex(md.digest()) == release.sha256) { "Контрольная сумма APK не совпадает" }
+            require(total == release.sizeBytes) { "Размер APK не совпадает с подписанным описанием" }
+            require(hex(md.digest()) == release.sha256) { "Контрольная сумма APK не совпадает" }
             val archive = androidPackageInfo(context, temp.absolutePath)
             require(archive.packageName == context.packageName &&
                 versionCode(archive) == release.versionCode) { "Неверная версия или имя пакета APK" }
@@ -208,14 +227,20 @@ fun UpdateCenter() {
                 try {
                     release = client.check()
                     message = if (release == null) "У вас актуальная версия." else
-                        "Доступна версия " + release!!.versionName + ". Установка сохраняет данные только при совместимой подписи."
-                } catch (e: Exception) { message = e.message ?: "Не удалось проверить обновления";release = null }
+                        "Доступна версия " + release!!.versionName + ". Установка потребует системного подтверждения Android."
+                } catch (e: java.io.IOException) { message = "Нет соединения с сервером обновлений. Проверьте интернет и повторите."; release = null }
+                  catch (e: Exception) { message = e.message ?: "Не удалось проверить обновления";release = null }
                 finally { working = false }
             }
         }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
             Text(if (working) "Проверяем…" else "Проверить обновления")
         }
         val available = release
+        if (available != null) {
+            Text("Что нового: " + available.releaseNotes, style = MaterialTheme.typography.bodyMedium)
+            Text("Размер: " + ((available.sizeBytes + 1_048_575L) / 1_048_576L) + " МиБ · Источник: " +
+                validHttps(available.apkUrl).host, style = MaterialTheme.typography.bodySmall)
+        }
         if (available != null) Button(
             onClick = {
                 working = true
