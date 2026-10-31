@@ -46,6 +46,8 @@ class JourneyTest{
  }
  private fun click(text:String){
   if(text in listOf("Главная","Статистика","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
+  else if(text=="Сохранить профиль")composeRule.onNodeWithText(text,useUnmergedTree=true)
+   .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
@@ -77,7 +79,9 @@ class JourneyTest{
   // On API26 an IME-owned focused field can leave a semantics-only Click
   // without a durable Room write. Exercise the user's actual touch path.
   // Keep the original Room persistence assertion and timeout unchanged.
-  composeRule.onNodeWithText("Сохранить профиль").performScrollTo()
+  // Fixed save action must accept one actual touch while IME/field focus settles.
+  // Keep the original Room-write assertion and exact timeout.
+  composeRule.onNodeWithText("Сохранить профиль")
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {

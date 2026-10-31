@@ -206,7 +206,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 @Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean){
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  var p by remember(existing?.id){mutableStateOf(existing?:Profile())};var name by remember(existing?.id){mutableStateOf(p.name)};var age by remember(existing?.id){mutableStateOf(p.age.toString())};var height by remember(existing?.id){mutableStateOf(p.heightCm.toString())};var weight by remember(existing?.id){mutableStateOf(p.weightKg.toString())}
- Page(if(existing==null)"Начнём с тебя"else"Твой профиль","Для взрослых. История каждого пользователя изолирована."){
+ // Keep the primary save reachable while editing long equipment lists or using an IME.
+ // On API26 a touch on a scrolled-to footer could be swallowed by focus/keyboard
+ // dismissal, leaving a valid profile unsaved with no ViewModel exception.
+ val candidate=p.copy(name=name.trim(),age=age.toIntOrNull()?:0,heightCm=number(height)?:0.0,weightKg=number(weight)?:0.0)
+ Column(Modifier.fillMaxSize()){
+  Box(Modifier.weight(1f)){
+   Page(if(existing==null)"Начнём с тебя"else"Твой профиль","Для взрослых. История каждого пользователя изолирована."){
   OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Имя")},singleLine=true,
    keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=ImeAction.Done),
    keyboardActions=KeyboardActions(onDone={focus.clearFocus(force=true);keyboard?.hide()}));NumericField("Возраст",age){age=it};NumericField("Рост, см",height){height=it};NumericField("Вес, кг",weight){weight=it}
@@ -225,8 +231,13 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Panel("Дни занятий"){Text("Стартовый режим: силовые в пн, ср и пт. Дополнительные дни превращаются в лёгкое кардио; силовых — не более трёх в неделю.");FlowRow{(1..7).forEach{d->FilterChip(d in p.days,{p=p.copy(days=if(d in p.days)p.days-d else p.days+d)},label={Text(dayNames[d-1])},modifier=Modifier.padding(end=6.dp))}}}
   OutlinedTextField(p.limitations,{p=p.copy(limitations=it.take(2000))},Modifier.fillMaxWidth(),label={Text("Ограничения и боль")},supportingText={Text("${p.limitations.length}/2000 символов. Заполнение блокирует автоматический подбор; приложение не оценивает медицинскую допустимость упражнений.")})
   Panel("Восстановление: ${p.recovery}/5"){Text("1 — выраженное недомогание; 3 — нормально; 5 — хорошо.");Slider(p.recovery.toFloat(),{p=p.copy(recovery=it.toInt())},valueRange=1f..5f,steps=3)}
-  val candidate=p.copy(name=name.trim(),age=age.toIntOrNull()?:0,heightCm=number(height)?:0.0,weightKg=number(weight)?:0.0)
-  Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid());if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()}){Text("Отмена")}
+   }
+  }
+  // Primary action is a fixed, accessible footer, not a scroll target.
+  Column(Modifier.fillMaxWidth().padding(vertical=8.dp)){
+   Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid())
+   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Отмена")}
+  }
  }
 }
 @OptIn(ExperimentalLayoutApi::class)
