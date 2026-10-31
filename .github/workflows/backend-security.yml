@@ -1,19 +1,13 @@
 name: FORMA backend security checks
 on:
   push:
-    branches: [main, 'forma/**']
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-security.yml'
+    branches: [main]
   pull_request:
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-security.yml'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  verify:
+  backend-security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:

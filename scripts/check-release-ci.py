@@ -8,7 +8,7 @@ import os
 import sys
 from urllib.request import Request, urlopen
 
-REQUIRED = {"verify", "instrumentation (26)", "instrumentation (30)", "instrumentation (34)"}
+REQUIRED = {"verify", "backend-security", "instrumentation (26)", "instrumentation (30)", "instrumentation (34)"}
 ACTIONS_APP_ID = 15368
 
 

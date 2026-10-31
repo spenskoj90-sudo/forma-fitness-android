@@ -94,7 +94,7 @@ The manual release workflow now requires an **exact approved source_sha** equal
 to both the workflow-dispatch commit and checked-out protected main commit.
 Before restoring any signing secret, the source guard checks completed SUCCESS
 results from the GitHub Actions app for all four required Android contexts
-(verify and API26/30/34) on that exact SHA. A missing/failed check blocks signing.
+(verify and API26/30/34), plus independent backend-security, on that exact SHA. A missing/failed check blocks signing.
 The GitHub token needs only read-only contents/checks permissions.
 
 **No signed APK is uploaded to public Actions artifacts.** A public-repo run
@@ -106,3 +106,12 @@ an authenticated private delivery mechanism and monotonic production
 versionCode ledger, then extend and re-review the workflow. Provider-enforced
 reviewers/self-review/bypass restrictions and two E2EE recoveries remain
 separate owner gates. Do not dispatch signing just to test this source.
+
+
+Backend CI source was normalized to one distinct `backend-security` check
+(instead of a second ambiguous `verify`) and now runs on every PR and main
+push, so a required backend check can be enforced even for Android-only edits.
+The existing protected-main provider configuration still requires the four
+Android contexts; PROJECTS must independently verify and add the fifth
+`backend-security` required context before release acceptance. Neither
+branch-protection settings nor environment settings were changed here.
