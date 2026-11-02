@@ -14,6 +14,11 @@ on:
         description: "New versionName, e.g. 0.3.0"
         required: true
         type: string
+      first_release_approved:
+        description: "Explicit first use only when protected ledger is zero"
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
   checks: read
@@ -28,8 +33,11 @@ jobs:
     environment: forma-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      FORMA_EXPECTED_SIGNER_SHA256: ${{ vars.FORMA_EXPECTED_SIGNER_SHA256 }}
+      FORMA_LAST_SIGNED_VERSION_CODE: ${{ vars.FORMA_LAST_SIGNED_VERSION_CODE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Verify unique protected FORMA signing route before secrets
@@ -46,21 +54,26 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$FROZEN_SHA" ]] || { echo "::error::Checkout is not the approved source"; exit 1; }
           python3 -m unittest discover -s scripts -p 'test_check_release_ci.py'
           python3 scripts/check-release-ci.py "$GITHUB_REPOSITORY" "$FROZEN_SHA"
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947
       - name: Require an explicit, monotonic version
         env:
           VERSION_CODE: ${{ inputs.version_code }}
           VERSION_NAME: ${{ inputs.version_name }}
+          FIRST_RELEASE_APPROVED: ${{ inputs.first_release_approved }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::versionCode must be a positive integer"; exit 1; }
-          (( VERSION_CODE > 2 && VERSION_CODE <= 2100000000 )) || { echo "::error::versionCode outside allowed range"; exit 1; }
-          [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || { echo "::error::versionName must be semantic"; exit 1; }
+          python3 -m unittest discover -s scripts -p 'test_release_guard.py'
+          python3 scripts/release_guard.py preflight
+      # This patch fixes guards, not delivery or durable ledger transactions.
+      - name: Block key use until private delivery and durable ledger are reviewed
+        run: |
+          echo "::error::Private APK delivery and durable version ledger are not implemented"
+          exit 1
       - name: Restore only the private FORMA signing key
         shell: bash
         env:
@@ -77,6 +90,7 @@ jobs:
           printf '%s' "$FORMA_RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/forma-signing/release.p12"
           chmod 600 "$RUNNER_TEMP/forma-signing/release.p12"
           [[ -s "$RUNNER_TEMP/forma-signing/release.p12" ]] || { echo "::error::No signing keystore"; exit 1; }
+          python3 scripts/release_guard.py keystore --keystore "$RUNNER_TEMP/forma-signing/release.p12"
       - name: Verify tests, lint and signed release APK
         shell: bash
         env:
@@ -113,22 +127,16 @@ jobs:
           test -s "$APK"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
           SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          "$AAPT" dump badging "$APK" | tee "$OUT/APK_BADGING.txt"
-          grep -F "package: name='ru.forma.fitness' versionCode='$VERSION_CODE' versionName='$VERSION_NAME'" "$OUT/APK_BADGING.txt"
-          "$SIGNER" verify --verbose --print-certs "$APK" | tee "$OUT/APK_SIGNATURE.txt"
-          grep -F "Verified using v2 scheme" "$OUT/APK_SIGNATURE.txt"
-          sha256sum "$APK" | tee "$OUT/SHA256SUMS"
+          python3 scripts/release_guard.py apk --apk "$APK" --aapt "$AAPT" --apksigner "$SIGNER" > "$OUT/APK_IDENTITY.json"
       # PUBLIC Actions artifacts are not private distribution. Never upload a signed APK.
       - name: Upload public identity metadata only (not signed APK)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: forma-signing-metadata-${{ inputs.version_name }}-code${{ inputs.version_code }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
           path: |
-            app/build/outputs/apk/release/APK_BADGING.txt
-            app/build/outputs/apk/release/APK_SIGNATURE.txt
-            app/build/outputs/apk/release/SHA256SUMS
+            app/build/outputs/apk/release/APK_IDENTITY.json
       # Signed APK remains ephemeral; private delivery requires a separate approved provider.
       - name: Remove ephemeral signed APK from public CI runner
         if: always()
@@ -137,3 +145,4 @@ jobs:
         if: always()
         shell: bash
         run: rm -rf -- "$RUNNER_TEMP/forma-signing"
+

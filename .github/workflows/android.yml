@@ -23,7 +23,7 @@ jobs:
       - name: Verify one protected FORMA release route
         run: python3 scripts/check-release-workflows.py
       - name: Check release CI verification logic
-        run: python3 -m unittest discover -s scripts -p "test_check_release_ci.py"
+        run: python3 -m unittest discover -s scripts -p "test*.py" -v
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |
@@ -129,4 +129,5 @@ jobs:
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt
+
 
