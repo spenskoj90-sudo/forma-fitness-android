@@ -1,3 +1,44 @@
+# FORMA signing decision and private delivery
+
+## Current source implementation — 2026-11-02
+
+Release source is maintained in existing PR #6. The application signing certificate remains SHA-256 `a13104307fbd01a38a4e1fbdf7aafdf3f2e76be7cd18a1ac986a9b775d35cf7b`. No real FORMA signing or recipient provisioning has been performed for this change.
+
+### Durable version journal
+
+The same-repository operational branch `ops/forma-release-ledger` contains `release/ledger.json`. Its immutable genesis commit is `b00b8b1d928507db6dcc5cf7d4dcd7dafea82ce7`, pinned in `scripts/release_ledger.py`. Genesis was read back successfully; both counters are zero and there is no reservation. This operational branch is separate from application source.
+
+The controller reads the current branch and validated journal, prepares an explicit snapshot transition with its expected canonical digest, creates a Git commit, and updates the branch through a non-force GitHub update with the exact expected head. A race requires reading the new state and recalculating the transition; never force, reset, or reuse a reserved number. The helper has no initialization/reset CLI.
+
+A reservation binds source SHA, original run ID and attempt 1, version code and name, recipient public-key fingerprint, and an expiry no more than six hours away. Every reservation consumes its number, including failures. An active reserved or signed entry prevents replacement. A failed/expired run must reach a terminal state and be finalized explicitly before a new reservation. The journal retains every transition through Git history.
+
+The protected `forma-release` environment pins `FORMA_RELEASE_LEDGER_COMMIT` to the approved reservation commit. Authorization checks that the live branch matches this pin, its ancestry and transition match the source-pinned genesis, and the exact run, source, version, signer, recipient and expiry match. It rereads the branch before proceeding. `FORMA_LAST_SIGNED_VERSION_CODE` remains a checked mirror; the durable journal is authoritative. Workflow retries cannot sign again.
+
+### Encrypted delivery
+
+`FORMA_DELIVERY_RECIPIENT_PEM` contains only an owner-approved RSA public key. The helper accepts one RSA SPKI key, 3072–8192 bits, exponent 65537; private or concatenated keys fail. The private recipient key stays with the receiver. Generate/read it only in actual `/dev/shm` tmpfs with no swap and a zero soft core limit. Private-key reads reject symlinks, wrong ownership/mode and non-tmpfs descriptors.
+
+After actual APK signature and package verification, the workflow reauthorizes the live reservation and encrypts the APK using a fresh AES-256-GCM key and nonce, wrapping that key with RSA-OAEP-SHA256. Authenticated metadata binds the source, original run, ledger commit/generation, version, signer, recipient and APK hash/size.
+
+The only uploaded delivery files are `forma-release.aesgcm.json`, `APK_IDENTITY.json` and `RECEIPT.json`, retained for three days. A separate job without signing-environment access verifies all three hashes, creates attestations, and verifies their repository, workflow, source and main-branch identity. Plain APKs and signing material are never artifact upload inputs. Gradle caching, configuration caching, daemon and build scans are disabled for release; the keystore uses tmpfs and cleanup runs unconditionally.
+
+Before receiver decryption, obtain expected capsule/identity/receipt hashes from the authenticated GitHub artifact and verify the attestations. Supply expected identities from these verified receipts, never from the capsule header alone. The receiver checks the authenticated metadata and plaintext hash before returning the APK. Final owner output is created exclusively with mode 0600. Private Drive handoff and installation evidence remain controller/owner duties.
+
+### Operational sequence and remaining gates
+
+1. Review and merge the source through the existing PR and protected main process; freeze the exact main SHA and require its ordinary CI.
+2. Approve the real recipient public key and configure public environment pins. Preserve environment protection and the adopted signer identity.
+3. Only with FORMA-specific signing authorization provision its four signing secrets, use a fresh manual run and atomically reserve its exact run/source/version/recipient in the journal. Update the protected reservation commit pin before the signing authorization step can pass.
+4. Verify the original signing job, completed delivery-attestation run, downloaded ciphertext and receipts. Finalize signed/delivered journal transitions only from verified evidence. The helper checks run origin/status; the controller verifies artifact authenticity, receipt content and private delivery evidence.
+5. Complete owner decryption/private handoff, phone update smoke test and secret cleanup under their respective gates. Keep counter mirrors consistent after finalization.
+
+At source preparation time: no recipient configured, no version reserved, no four signing secrets provisioned or read, no real signed FORMA APK, no private delivery or phone check. Source tests and PR CI do not constitute a signing authorization.
+
+## Historical decision record
+
+<details>
+<summary>Earlier custody and source decisions, retained for audit</summary>
+
 # FORMA — permanent signing and first installation baseline
 
 Owner status update (2026-10-24): **neither Infinix nor the new Poco
@@ -115,3 +156,6 @@ The existing protected-main provider configuration still requires the four
 Android contexts; PROJECTS must independently verify and add the fifth
 `backend-security` required context before release acceptance. Neither
 branch-protection settings nor environment settings were changed here.
+
+
+</details>

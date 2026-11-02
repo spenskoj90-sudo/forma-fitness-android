@@ -23,7 +23,9 @@ jobs:
       - name: Verify one protected FORMA release route
         run: python3 scripts/check-release-workflows.py
       - name: Check release CI verification logic
-        run: python3 -m unittest discover -s scripts -p "test*.py" -v
+        run: |
+          python3 -m unittest discover -s scripts -p "test*.py" -v
+          node --test scripts/test_release_delivery.mjs
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |

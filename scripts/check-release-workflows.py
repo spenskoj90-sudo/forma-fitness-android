@@ -33,3 +33,15 @@ require(re.search(r"(?m)^    environment:\s*forma-release\s*$", source) is not N
 require(re.search(r"(?m)^permissions:\s*\n  contents:\s*read\s*\n  checks:\s*read\s*$", source) is not None,
         "read-only contents/checks permissions are required")
 print("FORMA signing guard PASS: one manual main-only environment-gated signing route")
+
+# Gradle caches may retain a plaintext signed APK or signing configuration.
+require(re.search(r"uses: gradle/actions/setup-gradle@[0-9a-f]{40}\s*\n        with:\s*\n          cache-disabled: true",source) is not None,
+        "release Gradle cache must be disabled")
+for flag in ('--no-build-cache','--no-configuration-cache','--no-daemon','--no-scan'):
+    require(flag in source,"release Gradle invocation missing "+flag)
+uploads=re.findall(r"uses: actions/upload-artifact@[^\n]+\n((?:        .*\n|\n)*)",source)
+require(len(uploads)==1,"exactly one allowlisted encrypted delivery upload is permitted")
+subjects=re.findall(r"^            (\S+)$",uploads[0],re.MULTILINE)
+require(subjects==['private-delivery/forma-release.aesgcm.json','private-delivery/APK_IDENTITY.json','private-delivery/RECEIPT.json'],
+        "only encrypted capsule and allowlisted metadata may be uploaded")
+print("FORMA delivery guard PASS: no plaintext APK upload or Gradle cache publication")
