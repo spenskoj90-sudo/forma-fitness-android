@@ -406,4 +406,102 @@ class StorageTest {
   }finally{db.close()}
  }
 
+ @Test fun concurrentTeardownCannotRepauseResumeBetweenRoomCommitAndMarkerClear():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val committed=java.util.concurrent.CountDownLatch(1)
+  val release=java.util.concurrent.CountDownLatch(1)
+  try {
+   val repo=ProfileRepository(db);val owner=Profile(id="race",name="Owner")
+   repo.saveProfile(owner)
+   val started=repo.start(owner.id,generateProgram(owner).first(),1_000L)
+   val tracker=ServiceInterruptionTracker(afterCommitBeforeClear={
+    committed.countDown()
+    check(release.await(5,java.util.concurrent.TimeUnit.SECONDS)){"Timed out waiting for test gate"}
+   })
+   tracker.record(owner.id,started.id)
+   val resume=async(Dispatchers.IO){
+    mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={100_000L}){
+     resumeSession(it,100_000L)
+    }
+   }
+   assertTrue(withContext(Dispatchers.IO){committed.await(5,java.util.concurrent.TimeUnit.SECONDS)})
+   // Starts before the old writer clears its marker. A second Room write
+   // must wait until the first Room commit AND matching marker clear finish.
+   val delayedReachedRoom=java.util.concurrent.CountDownLatch(1)
+   val delayed=async(start=CoroutineStart.UNDISPATCHED){
+    mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={120_000L}){
+     delayedReachedRoom.countDown()
+     it
+    }
+   }
+   assertFalse(delayed.isCompleted)
+   // This second mutation must not enter Room while the first commit is
+   // waiting for its matching interruption marker to be retired.
+   assertFalse(withContext(Dispatchers.IO){
+    delayedReachedRoom.await(250,java.util.concurrent.TimeUnit.MILLISECONDS)
+   })
+   release.countDown()
+   withTimeout(5_000L){resume.await();delayed.await()}
+   val active=repo.load(owner.id)!!.active!!
+   assertFalse(active.paused)
+   assertEquals(0,active.activeSeconds)
+   assertEquals(100_000L,active.lastTickMs)
+   assertEquals(400_000L,active.deadlineMs)
+   assertNull(tracker.pending(owner.id,started.id))
+  }finally{release.countDown();db.close()}
+ }
+ @Test fun newInterruptionRecordedDuringCommitSurvivesOldGenerationClear():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  val committed=java.util.concurrent.CountDownLatch(1)
+  val release=java.util.concurrent.CountDownLatch(1)
+  try {
+   val repo=ProfileRepository(db);val owner=Profile(id="fresh",name="Owner")
+   repo.saveProfile(owner)
+   val started=repo.start(owner.id,generateProgram(owner).first(),1_000L)
+   val tracker=ServiceInterruptionTracker(afterCommitBeforeClear={
+    committed.countDown()
+    check(release.await(5,java.util.concurrent.TimeUnit.SECONDS))
+   })
+   tracker.record(owner.id,started.id)
+   val resume=async(Dispatchers.IO){
+    mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={100_000L}){
+     resumeSession(it,100_000L)
+    }
+   }
+   assertTrue(withContext(Dispatchers.IO){committed.await(5,java.util.concurrent.TimeUnit.SECONDS)})
+   val newer=tracker.record(owner.id,started.id)
+   // Cancellation after a successful Room commit must not erase the newer
+   // marker nor leave the original one pending for a later stale write.
+   resume.cancel()
+   release.countDown()
+   withTimeout(5_000L){resume.join()}
+   assertEquals(newer,tracker.pending(owner.id,started.id))
+   mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={120_000L}){it}
+   val persisted=repo.load(owner.id)!!.active!!
+   assertTrue(persisted.paused)
+   assertEquals(0,persisted.activeSeconds)
+   assertNull(tracker.pending(owner.id,started.id))
+  }finally{release.countDown();db.close()}
+ }
+ @Test fun rolledBackInterruptionMutationRetainsPendingMarkerForSafeRetry():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db);val owner=Profile(id="rollback",name="Owner")
+   repo.saveProfile(owner)
+   val started=repo.start(owner.id,generateProgram(owner).first(),1_000L)
+   val tracker=ServiceInterruptionTracker()
+   val marker=tracker.record(owner.id,started.id)
+   assertTrue(runCatching{
+    mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={100_000L}){
+     throw IllegalStateException("Synthetic Room rollback")
+    }
+   }.isFailure)
+   assertEquals(marker,tracker.pending(owner.id,started.id))
+   assertEquals(started,repo.load(owner.id)!!.active)
+   mutateWithServiceInterruption(repo,tracker,owner.id,started.id,now={100_000L}){it}
+   assertTrue(repo.load(owner.id)!!.active!!.paused)
+   assertNull(tracker.pending(owner.id,started.id))
+  }finally{db.close()}
+ }
+
 }
