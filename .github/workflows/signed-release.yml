@@ -1,0 +1,255 @@
+name: FORMA signed APK - owner-controlled channel
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Exact tested 40-character SHA on protected main"
+        required: true
+        type: string
+      version_code:
+        description: "New Android versionCode (integer greater than all earlier signed builds)"
+        required: true
+        type: string
+      version_name:
+        description: "New versionName, e.g. 0.3.0"
+        required: true
+        type: string
+      first_release_approved:
+        description: "Explicit first use only when protected ledger is zero"
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  checks: read
+concurrency:
+  group: forma-signed-release
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Build verify and encrypt FORMA candidate
+    # A new file added in a feature branch is not an approved release.
+    # Run ONLY after the tested implementation has been merged into main.
+    if: github.ref == 'refs/heads/main'
+    environment: forma-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORMA_EXPECTED_SIGNER_SHA256: ${{ vars.FORMA_EXPECTED_SIGNER_SHA256 }}
+      FORMA_LAST_SIGNED_VERSION_CODE: ${{ vars.FORMA_LAST_SIGNED_VERSION_CODE }}
+      FORMA_RELEASE_LEDGER_COMMIT: ${{ vars.FORMA_RELEASE_LEDGER_COMMIT }}
+      FORMA_DELIVERY_RECIPIENT_PEM: ${{ vars.FORMA_DELIVERY_RECIPIENT_PEM }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      FIRST_RELEASE_APPROVED: ${{ inputs.first_release_approved }}
+      GITHUB_TOKEN: ${{ github.token }}
+    outputs:
+      capsule_sha256: ${{ steps.delivery.outputs.capsule_sha256 }}
+      identity_sha256: ${{ steps.delivery.outputs.identity_sha256 }}
+      receipt_sha256: ${{ steps.delivery.outputs.receipt_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify unique protected FORMA signing route before secrets
+        run: python3 scripts/check-release-workflows.py
+      - name: Require frozen exact main source and its required CI checks before secrets
+        shell: bash
+        env:
+          FROZEN_SHA: ${{ inputs.source_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$FROZEN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be an exact SHA"; exit 1; }
+          [[ "$FROZEN_SHA" == "$GITHUB_SHA" ]] || { echo "::error::Source changed after approval"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$FROZEN_SHA" ]] || { echo "::error::Checkout is not the approved source"; exit 1; }
+          python3 -m unittest discover -s scripts -p 'test_check_release_ci.py'
+          python3 scripts/check-release-ci.py "$GITHUB_REPOSITORY" "$FROZEN_SHA"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947
+        with:
+          cache-disabled: true
+      - name: Require an explicit, monotonic version
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          FIRST_RELEASE_APPROVED: ${{ inputs.first_release_approved }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/release_guard.py preflight
+          python3 -m unittest discover -s scripts -p 'test_release_guard.py'
+          python3 -m unittest discover -s scripts -p 'test_release_ledger.py'
+          node --test scripts/test_release_delivery.mjs
+      - name: Authorize exact reserved run and delivery recipient before secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release_delivery.mjs recipient > "$RUNNER_TEMP/forma-recipient.json"
+          export FORMA_DELIVERY_RECIPIENT_SHA256="$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/forma-recipient.json"))["recipientSha256"])')"
+          python3 scripts/release_ledger.py authorize --output "$RUNNER_TEMP/forma-binding.json"
+      - name: Require RAM-only signing workspace before secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo swapoff -a
+          python3 - <<'PY'
+          from pathlib import Path
+          if len(Path('/proc/swaps').read_text().strip().splitlines()) != 1:
+              raise SystemExit('Active swap blocks signing')
+          if not any(line.split()[1:3] == ['/dev/shm', 'tmpfs'] for line in Path('/proc/mounts').read_text().splitlines()):
+              raise SystemExit('Signing requires tmpfs')
+          PY
+      - name: Restore only the private FORMA signing key
+        shell: bash
+        env:
+          FORMA_RELEASE_KEYSTORE_B64: ${{ secrets.FORMA_RELEASE_KEYSTORE_B64 }}
+          FORMA_RELEASE_STORE_PASSWORD: ${{ secrets.FORMA_RELEASE_STORE_PASSWORD }}
+          FORMA_RELEASE_KEY_ALIAS: ${{ secrets.FORMA_RELEASE_KEY_ALIAS }}
+          FORMA_RELEASE_KEY_PASSWORD: ${{ secrets.FORMA_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          set +x
+          ulimit -c 0
+          for key in FORMA_RELEASE_KEYSTORE_B64 FORMA_RELEASE_STORE_PASSWORD FORMA_RELEASE_KEY_ALIAS FORMA_RELEASE_KEY_PASSWORD; do
+            [[ -n "${!key}" ]] || { echo "::error::Missing protected FORMA signing secret"; exit 1; }
+          done
+          install -d -m 700 /dev/shm/forma-signing
+          printf '%s' "$FORMA_RELEASE_KEYSTORE_B64" | base64 --decode > /dev/shm/forma-signing/release.p12
+          chmod 600 /dev/shm/forma-signing/release.p12
+          [[ -s /dev/shm/forma-signing/release.p12 ]] || { echo "::error::No signing keystore"; exit 1; }
+          python3 scripts/release_guard.py keystore --keystore /dev/shm/forma-signing/release.p12
+      - name: Verify tests, lint and signed release APK
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          FORMA_RELEASE_KEYSTORE_PATH: /dev/shm/forma-signing/release.p12
+          FORMA_RELEASE_STORE_PASSWORD: ${{ secrets.FORMA_RELEASE_STORE_PASSWORD }}
+          FORMA_RELEASE_KEY_ALIAS: ${{ secrets.FORMA_RELEASE_KEY_ALIAS }}
+          FORMA_RELEASE_KEY_PASSWORD: ${{ secrets.FORMA_RELEASE_KEY_PASSWORD }}
+          FORMA_UPDATE_FEED_URL: ${{ vars.FORMA_UPDATE_FEED_URL }}
+          FORMA_UPDATE_MANIFEST_PUBKEY: ${{ vars.FORMA_UPDATE_MANIFEST_PUBKEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          ulimit -c 0
+          python3 - <<'PY'
+          from pathlib import Path
+          if len(Path('/proc/swaps').read_text().strip().splitlines()) != 1:
+              raise SystemExit('Active swap blocks signing')
+          if not any(line.split()[1:3] == ['/dev/shm', 'tmpfs'] for line in Path('/proc/mounts').read_text().splitlines()):
+              raise SystemExit('Signing requires tmpfs')
+          PY
+          if [[ -n "$FORMA_UPDATE_FEED_URL" && ! "$FORMA_UPDATE_FEED_URL" =~ ^https://[^/:@]+(/[^[:space:]]*)?$ ]]; then
+            echo "::error::Release feed must be an ordinary HTTPS URL without credentials or custom port"; exit 1
+          fi
+          if [[ -n "$FORMA_UPDATE_FEED_URL" && -z "$FORMA_UPDATE_MANIFEST_PUBKEY" ]]; then
+            echo "::error::Signed update feed requires a pinned public verification key"; exit 1
+          fi
+          chmod +x gradlew
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache --no-scan :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleRelease \
+            "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" "-PformaUpdateManifestPubKey=$FORMA_UPDATE_MANIFEST_PUBKEY" --console=plain
+      - name: Verify compiler-generated Room v1 schema baseline
+        run: python3 scripts/check-room-schema.py
+      - name: Verify immutable APK identity, signer and SHA-256
+        shell: bash
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          OUT=app/build/outputs/apk/release
+          APK="$OUT/app-release.apk"
+          test -s "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          python3 scripts/release_guard.py apk --apk "$APK" --aapt "$AAPT" --apksigner "$SIGNER" > "$OUT/APK_IDENTITY.json"
+      - name: Encrypt verified APK for the reserved owner recipient
+        id: delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 private-delivery
+          export FORMA_DELIVERY_RECIPIENT_SHA256="$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/forma-recipient.json"))["recipientSha256"])')"
+          python3 scripts/release_ledger.py authorize --output "$RUNNER_TEMP/forma-binding.json"
+          cp app/build/outputs/apk/release/APK_IDENTITY.json private-delivery/APK_IDENTITY.json
+          node scripts/release_delivery.mjs seal \
+            --apk app/build/outputs/apk/release/app-release.apk \
+            --identity private-delivery/APK_IDENTITY.json \
+            --binding "$RUNNER_TEMP/forma-binding.json" \
+            --out private-delivery/forma-release.aesgcm.json > private-delivery/RECEIPT.json
+          echo "capsule_sha256=$(sha256sum private-delivery/forma-release.aesgcm.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "identity_sha256=$(sha256sum private-delivery/APK_IDENTITY.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "receipt_sha256=$(sha256sum private-delivery/RECEIPT.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      # Only recipient-encrypted ciphertext and allowlisted metadata may be public.
+      - name: Upload encrypted private delivery package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: forma-private-delivery-${{ github.run_id }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            private-delivery/forma-release.aesgcm.json
+            private-delivery/APK_IDENTITY.json
+            private-delivery/RECEIPT.json
+      - name: Remove ephemeral signed APK from public CI runner
+        if: always()
+        run: rm -f -- app/build/outputs/apk/release/app-release.apk
+      - name: Delete signing material on runner
+        if: always()
+        shell: bash
+        run: rm -rf -- /dev/shm/forma-signing
+
+  attest-delivery:
+    name: Attest encrypted delivery without signing credentials
+    needs: release
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download only encrypted delivery subjects
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: forma-private-delivery-${{ github.run_id }}
+          path: delivery-subjects
+      - name: Recheck exact bytes before attestation
+        env:
+          CAPSULE_SHA256: ${{ needs.release.outputs.capsule_sha256 }}
+          IDENTITY_SHA256: ${{ needs.release.outputs.identity_sha256 }}
+          RECEIPT_SHA256: ${{ needs.release.outputs.receipt_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum delivery-subjects/forma-release.aesgcm.json | awk '{print $1}')" = "$CAPSULE_SHA256"
+          test "$(sha256sum delivery-subjects/APK_IDENTITY.json | awk '{print $1}')" = "$IDENTITY_SHA256"
+          test "$(sha256sum delivery-subjects/RECEIPT.json | awk '{print $1}')" = "$RECEIPT_SHA256"
+      - name: Attest encrypted capsule and exact identity receipts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: |
+            delivery-subjects/forma-release.aesgcm.json
+            delivery-subjects/APK_IDENTITY.json
+            delivery-subjects/RECEIPT.json
+      - name: Verify exact-source encrypted delivery attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for subject in delivery-subjects/forma-release.aesgcm.json delivery-subjects/APK_IDENTITY.json delivery-subjects/RECEIPT.json; do
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/signed-release.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners >/dev/null
+          done
+          echo "FORMA encrypted delivery provenance PASS"

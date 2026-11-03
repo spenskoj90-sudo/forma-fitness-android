@@ -32,10 +32,10 @@ class JourneyTest{
    throw e
   }
  }
- // The bottom navigation's labels may not appear as text (alwaysShowLabel=false).
+ // Check navigation semantics when the keyboard and profile save animate.
  // Require an actionable navigation target after the active workout disappears.
  private fun waitNavigation(){
-  try{composeRule.waitUntil(20000){composeRule.onAllNodesWithContentDescription("Прогресс",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
+  try{composeRule.waitUntil(20000){composeRule.onAllNodesWithContentDescription("Статистика",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}}
   catch(e:androidx.compose.ui.test.ComposeTimeoutException){
    // Capture while Activity is still alive; CI failure screenshots after
    // instrumentation teardown only show the Android launcher.
@@ -45,25 +45,157 @@ class JourneyTest{
   }
  }
  private fun click(text:String){
-  if(text in listOf("Главная","Моё тело","Прогресс","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
+  if(text in listOf("Главная","Статистика","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
+  else if(text=="Сохранить профиль")composeRule.onNodeWithText(text,useUnmergedTree=true)
+   .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
- private fun screenshot(name:String){composeRule.waitForIdle();val inst=InstrumentationRegistry.getInstrumentation();val file=java.io.File(app.filesDir,"evidence/$name.png");file.parentFile!!.mkdirs();inst.uiAutomation.takeScreenshot().let{bitmap->file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}}
+ private fun screenshot(name:String,expectedLight:Boolean?=null){
+  composeRule.waitForIdle()
+  val inst=InstrumentationRegistry.getInstrumentation()
+  val file=java.io.File(app.filesDir,"evidence/$name.png")
+  file.parentFile!!.mkdirs()
+  inst.uiAutomation.takeScreenshot().let{bitmap->
+   try{
+    file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
+    // Assert the real composed background, not just the theme preference or filename.
+    if(expectedLight!=null){
+     val pixel=bitmap.getPixel(5,bitmap.height/2)
+     val brightness=(android.graphics.Color.red(pixel)+android.graphics.Color.green(pixel)+android.graphics.Color.blue(pixel))/3
+     assertEquals("Screenshot $name does not match the expected visual theme",expectedLight,brightness>128)
+    }
+   }finally{bitmap.recycle()}
+  }
+ }
  private fun current()=runBlocking{app.repository.load(app.settings.settings.first().selected)!!}
  @Test fun offlineProfileWorkoutAndIsolation(){
-  waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест А");click("Сохранить профиль");waitText("Твоя форма.")
-  // The Home UI can render from the Room profile before DataStore finishes\n  // persisting the selected ID; assert the durable new-profile defaults directly.\n  assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
-  screenshot("home-light");click("К тренировкам");screenshot("training-light")
-  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен");screenshot("workout-light")
+  waitText("Имя")
+  composeRule.onNodeWithText("Имя").performTextInput("Тест А")
+  // API26 evidence: Gboard's first-run overlay remained open over the form
+  // and the on-screen save never reached Room. Exercise the real Done action,
+  // close focus and then require the button to be visible before tapping it.
+  composeRule.onNodeWithText("Имя").performImeAction()
+  // On API26 an IME-owned focused field can leave a semantics-only Click
+  // without a durable Room write. Exercise the user's actual touch path.
+  // Keep the original Room persistence assertion and timeout unchanged.
+  // Fixed save action must accept one actual touch while IME/field focus settles.
+  // Keep the original Room-write assertion and exact timeout.
+  composeRule.onNodeWithText("Сохранить профиль")
+   .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
+  // Separate genuine Room write failure from delayed Home recomposition.
+  try {
+   composeRule.waitUntil(20000) {
+    runBlocking { app.repository.profiles.first().any { it.name=="Тест А" } }
+   }
+  } catch(e:androidx.compose.ui.test.ComposeTimeoutException) {
+   runCatching{screenshot("initial-profile-save-not-persisted")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-PROFILE-SAVE-TIMEOUT")}
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Initial profile save missing in Room: hasError=${vm.error.value!=null}",e)
+  }
+  waitText("Твой путь к сильной и здоровой версии себя")
+  // Room may show the profile before DataStore updates the selection.
+  // Assert the durable default from Room, independent of selection timing.
+  assertEquals(setOf(1,3,5),runBlocking{app.repository.profiles.first().single().days})
+  composeRule.waitUntil(20000){composeRule.onAllNodesWithTag("shortcut-body",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
+  screenshot("home-dark-default");click("Тренировки")
+  val themeVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  fun useTheme(dark:Boolean){
+   themeVm.dark(dark)
+   composeRule.waitUntil(20000){
+    runBlocking{app.settings.settings.first().dark==dark}&&themeVm.prefs.value.dark==dark
+   }
+   composeRule.waitForIdle()
+  }
+  useTheme(true)
+  screenshot("training-dark",expectedLight=false)
+  composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick()
+  waitText("Пропустить этап");click("Пропустить этап");waitText("Подход выполнен")
+  composeRule.onAllNodesWithText("Текущий").onFirst().assertExists()
+  composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
+  composeRule.onNodeWithText("Пауза").assertIsDisplayed()
+  // Large plan cards are not composed before the primary set action by default.
+  // Check real disclosure interaction, not viewport-clipped node coordinates.
+  composeRule.onNodeWithText("Показать план подходов").assertExists()
+  composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
+  screenshot("workout-dark",expectedLight=false)
+  useTheme(false)
+  composeRule.onNodeWithText("Боль / дискомфорт — стоп").assertIsDisplayed()
+  composeRule.onNodeWithText("Пауза").assertIsDisplayed()
+  screenshot("workout-light",expectedLight=true)
+  useTheme(true)
+  composeRule.onNodeWithText("Показать план подходов").performScrollTo().performClick()
+  composeRule.onNodeWithText("План и записи подходов").assertExists()
+  composeRule.onAllNodesWithText("План:",substring=true).onFirst().assertExists()
+  composeRule.onNodeWithText("Скрыть план подходов").performScrollTo().performClick()
+  composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
+  composeRule.onAllNodesWithText("План:",substring=true).assertCountEquals(0)
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
-  click("Остановить тренировку");waitText("Сохранить и завершить");click("Сохранить и завершить");composeRule.waitUntil(20000){current().active==null};waitNavigation();click("Прогресс")
+  // Do not tap STOP through the outgoing paused Runner: its Compose key is
+  // replaced asynchronously when Room publishes the durable Resume transition.
+  try{composeRule.waitUntil(20000){current().active?.paused==false}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("journey-resume-not-persisted")}
+   throw AssertionError("Journey Resume did not persist before STOP",e)
+  }
+  waitText("Пауза")
+  click("Остановить тренировку")
+  composeRule.onNodeWithText("Не останавливать").assertIsDisplayed().performClick()
+  assertFalse(current().active!!.terminal)
+  click("Остановить тренировку")
+  screenshot("stop-confirm-dark",expectedLight=false)
+  composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed().performClick()
+  // Distinguish a real Room/service STOP failure from a slow UI recomposition.
+  try{composeRule.waitUntil(20000){current().active?.terminal==true}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("journey-stop-not-persisted")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-STOP-TIMEOUT")}
+   val actual=current().active
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Journey STOP did not persist: phase=${actual?.phase}, paused=${actual?.paused}, hasError=${vm.error.value!=null}",e)
+  }
+  waitText("Сохранить и открыть историю");click("Сохранить и открыть историю");composeRule.waitUntil(20000){current().active==null};waitNavigation();waitText("Прогресс")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  click("Профиль");click("Тёмное");click("Добавить пользователя");waitText("Имя");composeRule.onNodeWithText("Имя").performTextInput("Тест Б");click("Сохранить профиль");waitNavigation();waitText("Тест Б")
-  click("Прогресс");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
-  click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Прогресс")
+  click("Профиль")
+  // F2 accessibility: the label and switch are one accessible touch target.
+  // Verify both directions persist through DataStore.
+  val voiceBefore=runBlocking{app.settings.settings.first().voice}
+  composeRule.onNodeWithText("Голос Android").performScrollTo().assertHasClickAction().performClick()
+  composeRule.waitUntil(20000){runBlocking{app.settings.settings.first().voice!=voiceBefore}}
+  composeRule.onNodeWithText("Голос Android").performScrollTo().assertHasClickAction().performClick()
+  composeRule.waitUntil(20000){runBlocking{app.settings.settings.first().voice==voiceBefore}}
+  click("Тёмное")
+  click("Добавить пользователя")
+  waitText("Имя")
+  composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
+  composeRule.onNodeWithText("Сохранить профиль").assertIsEnabled()
+  click("Сохранить профиль")
+  // The API26 failure here was previously attributed to one long source line:
+  // distinguish Room persistence, selected-profile DataStore, and rendered UI.
+  // Keep the original 20-second gate, without weakening the isolation checks.
+  try {
+   composeRule.waitUntil(20000) {
+    val saved=runBlocking{app.repository.profiles.first().firstOrNull{it.name=="Тест Б"}}
+    saved!=null && runBlocking{app.settings.settings.first().selected}==saved.id &&
+     current().id==saved.id
+   }
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("second-profile-selection-timeout")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SECOND-PROFILE-TIMEOUT")}
+   val profiles=runBlocking{app.repository.profiles.first()}
+   val selected=runBlocking{app.settings.settings.first().selected}
+   val second=profiles.firstOrNull{it.name=="Тест Б"}
+   val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+   throw AssertionError("Second profile selection did not persist: roomHasSecond=${second!=null}, "+
+    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}",e)
+  }
+  waitNavigation()
+  waitText("Тест Б")
+  click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
+  click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Моё тело");screenshot("body-dark");click("Профиль");screenshot("profile-dark")
+  screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Главная");composeRule.onNodeWithTag("shortcut-body",useUnmergedTree=true).performScrollTo().performClick();screenshot("body-dark");click("Профиль");screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
   click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап")

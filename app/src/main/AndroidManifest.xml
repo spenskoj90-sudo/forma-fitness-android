@@ -4,9 +4,17 @@
  <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
  <uses-permission android:name="android.permission.WAKE_LOCK"/>
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <!-- Direct APK distribution only. Remove for a future Google Play flavor. -->
+ <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
  <queries><intent><action android:name="android.intent.action.TTS_SERVICE"/></intent></queries>
- <application android:name=".FormaApp" android:label="FORMA" android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:supportsRtl="true" android:theme="@style/Theme.Forma">
+ <application android:name=".FormaApp" android:label="${formaAppLabel}" android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:supportsRtl="true" android:theme="@style/Theme.Forma">
   <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <service android:name=".WorkoutService" android:exported="false" android:foregroundServiceType="health"/>
+  <provider android:name="androidx.core.content.FileProvider"
+   android:authorities="${applicationId}.updates"
+   android:exported="false" android:grantUriPermissions="true">
+   <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/forma_update_paths"/>
+  </provider>
  </application>
 </manifest>

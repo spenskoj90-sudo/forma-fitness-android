@@ -1,22 +1,30 @@
 plugins {alias(libs.plugins.android.application);alias(libs.plugins.kotlin.android);alias(libs.plugins.kotlin.compose);alias(libs.plugins.kotlin.serialization);alias(libs.plugins.ksp)}
 android {
  namespace="ru.forma.app";compileSdk=35
- defaultConfig {applicationId="ru.forma.fitness";minSdk=26;targetSdk=35;versionCode=providers.gradleProperty("formaVersionCode").orNull?.toInt()?:2;versionName="0.2.0";testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner"}
+ defaultConfig {applicationId="ru.forma.fitness";minSdk=26;targetSdk=35;versionCode=providers.gradleProperty("formaVersionCode").orNull?.toInt()?:2;versionName=providers.gradleProperty("formaVersionName").orNull?:"0.2.0";testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner";manifestPlaceholders["formaAppLabel"]="FORMA";resValue("string","forma_update_feed_url",providers.gradleProperty("formaUpdateFeedUrl").orNull?:"");resValue("string","forma_update_manifest_public_key",providers.gradleProperty("formaUpdateManifestPubKey").orNull?:"")}
  compileOptions {sourceCompatibility=JavaVersion.VERSION_17;targetCompatibility=JavaVersion.VERSION_17}
  kotlinOptions {jvmTarget="17"}
  signingConfigs {
   getByName("debug") { storeFile=rootProject.file(".forma-signing/debug.keystore") }
   create("formaRelease") {
+   storeType="pkcs12"
    System.getenv("FORMA_RELEASE_KEYSTORE_PATH")?.let { storeFile=file(it) }
    storePassword=System.getenv("FORMA_RELEASE_STORE_PASSWORD")
    keyAlias=System.getenv("FORMA_RELEASE_KEY_ALIAS")
    keyPassword=System.getenv("FORMA_RELEASE_KEY_PASSWORD")
   }
  }
- buildTypes { getByName("release") { signingConfig=signingConfigs.getByName("formaRelease") } }
+ buildTypes {
+  // Never mint a different applicationId for an Owner-facing FORMA update.
+  // Debug APKs are CI evidence only; never install them over existing data
+  // unless the exact certificate is known to be compatible.
+  getByName("release"){signingConfig=signingConfigs.getByName("formaRelease")}
+ }
  buildFeatures {compose=true}
  testOptions {unitTests.isIncludeAndroidResources=true;unitTests.all {it.systemProperty("robolectric.dependency.repo.url","https://repo.maven.apache.org/maven2")}}
 }
+// Persist compiler-generated Room schemas for non-destructive future migrations.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
  implementation(project(":domain"))
  implementation(libs.androidx.core.ktx);implementation(libs.androidx.lifecycle.runtime.ktx);implementation(libs.androidx.lifecycle.viewmodel.compose);implementation(libs.androidx.activity.compose)
