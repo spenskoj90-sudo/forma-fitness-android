@@ -62,7 +62,10 @@ class TokenVerifier:
         validate_provider(issuer, audience, jwks_url)
         self.issuer = issuer
         self.audience = audience
-        self.client = PyJWKClient(jwks_url, cache_keys=True, lifespan=300)
+        # Bound trust in each JWKS signing key to the 300-second set TTL.
+        # PyJWT's separate cache_keys LRU never expires entries by time:
+        # a removed key could otherwise validate tokens after rotation.
+        self.client = PyJWKClient(jwks_url, cache_keys=False, lifespan=300)
 
     def verify(self, token: str) -> Identity:
         if len(token) > 16384 or not token:
