@@ -13,14 +13,45 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.forma.domain.*
 
+// Initial state must not masquerade as an empty Room database or default
+// selected user. Both sources load asynchronously on Android cold start.
+internal enum class LocalLoadStatus { LOADING, READY, FAILED }
+internal data class ProfileSnapshot(
+ val status:LocalLoadStatus,
+ val profiles:List<Profile> = emptyList()
+)
+internal data class SettingsSnapshot(
+ val status:LocalLoadStatus,
+ val settings:Preferences = Preferences()
+)
+internal fun canRenderProfileUi(
+ profiles:ProfileSnapshot,settings:SettingsSnapshot,current:Profile?
+):Boolean {
+ if(profiles.status!=LocalLoadStatus.READY||settings.status!=LocalLoadStatus.READY)return false
+ val expected=profiles.profiles.firstOrNull{it.id==settings.settings.selected}
+  ?:profiles.profiles.firstOrNull()
+ return current?.id==expected?.id
+}
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  val coachStatus=app.coachStatus
- val profiles=app.repository.profiles.catch{error.value="Не удалось прочитать локальные данные"}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
- val prefs=app.settings.settings.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
- val current=combine(profiles,prefs){ps,s->ps.firstOrNull{it.id==s.selected}?:ps.firstOrNull()}.stateIn(viewModelScope,SharingStarted.Eagerly,null)
+ val profileSnapshot=app.repository.profiles
+  .map{ProfileSnapshot(LocalLoadStatus.READY,it)}
+  .catch{error.value="Не удалось прочитать локальные данные";emit(ProfileSnapshot(LocalLoadStatus.FAILED))}
+  .stateIn(viewModelScope,SharingStarted.Eagerly,ProfileSnapshot(LocalLoadStatus.LOADING))
+ val settingsSnapshot=app.settings.settings
+  .map{SettingsSnapshot(LocalLoadStatus.READY,it)}
+  .catch{error.value="Не удалось прочитать настройки";emit(SettingsSnapshot(LocalLoadStatus.FAILED))}
+  .stateIn(viewModelScope,SharingStarted.Eagerly,SettingsSnapshot(LocalLoadStatus.LOADING))
+ // Retain the existing read-only observables for callers and instrumentation.
+ val profiles=profileSnapshot.map{it.profiles}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
+ val prefs=settingsSnapshot.map{it.settings}.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
+ val current=combine(profileSnapshot,settingsSnapshot){ps,s->
+  if(ps.status!=LocalLoadStatus.READY||s.status!=LocalLoadStatus.READY)null
+  else ps.profiles.firstOrNull{it.id==s.settings.selected}?:ps.profiles.firstOrNull()
+ }.stateIn(viewModelScope,SharingStarted.Eagerly,null)
  // Recovery applies only to sessions last ticked by an older process.
  // A late init coroutine must never re-pause a workout the Owner just resumed.
  init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->

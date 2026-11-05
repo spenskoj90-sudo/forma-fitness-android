@@ -51,7 +51,12 @@ class MainActivity:ComponentActivity(){
 }
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
- val p by vm.current.collectAsState();val profiles by vm.profiles.collectAsState();val settings by vm.prefs.collectAsState();val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
+ val p by vm.current.collectAsState()
+ val profilesSnapshot by vm.profileSnapshot.collectAsState()
+ val settingsSnapshot by vm.settingsSnapshot.collectAsState()
+ val profiles=profilesSnapshot.profiles
+ val settings=settingsSnapshot.settings
+ val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
  // Dark is the unconfigured default; System follows the Android theme.
  val keyboardFocus=LocalFocusManager.current;val rootKeyboard=LocalSoftwareKeyboardController.current
@@ -76,7 +81,13 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     }
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
     if(error!=null)Panel("Не удалось выполнить действие"){Text(error!!);TextButton({vm.error.value=null}){Text("Понятно")}}
-    when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
+    when{
+     // Never show new-profile onboarding or somebody else's first profile
+     // while Room/DataStore still deliver their persisted initial values.
+     !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
+      Text(if(profilesSnapshot.status==LocalLoadStatus.FAILED||settingsSnapshot.status==LocalLoadStatus.FAILED)
+       "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
+     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
      else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
