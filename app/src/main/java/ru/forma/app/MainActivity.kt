@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
@@ -54,6 +56,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  // Dark is the unconfigured default; System follows the Android theme.
  val keyboardFocus=LocalFocusManager.current;val rootKeyboard=LocalSoftwareKeyboardController.current
  LaunchedEffect(creating,editing,p?.id){if(!creating&&!editing&&p!=null){keyboardFocus.clearFocus(force=true);rootKeyboard?.hide()}}
+ val restoredScreens=rememberSaveableStateHolder()
  val dark=settings.dark?:isSystemInDarkTheme()
  val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
  MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
@@ -76,7 +79,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     when{creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
-     else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->TrainingScreen(p!!,settings.trainingPlace,vm);2->BodyScreen(p!!,vm);3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
+     else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
     }
    }
   }
@@ -202,14 +205,32 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Spacer(Modifier.height(18.dp))
  }
 }
+// Keep saved-state small: only editable fields, never history, measurements or
+// an active Room workout. The original profile is authoritative on Save.
+private val editableProfileSaver=Saver<Profile,String>(
+ save={value->kotlinx.serialization.json.Json.encodeToString(
+  Profile.serializer(),value.copy(history=emptyList(),measurements=emptyList(),active=null))},
+ restore={saved->kotlinx.serialization.json.Json.decodeFromString(Profile.serializer(),saved)}
+)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean){
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
- var p by remember(existing?.id){mutableStateOf(existing?:Profile())};var name by remember(existing?.id){mutableStateOf(p.name)};var age by remember(existing?.id){mutableStateOf(p.age.toString())};var height by remember(existing?.id){mutableStateOf(p.heightCm.toString())};var weight by remember(existing?.id){mutableStateOf(p.weightKg.toString())}
+ var p by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){mutableStateOf(existing?:Profile())}
+ var name by rememberSaveable(existing?.id){mutableStateOf(p.name)}
+ var age by rememberSaveable(existing?.id){mutableStateOf(p.age.toString())}
+ var height by rememberSaveable(existing?.id){mutableStateOf(p.heightCm.toString())}
+ var weight by rememberSaveable(existing?.id){mutableStateOf(p.weightKg.toString())}
  // Keep the primary save reachable while editing long equipment lists or using an IME.
  // On API26 a touch on a scrolled-to footer could be swallowed by focus/keyboard
  // dismissal, leaving a valid profile unsaved with no ViewModel exception.
- val candidate=p.copy(name=name.trim(),age=age.toIntOrNull()?:0,heightCm=number(height)?:0.0,weightKg=number(weight)?:0.0)
+ // Rebase edited fields onto the current profile: no restored draft may
+ // replace a history or measurement that Room saved while the editor lived.
+ val candidate=(existing?:p).copy(
+  name=name.trim(),age=age.toIntOrNull()?:0,heightCm=number(height)?:0.0,
+  weightKg=number(weight)?:0.0,experience=p.experience,equipment=p.equipment,
+  limitations=p.limitations,primary=p.primary,secondary=p.secondary,
+  priorities=p.priorities,days=p.days,recovery=p.recovery
+ )
  Column(Modifier.fillMaxSize()){
   Box(Modifier.weight(1f)){
    Page(if(existing==null)"Начнём с тебя"else"Твой профиль","Для взрослых. История каждого пользователя изолирована."){
@@ -252,7 +273,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  // still directly accessible without changing the user's saved schedule.
  if(plan.isNotEmpty() && plan.none{it.cardio!=null})Panel("Кардио по желанию"){
   Text("Дополнительная ходьба или интервалы не обязательны и не добавляются в недельный силовой план.")
-  CardioControls(TrainingDay(day=java.time.LocalDate.now().dayOfWeek.value,name="Кардио по желанию",cardio=CardioKind.WALK,durationSec=1200),vm)
+  CardioControls(TrainingDay(day=java.time.LocalDate.now().dayOfWeek.value,name="Кардио по желанию",cardio=CardioKind.WALK,durationSec=1200)){vm.start(it)}
  }
  Panel("Техника упражнений"){
   Text("${exerciseCatalog.size} упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
@@ -270,16 +291,21 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
    val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
    if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
   }
-  if(day.cardio!=null)CardioControls(chosen,vm)else Action("Начать тренировку",{vm.start(chosen)})
+  if(day.cardio!=null)CardioControls(chosen){vm.start(it)}else Action("Начать тренировку",{vm.start(chosen)})
  }
 }
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun CardioControls(day:TrainingDay,vm:FormaViewModel){
- var kind by remember{mutableStateOf(day.cardio?:CardioKind.WALK)};var duration by remember{mutableStateOf((day.durationSec/60).toString())};var walk by remember{mutableStateOf("120")};var run by remember{mutableStateOf("60")}
- FlowRow{CardioKind.entries.forEach{k->FilterChip(kind==k,{kind=k},label={Text(k.label)},modifier=Modifier.padding(end=6.dp))}}
+@Composable fun CardioControls(day:TrainingDay,onStart:(TrainingDay)->Unit){
+ // Only editor inputs belong in Activity saved state; workout state is Room-owned.
+ var kindName by rememberSaveable(day.day,day.name){mutableStateOf((day.cardio?:CardioKind.WALK).name)}
+ var duration by rememberSaveable(day.day,day.name){mutableStateOf((day.durationSec/60).toString())}
+ var walk by rememberSaveable(day.day,day.name){mutableStateOf(day.intervals.getOrNull(0)?.toString()?:"120")}
+ var run by rememberSaveable(day.day,day.name){mutableStateOf(day.intervals.getOrNull(1)?.toString()?:"60")}
+ val kind=CardioKind.entries.firstOrNull{it.name==kindName}?:CardioKind.WALK
+ FlowRow{CardioKind.entries.forEach{k->FilterChip(kind==k,{kindName=k.name},label={Text(k.label)},modifier=Modifier.padding(end=6.dp))}}
  NumericField("Длительность, минут (1–120)",duration){duration=it};if(kind==CardioKind.INTERVAL){NumericField("Ходьба, секунд (10–1800)",walk){walk=it};NumericField("Бег, секунд (10–1800)",run){run=it}}
  val m=duration.toIntOrNull()?:0;val w=walk.toIntOrNull()?:0;val r=run.toIntOrNull()?:0
- Action("Начать кардио",{vm.start(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
+ Action("Начать кардио",{onStart(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
 }
 
 @Composable fun Runner(s:Session,vm:FormaViewModel,onOpenHistory:()->Unit){

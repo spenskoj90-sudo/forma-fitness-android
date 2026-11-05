@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
@@ -77,12 +81,66 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
   }
  }
 }
-@Composable fun BodyScreen(p:Profile,vm:FormaViewModel){var values by remember(p.id){mutableStateOf(measurementLabels.keys.associateWith{""})};var editing by remember(p.id){mutableStateOf<Measurement?>(null)};var selected by remember(p.id){mutableStateOf("weight")};Page("Моё тело","Замеры в одинаковых условиях помогают видеть изменения."){
- Panel("Манекен · параметры тела"){BodyMannequin(p)}
- Panel(if(editing==null)"Новый замер"else "Исправить замер"){measurementLabels.forEach{(key,label)->NumericField(label,values[key].orEmpty()){values=values+(key to it)}};val parsed=values.filterValues{it.isNotBlank()}.mapValues{number(it.value)?:-1.0};Action("Сохранить замеры",{vm.measurement(parsed,editing?.id,editing?.dateMs?:System.currentTimeMillis()){values=measurementLabels.keys.associateWith{""};editing=null}},Measurement(dateMs=0,values=parsed).valid())}
- Panel("Динамика"){measurementLabels.forEach{(key,label)->TextButton({selected=key}){Text(if(selected==key)"✓ $label"else label)}};val samples=p.measurements.mapNotNull{m->m.values[selected]?.let{ChartSample(m.dateMs,it)}}.sortedBy{it.timeMs};val unit=if(selected=="weight")"кг"else"см";Text(measurementLabels[selected].orEmpty());HistoryChart(samples,measurementLabels[selected].orEmpty(),unit);if(samples.isNotEmpty())Text("Первый: ${samples.first().value} $unit · последний: ${samples.last().value} $unit")}
- p.measurements.sortedByDescending{it.dateMs}.forEach{m->Panel(dateLabel(m.dateMs)){m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")};TextButton({editing=m;values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}}){Text("Исправить запись")}}}
-}}
+// Save only a small input map and a stable record ID. Never cache complete
+// per-user measurement history in the Activity saved-state Bundle.
+internal val measurementDraftSaver=Saver<Map<String,String>,String>(
+ save={Json.encodeToString(it)},
+ restore={Json.decodeFromString<Map<String,String>>(it)}
+)
+@Composable fun BodyScreen(p:Profile,vm:FormaViewModel)=BodyScreen(p){values,id,dateMs,done->
+ vm.measurement(values,id,dateMs,done)
+}
+@Composable fun BodyScreen(
+ p:Profile,
+ onMeasurement:(Map<String,Double>,String?,Long,()->Unit)->Unit
+){
+ var values by rememberSaveable(p.id,stateSaver=measurementDraftSaver){
+  mutableStateOf(measurementLabels.keys.associateWith{""})
+ }
+ var editingId by rememberSaveable(p.id){mutableStateOf<String?>(null)}
+ var selected by rememberSaveable(p.id){mutableStateOf("weight")}
+ val editing=p.measurements.firstOrNull{it.id==editingId}
+ val missingEditedRecord=editingId!=null&&editing==null
+ Page("Моё тело","Замеры в одинаковых условиях помогают видеть изменения."){
+  Panel("Манекен · параметры тела"){BodyMannequin(p)}
+  Panel(if(editingId==null)"Новый замер" else "Исправить замер"){
+   if(missingEditedRecord)Text("Исходная запись больше недоступна. Отмените исправление, чтобы не создать случайный дубликат.")
+   measurementLabels.forEach{(key,label)->
+    NumericField(label,values[key].orEmpty()){values=values+(key to it)}
+   }
+   val parsed=values.filterValues{it.isNotBlank()}.mapValues{number(it.value)?:-1.0}
+   Action("Сохранить замеры",{
+    onMeasurement(parsed,editingId,editing?.dateMs?:System.currentTimeMillis()){
+     values=measurementLabels.keys.associateWith{""};editingId=null
+    }
+   },!missingEditedRecord&&Measurement(dateMs=0,values=parsed).valid())
+   if(editingId!=null)TextButton({
+    editingId=null;values=measurementLabels.keys.associateWith{""}
+   }){Text("Отменить исправление")}
+  }
+  Panel("Динамика"){
+   measurementLabels.forEach{(key,label)->TextButton({selected=key}){
+    Text(if(selected==key)"✓ $label" else label)
+   }}
+   val samples=p.measurements.mapNotNull{m->
+    m.values[selected]?.let{ChartSample(m.dateMs,it)}
+   }.sortedBy{it.timeMs}
+   val unit=if(selected=="weight")"кг" else "см"
+   Text(measurementLabels[selected].orEmpty())
+   HistoryChart(samples,measurementLabels[selected].orEmpty(),unit)
+   if(samples.isNotEmpty())Text("Первый: ${samples.first().value} $unit · последний: ${samples.last().value} $unit")
+  }
+  p.measurements.sortedByDescending{it.dateMs}.forEach{m->
+   Panel(dateLabel(m.dateMs)){
+    m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")}
+    TextButton({
+     editingId=m.id
+     values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}
+    }){Text("Исправить запись")}
+   }
+  }
+ }
+}
 @Composable fun ProgressScreen(p:Profile){
  var visibleCount by rememberSaveable(p.id){mutableIntStateOf(10)}
  var chartsExpanded by rememberSaveable(p.id){mutableStateOf(false)}
