@@ -80,7 +80,7 @@ class FormDraftRestorationTest {
    }
   }
   rule.onNodeWithText("Исправить запись").performScrollTo().performClick()
-  rule.onNodeWithText("Вес, кг").performTextReplacement("77")
+  rule.onNodeWithTag("body-measure-weight").performTextReplacement("77")
   restore.emulateSavedInstanceStateRestore()
   rule.onNodeWithText("Сохранить замеры").performScrollTo().assertIsEnabled().performClick()
   rule.runOnIdle {

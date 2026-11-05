@@ -2,6 +2,7 @@ package ru.forma.app
 import androidx.compose.foundation.Canvas
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -106,7 +107,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   Panel(if(editingId==null)"Новый замер" else "Исправить замер"){
    if(missingEditedRecord)Text("Исходная запись больше недоступна. Отмените исправление, чтобы не создать случайный дубликат.")
    measurementLabels.forEach{(key,label)->
-    NumericField(label,values[key].orEmpty()){values=values+(key to it)}
+    NumericField(label,values[key].orEmpty(),Modifier.testTag("body-measure-$key")){values=values+(key to it)}
    }
    val parsed=values.filterValues{it.isNotBlank()}.mapValues{number(it.value)?:-1.0}
    Action("Сохранить замеры",{

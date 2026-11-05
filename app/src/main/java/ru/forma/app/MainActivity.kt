@@ -100,7 +100,11 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
-@Composable fun NumericField(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,Modifier.fillMaxWidth(),label={Text(label)},singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Decimal))}
+@Composable fun NumericField(label:String,value:String,modifier:Modifier=Modifier,onChange:(String)->Unit){
+ OutlinedTextField(value,onChange,Modifier.fillMaxWidth().then(modifier),label={Text(label)},
+  singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(
+   keyboardType=androidx.compose.ui.text.input.KeyboardType.Decimal))
+}
 
 /** Decorative brand artwork: not a depiction of correct exercise technique. */
 @Composable fun FormaAthleteArtwork(modifier:Modifier=Modifier){
