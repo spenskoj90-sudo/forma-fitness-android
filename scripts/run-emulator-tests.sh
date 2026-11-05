@@ -53,3 +53,7 @@ if (( api >= 33 )); then
 fi
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecoveryTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/recovery-api${api}.txt"
 grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
+
+# Test-only synthetic media, actual local decoder/player and accessible Compose fallback.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.TechniqueMediaTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-media-api${api}.txt"
+grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"

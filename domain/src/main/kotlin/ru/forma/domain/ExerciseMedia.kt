@@ -1,8 +1,10 @@
 package ru.forma.domain
 
 import java.security.MessageDigest
+import kotlinx.serialization.Serializable
 
 /** Required accessible technique stages; content needs human technique review. */
+@Serializable
 data class TechniqueCaption(
  val setup:String,val start:String,val motion:String,val finish:String,
  val rangeOfMotion:String,val breathing:String,val errors:String
@@ -11,6 +13,7 @@ data class TechniqueCaption(
 }
 
 /** Evidence is trusted only when admitted by source review, not by filling in strings. */
+@Serializable
 data class TechniqueMediaEvidence(
  val exerciseId:String,val equipment:Equipment,val revision:Int,
  val offlinePath:String,val sha256:String,val license:String,val provenance:String,
