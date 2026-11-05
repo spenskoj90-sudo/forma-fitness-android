@@ -37,11 +37,11 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  val coachStatus=app.coachStatus
- val profileSnapshot=app.repository.profiles
+ internal val profileSnapshot=app.repository.profiles
   .map{ProfileSnapshot(LocalLoadStatus.READY,it)}
   .catch{error.value="Не удалось прочитать локальные данные";emit(ProfileSnapshot(LocalLoadStatus.FAILED))}
   .stateIn(viewModelScope,SharingStarted.Eagerly,ProfileSnapshot(LocalLoadStatus.LOADING))
- val settingsSnapshot=app.settings.settings
+ internal val settingsSnapshot=app.settings.settings
   .map{SettingsSnapshot(LocalLoadStatus.READY,it)}
   .catch{error.value="Не удалось прочитать настройки";emit(SettingsSnapshot(LocalLoadStatus.FAILED))}
   .stateIn(viewModelScope,SharingStarted.Eagerly,SettingsSnapshot(LocalLoadStatus.LOADING))
