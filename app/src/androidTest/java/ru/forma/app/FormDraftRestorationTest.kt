@@ -74,7 +74,7 @@ class FormDraftRestorationTest {
   val restore=StateRestorationTester(rule)
   restore.setContent {
    MaterialTheme {
-    BodyScreen(owner){values,id,dateMs,done->
+    BodyScreen(owner){values,id,dateMs,_,done->
      savedId=id;savedDate=dateMs;savedValues=values;done()
     }
    }

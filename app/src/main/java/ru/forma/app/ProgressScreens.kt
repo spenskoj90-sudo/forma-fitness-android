@@ -88,17 +88,22 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
  save={Json.encodeToString(it)},
  restore={Json.decodeFromString<Map<String,String>>(it)}
 )
-@Composable fun BodyScreen(p:Profile,vm:FormaViewModel)=BodyScreen(p){values,id,dateMs,done->
- vm.measurement(values,id,dateMs,done)
+@Composable fun BodyScreen(p:Profile,vm:FormaViewModel)=BodyScreen(p){values,id,dateMs,draftId,done->
+ vm.measurement(values,id,dateMs,draftId,done)
 }
 @Composable fun BodyScreen(
  p:Profile,
- onMeasurement:(Map<String,Double>,String?,Long,()->Unit)->Unit
+ onMeasurement:(Map<String,Double>,String?,Long,String,()->Unit)->Unit
 ){
  var values by rememberSaveable(p.id,stateSaver=measurementDraftSaver){
   mutableStateOf(measurementLabels.keys.associateWith{""})
  }
  var editingId by rememberSaveable(p.id){mutableStateOf<String?>(null)}
+ // One draft identity and timestamp per unsaved entry. Double-taps and
+ // retries cannot invent multiple persisted measurements for one entry.
+ var draftId by rememberSaveable(p.id){mutableStateOf(java.util.UUID.randomUUID().toString())}
+ var draftDateMs by rememberSaveable(p.id){mutableLongStateOf(System.currentTimeMillis())}
+ val submittingDraftId=draftId
  var selected by rememberSaveable(p.id){mutableStateOf("weight")}
  val editing=p.measurements.firstOrNull{it.id==editingId}
  val missingEditedRecord=editingId!=null&&editing==null
@@ -111,12 +116,16 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
    }
    val parsed=values.filterValues{it.isNotBlank()}.mapValues{number(it.value)?:-1.0}
    Action("Сохранить замеры",{
-    onMeasurement(parsed,editingId,editing?.dateMs?:System.currentTimeMillis()){
+    onMeasurement(parsed,editingId,editing?.dateMs?:draftDateMs,submittingDraftId){
      values=measurementLabels.keys.associateWith{""};editingId=null
+     draftId=java.util.UUID.randomUUID().toString()
+     draftDateMs=System.currentTimeMillis()
     }
    },!missingEditedRecord&&Measurement(dateMs=0,values=parsed).valid())
    if(editingId!=null)TextButton({
     editingId=null;values=measurementLabels.keys.associateWith{""}
+    draftId=java.util.UUID.randomUUID().toString()
+    draftDateMs=System.currentTimeMillis()
    }){Text("Отменить исправление")}
   }
   Panel("Динамика"){
