@@ -8,12 +8,15 @@ package ru.forma.domain
 fun Profile.withMeasurement(item:Measurement,editingId:String?=null):Profile {
  require(item.valid()){"Некорректные значения замера"}
  val found=measurements.firstOrNull{it.id==item.id}
+ // The same committed record may be replayed after the user has separately
+ // changed profile height or weight. An exact retry must not recompute them
+ // from an older journal entry and overwrite the later profile edit.
+ if(found==item && (editingId==null || editingId==item.id))return this
  val records=if(editingId!=null) {
   require(editingId==item.id&&found!=null){"Замер больше не существует"}
   measurements.map{if(it.id==editingId)item else it}
  } else when {
   found==null->measurements+item
-  found==item->measurements
   else->throw IllegalArgumentException("Черновик замера уже сохранён с другими значениями")
  }
  val ordered=records.sortedBy{it.dateMs}

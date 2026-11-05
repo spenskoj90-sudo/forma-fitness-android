@@ -41,6 +41,19 @@ class MeasurementJournalTest {
   assertEquals(p.id,changed.id)
  }
 
+ @Test fun exactReplayAfterManualProfileChangeDoesNotRevertWeightOrHeight() {
+  val entry=Measurement(id="stable-draft",dateMs=1000L,
+   values=mapOf("weight" to 75.0,"height" to 180.0))
+  val updated=Profile(id="owner",name="Owner").withMeasurement(entry)
+   .copy(weightKg=79.0,heightCm=181.0)
+  // A late second tap or editor retry must not restore the old measurements
+  // into profile summary fields changed since the original journal write.
+  assertEquals(updated,updated.withMeasurement(entry))
+  assertEquals(updated,updated.withMeasurement(entry,editingId=entry.id))
+  assertEquals(79.0,updated.withMeasurement(entry).weightKg,0.0)
+  assertEquals(181.0,updated.withMeasurement(entry).heightCm,0.0)
+ }
+
  @Test fun duplicateMeasurementDoesNotMixDistinctProfiles() {
   val first=Measurement(id="shared-id",dateMs=1000L,values=mapOf("weight" to 82.0))
   val a=Profile(id="a",name="A").withMeasurement(first)
