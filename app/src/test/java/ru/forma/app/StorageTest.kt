@@ -504,4 +504,56 @@ class StorageTest {
   }finally{db.close()}
  }
 
+ @Test fun measurementChangesPreserveManualProfileHistoryAndActiveSessionAfterReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication();val name="forma-measurement-fields.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  try {
+   var repo=ProfileRepository(db)
+   val seed=Profile(id="measurement-owner",name="Owner")
+   val completed=stopSession(startSession(seed.id,generateProgram(seed).first(),1000L),false,1500L)
+   val owner=finishSession(seed,completed,1600L).let{
+    it.copy(active=startSession(it.id,generateProgram(it).first(),2000L))
+   }
+   val other=Profile(id="other",name="Other",weightKg=92.0)
+   repo.saveProfile(owner);repo.saveProfile(other)
+   val body=Measurement(id="body",dateMs=1000L,values=mapOf("weight" to 75.0,"height" to 180.0))
+   val waist=Measurement(id="waist",dateMs=2000L,values=mapOf("waist" to 80.0))
+   repo.mutate(owner.id){it.withMeasurement(body).withMeasurement(waist)}
+   repo.mutate(owner.id){it.copy(weightKg=79.0,heightCm=183.0)}
+   val nextWaist=Measurement(id="next-waist",dateMs=3000L,values=mapOf("waist" to 81.0))
+   repo.mutate(owner.id){it.withMeasurement(nextWaist)}
+   assertEquals(79.0,repo.load(owner.id)!!.weightKg,0.0)
+   assertEquals(183.0,repo.load(owner.id)!!.heightCm,0.0)
+   val correctedWaist=waist.copy(values=mapOf("waist" to 78.0,"weight" to 75.0,"height" to 180.0))
+   repo.mutate(owner.id){it.withMeasurement(correctedWaist,waist.id)}
+   val correctedBody=body.copy(values=mapOf("weight" to 74.0,"height" to 179.0))
+   repo.mutate(owner.id){it.withMeasurement(correctedBody,body.id)}
+   assertEquals(79.0,repo.load(owner.id)!!.weightKg,0.0)
+   assertEquals(183.0,repo.load(owner.id)!!.heightCm,0.0)
+   val currentWeight=Measurement(id="current-weight",dateMs=4000L,values=mapOf("weight" to 80.0))
+   repo.mutate(owner.id){it.withMeasurement(currentWeight)}
+   val expected=owner.copy(weightKg=80.0,heightCm=183.0,
+    measurements=listOf(correctedBody,correctedWaist,nextWaist,currentWeight))
+   assertEquals(expected,repo.load(owner.id))
+   repo.mutate(owner.id){it.withMeasurement(currentWeight)}
+   repo.mutate(owner.id){it.withMeasurement(currentWeight,currentWeight.id)}
+   assertTrue(runCatching{repo.mutate(owner.id){
+    it.withMeasurement(currentWeight.copy(values=mapOf("weight" to 81.0)))
+   }}.exceptionOrNull() is IllegalArgumentException)
+   assertTrue(runCatching{repo.mutate(owner.id){
+    it.withMeasurement(Measurement(id="missing",dateMs=5000L,values=mapOf("waist" to 82.0)),"missing")
+   }}.exceptionOrNull() is IllegalArgumentException)
+   assertEquals(expected,repo.load(owner.id))
+   assertEquals(other,repo.load(other.id))
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   repo=ProfileRepository(db)
+   assertEquals(expected,repo.load(owner.id))
+   assertEquals(owner.history,repo.load(owner.id)!!.history)
+   assertEquals(owner.active,repo.load(owner.id)!!.active)
+   assertEquals(other,repo.load(other.id))
+  }finally{db.close();ctx.deleteDatabase(name)}
+ }
+
 }
