@@ -256,7 +256,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
  Panel("Техника упражнений"){
   Text("${exerciseCatalog.size} упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
-  exerciseCatalog.filter{it.equipment in availableEquipment(p,place)}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
+  Text("Подтверждённые демонстрации: ${techniqueMediaCatalog.size} из ${exerciseCatalog.size}. Доступность файла проверяется при открытии.")
+  exerciseCatalog.filter{it.equipment in availableEquipment(p,place)}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){ExerciseTechnique(e)}}
  }
 }}
 @Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel,place:TrainingPlace){
@@ -267,6 +268,11 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
    Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
+   key(item.exercise.id,item.exercise.equipment){
+    var techniqueOpen by remember{mutableStateOf(false)}
+    TextButton({techniqueOpen=!techniqueOpen},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Как выполнять: ${item.exercise.name}")}
+    if(techniqueOpen)ExerciseTechnique(item.exercise)
+   }
    val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
    if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
   }
@@ -313,7 +319,7 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
     val current=s.current
     if(current!=null){
      Text(current.exercise.muscle.label+" · "+current.exercise.equipment.label,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-     Panel("Как выполнять"){Text(current.exercise.cue)}
+     Panel("Как выполнять"){ExerciseTechnique(current.exercise)}
       Panel("Текущий подход"){
        Text("Текущий",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
        Text("Подход "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
