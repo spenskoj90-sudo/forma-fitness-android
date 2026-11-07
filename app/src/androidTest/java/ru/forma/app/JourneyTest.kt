@@ -214,12 +214,18 @@ class JourneyTest{
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
   click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Главная")
+  // Explicit destination checks: earlier CI screenshots for Progress, Home and
+  // Body captured the preceding screen despite a successful journey test.
+  waitText("Прогресс")
+  screenshot("progress-dark")
+  click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
+  screenshot("home-dark")
+  click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
   composeRule.onNodeWithTag("shortcut-body",useUnmergedTree=true).performScrollTo().performClick()
-  // CI screenshots are not proof of the destination unless the destination
-  // actually rendered. An earlier "body-dark" artifact still showed Home.
   waitText("Моё тело")
-  screenshot("body-dark");click("Профиль");screenshot("profile-dark")
+  screenshot("body-dark")
+  click("Профиль");waitText("Изменить профиль и цели")
+  screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
   click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап")
