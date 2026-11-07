@@ -1,0 +1,156 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This is the F4 *client* contract, never an Admin SDK authorization rule.
+    // All identity is request.auth.uid, NEVER an owner ID supplied by a client.
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function stableId(id) {
+      return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$');
+    }
+    function envelopeFields() {
+      return ['ownerUid', 'profileId', 'id', 'schemaVersion', 'revision',
+              'opId', 'createdAt', 'updatedAt', 'deleted', 'payload'];
+    }
+    function validEnvelope(d, uid, profileId, docId) {
+      return d.keys().hasAll(envelopeFields()) &&
+        d.keys().hasOnly(envelopeFields()) &&
+        stableId(profileId) && stableId(docId) &&
+        d.ownerUid == uid && d.profileId == profileId && d.id == docId &&
+        d.schemaVersion == 1 &&
+        d.revision is int && d.revision >= 1 && d.revision <= 2147483646 &&
+        stableId(d.opId) &&
+        d.createdAt is timestamp && d.updatedAt is timestamp &&
+        d.deleted is bool && d.payload is map;
+    }
+    function validCreate(uid, profileId, docId) {
+      return validEnvelope(request.resource.data, uid, profileId, docId) &&
+        request.resource.data.revision == 1 &&
+        request.resource.data.deleted == false &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+    }
+    function validUpdate(uid, profileId, docId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return validEnvelope(before, uid, profileId, docId) &&
+        validEnvelope(after, uid, profileId, docId) &&
+        before.deleted == false &&
+        after.createdAt == before.createdAt &&
+        after.revision == before.revision + 1 &&
+        after.opId != before.opId &&
+        after.updatedAt == request.time &&
+        after.diff(before).affectedKeys().hasOnly(
+          ['revision', 'opId', 'updatedAt', 'deleted', 'payload']);
+    }
+    function validReplay(uid, profileId, docId) {
+      // An identical retry is harmless. The client still must READ after
+      // a timed-out write before deciding whether to increase revision.
+      return validEnvelope(resource.data, uid, profileId, docId) &&
+        request.resource.data == resource.data;
+    }
+    function parentActive(uid, profileId) {
+      return exists(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)) &&
+        get(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)).data.deleted == false;
+    }
+    function validProfile(p) {
+      // Never upload a live workout, journal or unsaved editing draft as a
+      // nested profile value. Completed workouts and measurements have own IDs.
+      return p.keys().hasAll(['name', 'age', 'heightCm', 'weightKg']) &&
+        p.keys().hasOnly(['name', 'age', 'heightCm', 'weightKg',
+          'experience', 'equipment', 'limitations', 'primary',
+          'secondary', 'priorities', 'days', 'recovery']) &&
+        p.name is string && p.name.size() > 0 && p.name.size() <= 80 &&
+        p.age is int && p.age >= 18 && p.age <= 100 &&
+        p.heightCm is number && p.heightCm >= 100 && p.heightCm <= 240 &&
+        p.weightKg is number && p.weightKg >= 30 && p.weightKg <= 300 &&
+        p.get('limitations', '') is string &&
+        p.get('limitations', '').size() <= 2000 &&
+        p.get('equipment', []) is list && p.get('equipment', []).size() <= 15 &&
+        p.get('priorities', []) is list && p.get('priorities', []).size() <= 6 &&
+        p.get('days', []) is list && p.get('days', []).size() <= 7 &&
+        p.get('recovery', 3) is int &&
+        p.get('recovery', 3) >= 1 && p.get('recovery', 3) <= 5;
+    }
+    function validMetric(m, k, minValue, maxValue) {
+      return !m.keys().hasAny([k]) ||
+        (m[k] is number && m[k] >= minValue && m[k] <= maxValue);
+    }
+    function validMeasurement(p) {
+      return p.keys().hasAll(['dateMs', 'values']) &&
+        p.keys().hasOnly(['dateMs', 'values']) &&
+        p.dateMs is int && p.dateMs > 0 &&
+        p.get('values', {}) is map &&
+        p.get('values', {}).keys().size() > 0 &&
+        p.get('values', {}).keys().hasOnly(
+          ['weight', 'height', 'chest', 'waist', 'hips', 'shoulders',
+           'biceps', 'forearms', 'neck', 'calves']) &&
+        validMetric(p.values, 'weight', 30, 300) &&
+        validMetric(p.values, 'height', 100, 240) &&
+        validMetric(p.values, 'chest', 0.01, 300) &&
+        validMetric(p.values, 'waist', 0.01, 300) &&
+        validMetric(p.values, 'hips', 0.01, 300) &&
+        validMetric(p.values, 'shoulders', 0.01, 300) &&
+        validMetric(p.values, 'biceps', 0.01, 300) &&
+        validMetric(p.values, 'forearms', 0.01, 300) &&
+        validMetric(p.values, 'neck', 0.01, 300) &&
+        validMetric(p.values, 'calves', 0.01, 300);
+    }
+    function validWorkout(p) {
+      // Only finalized or explicitly stopped workouts can leave the device.
+      // Active sessions, timers and unfinished sets remain Room-local.
+      return p.keys().hasAll(['startedMs', 'finishedMs', 'status', 'sets', 'day']) &&
+        p.keys().hasOnly(['startedMs', 'finishedMs', 'status', 'sets',
+                          'day', 'activeSeconds', 'painReported']) &&
+        p.startedMs is int && p.startedMs > 0 &&
+        p.finishedMs is int && p.finishedMs >= p.startedMs &&
+        p.status in ['DONE', 'STOPPED'] &&
+        p.sets is list && p.sets.size() <= 500 &&
+        p.day is map &&
+        p.get('activeSeconds', 0) is int &&
+        p.get('activeSeconds', 0) >= 0 &&
+        p.get('painReported', false) is bool;
+    }
+
+    match /accounts/{uid}/profiles/{profileId} {
+      allow get, list: if owner(uid);
+      allow create: if owner(uid) &&
+        validCreate(uid, profileId, profileId) &&
+        validProfile(request.resource.data.payload);
+      allow update: if owner(uid) &&
+        validProfile(request.resource.data.payload) &&
+        (validReplay(uid, profileId, profileId) ||
+         validUpdate(uid, profileId, profileId));
+      allow delete: if false; // revisioned tombstones, never hard deletes
+
+      match /measurements/{measurementId} {
+        allow get, list: if owner(uid);
+        allow create: if owner(uid) && parentActive(uid, profileId) &&
+          validCreate(uid, profileId, measurementId) &&
+          validMeasurement(request.resource.data.payload);
+        allow update: if owner(uid) && parentActive(uid, profileId) &&
+          validMeasurement(request.resource.data.payload) &&
+          (validReplay(uid, profileId, measurementId) ||
+           validUpdate(uid, profileId, measurementId));
+        allow delete: if false;
+      }
+      match /workouts/{workoutId} {
+        allow get, list: if owner(uid);
+        allow create: if owner(uid) && parentActive(uid, profileId) &&
+          validCreate(uid, profileId, workoutId) &&
+          validWorkout(request.resource.data.payload);
+        allow update: if owner(uid) && parentActive(uid, profileId) &&
+          validWorkout(request.resource.data.payload) &&
+          (validReplay(uid, profileId, workoutId) ||
+           validUpdate(uid, profileId, workoutId));
+        allow delete: if false;
+      }
+    }
+
+    // No unauthenticated/parent/other nested/collection-group access.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

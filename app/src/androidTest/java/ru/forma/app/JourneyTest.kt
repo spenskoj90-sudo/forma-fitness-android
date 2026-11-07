@@ -276,7 +276,24 @@ class JourneyTest{
   runBlocking{val before=app.repository.exportBackup();val ids=app.repository.importBackup(before);assertEquals(2,ids.size);assertEquals(4,app.repository.profiles.firstForTest().size)}
   waitText("Кардио по желанию")
   composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst().performScrollTo().performTextReplacement("1")
-  composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
+  // Keep the numeric IME open and use ONE physical button touch, not a
+  // blind second tap or an accessibility text-node shortcut.
+  val cardioVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val startsBefore=cardioVm.workoutStartRequests.value
+  composeRule.onNodeWithTag("cardio-start",useUnmergedTree=true)
+   .performScrollTo().assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
+  if(cardioVm.workoutStartRequests.value!=startsBefore+1){
+   runCatching{screenshot("cardio-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-CARDIO-TOUCH-MISSED")}
+   fail("One visible cardio Start touch missed ViewModel dispatch: before=$startsBefore after=${cardioVm.workoutStartRequests.value}")
+  }
+  try{composeRule.waitUntil(20000){current().active?.day?.cardio!=null}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("cardio-start-not-persisted")}
+   val hasError=cardioVm.error.value!=null
+   throw AssertionError("Cardio Start dispatched but no Room active session: hasError=$hasError",e)
+  }
+  waitText("Пропустить этап");click("Пропустить этап")
   composeRule.waitUntil(15000){current().active?.phase==Phase.CARDIO}
   val elapsed=current().active!!.activeSeconds
   composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)

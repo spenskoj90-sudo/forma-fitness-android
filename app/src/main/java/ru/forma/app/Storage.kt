@@ -2,6 +2,8 @@ package ru.forma.app
 import android.app.Application
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.*
@@ -19,13 +21,48 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
-@Database(entities=[ProfileRow::class],version=1,exportSchema=true) abstract class FormaDatabase:RoomDatabase() {abstract fun profiles():ProfileDao}
+// Add-only schema migration: never rewrite the v1 profiles table or its JSON.
+val MIGRATION_1_2=object:Migration(1,2){
+ override fun migrate(db:SupportSQLiteDatabase){
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_bindings (profileId TEXT NOT NULL, accountUid TEXT NOT NULL, consentAtMs INTEGER NOT NULL, PRIMARY KEY(profileId))")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_bindings_accountUid ON sync_bindings (accountUid)")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_outbox (opId TEXT NOT NULL, accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, revision INTEGER NOT NULL, snapshot TEXT NOT NULL, state TEXT NOT NULL, tombstone INTEGER NOT NULL, createdAtMs INTEGER NOT NULL, PRIMARY KEY(opId))")
+  db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sync_outbox_accountUid_profileId_kind_recordId_revision ON sync_outbox (accountUid,profileId,kind,recordId,revision)")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_state ON sync_outbox (state)")
+ }
+}
+@Database(entities=[ProfileRow::class,SyncBindingRow::class,SyncOutboxRow::class],version=2,exportSchema=true)
+abstract class FormaDatabase:RoomDatabase(){
+ abstract fun profiles():ProfileDao
+ abstract fun sync():SyncOutboxDao
+}
 class ProfileRepository(private val db:FormaDatabase) {
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
  val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
  suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
  suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
+ /**
+  * Local persistence primitive for a future Firebase-verified, explicitly
+  * consented profile binding. NO production Auth/consent caller exists yet.
+  * Binding plus the complete existing snapshot commit atomically: a crash
+  * cannot leave a bound historical profile with an empty initial outbox.
+  * Repeated consent for the same UID is idempotent; rehoming to another UID
+  * is forbidden until a separately reviewed ownership/recovery flow exists.
+  */
+ internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
+  profileId:String,verifiedUid:String,consentAtMs:Long
+ )=db.withTransaction {
+  require(verifiedUid.isNotBlank()&&consentAtMs>0){"Verified UID and explicit consent are required"}
+  val profile=load(profileId)?:error("Profile missing")
+  val prior=db.sync().binding(profileId)
+  if(prior!=null){
+   require(prior.accountUid==verifiedUid){"Local profile is already bound to a different account"}
+   return@withTransaction
+  }
+  db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,verifiedUid,consentAtMs))
+  enqueueBoundChanges(db,null,profile,json)
+ }
  suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
@@ -67,7 +104,13 @@ class ProfileRepository(private val db:FormaDatabase) {
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }
- private suspend fun put(p:Profile)=db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
+ // All put() call sites run inside db.withTransaction. The local write and
+ // any opted-in outbox events commit together, or both are rolled back.
+ private suspend fun put(p:Profile){
+  val before=db.profiles().get(p.id)?.let(::decode)
+  db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
+  enqueueBoundChanges(db,before,p,json)
+ }
  suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());if(next!=old)put(next)}
 }
 private val Context.store by preferencesDataStore(name="forma_preferences")
@@ -95,7 +138,7 @@ class FormaApp:Application(){
  val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
- val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").build()}
+ val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
  val repository by lazy{ProfileRepository(database)}
  val settings by lazy{SettingsRepository(this)}
 }
