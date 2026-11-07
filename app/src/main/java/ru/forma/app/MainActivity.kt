@@ -57,6 +57,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  val profiles=profilesSnapshot.profiles
  val settings=settingsSnapshot.settings
  val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
+ val profileSaving by vm.profileSaveInProgress.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
  // Dark is the unconfigured default; System follows the Android theme.
  val keyboardFocus=LocalFocusManager.current;val rootKeyboard=LocalSoftwareKeyboardController.current
@@ -87,7 +88,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
      !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
       Text(if(profilesSnapshot.status==LocalLoadStatus.FAILED||settingsSnapshot.status==LocalLoadStatus.FAILED)
        "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
-     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty())
+     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving)
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
      else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
@@ -228,7 +229,7 @@ private val editableProfileSaver=Saver<Profile,String>(
  restore={saved->kotlinx.serialization.json.Json.decodeFromString(Profile.serializer(),saved)}
 )
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean){
+@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean,saving:Boolean=false){
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  var p by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){mutableStateOf(existing?:Profile())}
  var name by rememberSaveable(existing?.id){mutableStateOf(p.name)}
@@ -275,8 +276,13 @@ private val editableProfileSaver=Saver<Profile,String>(
    // Target the actual Button in UI tests, not its nested text bounds.
    Button(onClick={save(candidate);focus.clearFocus(force=true);keyboard?.hide()},
     modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("profile-save"),
-    enabled=candidate.valid()){Text("Сохранить профиль")}
-   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Отмена")}
+    enabled=candidate.valid()&&!saving){Text("Сохранить профиль")}
+   if(saving)Row(Modifier.fillMaxWidth().padding(top=6.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){
+    CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)
+    Spacer(Modifier.width(8.dp))
+    Text("Сохранение профиля…")
+   }
+   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!saving){Text("Отмена")}
   }
  }
 }

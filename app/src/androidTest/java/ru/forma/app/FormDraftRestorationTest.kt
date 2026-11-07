@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -23,15 +24,21 @@ class FormDraftRestorationTest {
    finishedMs=2L,sets=emptyList(),status=Phase.STOPPED)
   val original=Profile(id="owner-one",name="Original",history=listOf(history))
   var accepted:Profile?=null
+  val saving=mutableStateOf(true)
   val restore=StateRestorationTester(rule)
   restore.setContent {
-   MaterialTheme { ProfileEditor(original,{accepted=it},{},true) }
+   MaterialTheme { ProfileEditor(original,{accepted=it},{},true,saving.value) }
   }
   rule.onNodeWithText("Имя").performTextReplacement("Сохранённый черновик")
   rule.onNodeWithText("Возраст").performTextReplacement("42")
   restore.emulateSavedInstanceStateRestore()
   rule.onNodeWithText("Сохранённый черновик").assertExists()
-  rule.onNodeWithText("Сохранить профиль").assertIsEnabled().performClick()
+  // Pending Room/DataStore work cannot trigger a second Save or Cancel.
+  rule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsNotEnabled()
+  rule.onNodeWithText("Сохранение профиля…").assertExists()
+  rule.onNodeWithText("Отмена").assertIsNotEnabled()
+  rule.runOnIdle{saving.value=false}
+  rule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled().performClick()
   rule.runOnIdle {
    assertEquals("owner-one",accepted?.id)
    assertEquals("Сохранённый черновик",accepted?.name)
