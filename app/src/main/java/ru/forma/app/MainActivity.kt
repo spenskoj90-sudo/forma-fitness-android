@@ -271,7 +271,11 @@ private val editableProfileSaver=Saver<Profile,String>(
   }
   // Primary action is a fixed, accessible footer, not a scroll target.
   Column(Modifier.fillMaxWidth().padding(vertical=8.dp)){
-   Action("Сохранить профиль",{focus.clearFocus(force=true);keyboard?.hide();save(candidate)},candidate.valid())
+   // Dispatch the durable save before focus/IME changes can recompose the editor.
+   // Target the actual Button in UI tests, not its nested text bounds.
+   Button(onClick={save(candidate);focus.clearFocus(force=true);keyboard?.hide()},
+    modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("profile-save"),
+    enabled=candidate.valid()){Text("Сохранить профиль")}
    if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Отмена")}
   }
  }

@@ -46,7 +46,7 @@ class JourneyTest{
  }
  private fun click(text:String){
   if(text in listOf("Главная","Статистика","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
-  else if(text=="Сохранить профиль")composeRule.onNodeWithText(text,useUnmergedTree=true)
+  else if(text=="Сохранить профиль")composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
@@ -81,7 +81,7 @@ class JourneyTest{
   // Keep the original Room persistence assertion and timeout unchanged.
   // Fixed save action must accept one actual touch while IME/field focus settles.
   // Keep the original Room-write assertion and exact timeout.
-  composeRule.onNodeWithText("Сохранить профиль")
+  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
@@ -169,8 +169,19 @@ class JourneyTest{
   click("Добавить пользователя")
   waitText("Имя")
   composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
-  composeRule.onNodeWithText("Сохранить профиль").assertIsEnabled()
+  // Unlike the first-profile setup, do NOT dismiss the focused IME before
+  // the one physical Save touch: this is the original API26 failure path.
+  composeRule.onNodeWithText("Имя").assertIsFocused()
+  val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val requestsBefore=secondSaveVm.profileSaveRequests.value
+  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled()
   click("Сохранить профиль")
+  if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
+   runCatching{screenshot("second-profile-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-TOUCH-MISSED")}
+   fail("One visible Save-button touch did not dispatch to ViewModel: "+
+    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}")
+  }
   // The API26 failure here was previously attributed to one long source line:
   // distinguish Room persistence, selected-profile DataStore, and rendered UI.
   // Keep the original 20-second gate, without weakening the isolation checks.
@@ -188,7 +199,8 @@ class JourneyTest{
    val second=profiles.firstOrNull{it.name=="Тест Б"}
    val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
    throw AssertionError("Second profile selection did not persist: roomHasSecond=${second!=null}, "+
-    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}",e)
+    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}, "+
+    "saveRequests=${vm.profileSaveRequests.value}",e)
   }
   waitNavigation()
   waitText("Тест Б")

@@ -36,6 +36,8 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
+ // No names/IDs: identify whether the user Save touch reached the VM on API26.
+ internal val profileSaveRequests=MutableStateFlow(0)
  val coachStatus=app.coachStatus
  internal val profileSnapshot=app.repository.profiles
   .map{ProfileSnapshot(LocalLoadStatus.READY,it)}
@@ -59,7 +61,17 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  }}}
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
- fun saveProfile(p:Profile,onSaved:()->Unit={}){action{require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" };if(app.repository.load(p.id)==null)app.repository.saveProfile(p)else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)};app.settings.select(p.id);onSaved()}}
+ fun saveProfile(p:Profile,onSaved:()->Unit={}){
+  // A synchronous dispatch witness: the Room coroutine can outlive this frame.
+  profileSaveRequests.value++
+  action{
+   require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" }
+   if(app.repository.load(p.id)==null)app.repository.saveProfile(p)
+   else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)}
+   app.settings.select(p.id)
+   onSaved()
+  }
+ }
  fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  private suspend fun startServiceOrPause(id:String,session:String){
