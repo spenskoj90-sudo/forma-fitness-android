@@ -1,0 +1,47 @@
+name: FORMA Firestore Rules Emulator
+on:
+  pull_request:
+    paths:
+      - 'firebase/**'
+      - '.github/workflows/firestore-rules.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'firebase/**'
+      - '.github/workflows/firestore-rules.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firestore-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      # Not the owner Firebase project. No service account or OAuth credentials.
+      GCLOUD_PROJECT: demo-forma-rules
+      GOOGLE_CLOUD_PROJECT: demo-forma-rules
+    defaults:
+      run:
+        working-directory: firebase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pinned Firebase emulator test tools
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run deny-by-default two-UID Rules suite (demo project only)
+        run: npm run test:rules
+      - name: Save generated lockfile for reproducible follow-up
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forma-firebase-rules-npm-lock
+          path: firebase/package-lock.json
+          if-no-files-found: warn
+          retention-days: 7
