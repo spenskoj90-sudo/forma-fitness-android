@@ -44,7 +44,7 @@ class StorageTest {
    legacy.version=1
   } finally { legacy.close() }
 
-  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).addMigrations(MIGRATION_1_2).build()
   try {
    var repo=ProfileRepository(db)
    assertEquals(original,repo.load(original.id))
@@ -52,7 +52,7 @@ class StorageTest {
    repo.mutate(original.id){it.copy(weightKg=83.0)}
    assertEquals(second,repo.load(second.id))
    db.close()
-   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).addMigrations(MIGRATION_1_2).build()
    repo=ProfileRepository(db)
    assertEquals(original.history,repo.load(original.id)!!.history)
    assertEquals(original.measurements,repo.load(original.id)!!.measurements)
