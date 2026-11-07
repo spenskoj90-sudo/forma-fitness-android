@@ -51,7 +51,7 @@ if {entity["tableName"] for entity in v2["entities"]} != {
     "profiles", "sync_bindings", "sync_outbox"
 }:
     fail("v2 must contain only the original profiles and new binding/outbox tables")
-if v2["entities"][0]["tableName"] != "profiles" and not any(
+if not any(
     x["tableName"] == "profiles" and x["fields"] == v1["entities"][0]["fields"]
     for x in v2["entities"]
 ):
