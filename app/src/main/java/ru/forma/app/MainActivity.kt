@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import android.content.Intent
 import androidx.compose.ui.graphics.Brush
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,10 +65,12 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  LaunchedEffect(creating,editing,p?.id){if(!creating&&!editing&&p!=null){keyboardFocus.clearFocus(force=true);rootKeyboard?.hide()}}
  val restoredScreens=rememberSaveableStateHolder()
  val dark=settings.dark?:isSystemInDarkTheme()
+ // The navigation bar must not steal the primary action's IME-area tap.
+ val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
  val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
  MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Статистика","Профиль");val destinations=listOf(0,1,3,4);val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.BarChart,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
     Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
      if(p?.active!=null){
@@ -321,6 +324,7 @@ private val editableProfileSaver=Saver<Profile,String>(
 }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun CardioControls(day:TrainingDay,onStart:(TrainingDay)->Unit){
+ val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  // Only editor inputs belong in Activity saved state; workout state is Room-owned.
  var kindName by rememberSaveable(day.day,day.name){mutableStateOf((day.cardio?:CardioKind.WALK).name)}
  var duration by rememberSaveable(day.day,day.name){mutableStateOf((day.durationSec/60).toString())}
@@ -330,7 +334,12 @@ private val editableProfileSaver=Saver<Profile,String>(
  FlowRow{CardioKind.entries.forEach{k->FilterChip(kind==k,{kindName=k.name},label={Text(k.label)},modifier=Modifier.padding(end=6.dp))}}
  NumericField("Длительность, минут (1–120)",duration){duration=it};if(kind==CardioKind.INTERVAL){NumericField("Ходьба, секунд (10–1800)",walk){walk=it};NumericField("Бег, секунд (10–1800)",run){run=it}}
  val m=duration.toIntOrNull()?:0;val w=walk.toIntOrNull()?:0;val r=run.toIntOrNull()?:0
- Action("Начать кардио",{onStart(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
+ Button(onClick={
+  // Dispatch the durable workout start BEFORE changing IME/focus state.
+  onStart(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))
+  focus.clearFocus(force=true);keyboard?.hide()
+ },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("cardio-start"),
+  enabled=m in 1..120&&w in 10..1800&&r in 10..1800){Text("Начать кардио")}
 }
 
 @Composable fun Runner(s:Session,vm:FormaViewModel,onOpenHistory:()->Unit){

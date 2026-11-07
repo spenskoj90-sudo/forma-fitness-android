@@ -38,6 +38,8 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  val notice=MutableStateFlow<String?>(null)
  // No names/IDs: identify whether the user Save touch reached the VM on API26.
  internal val profileSaveRequests=MutableStateFlow(0)
+ // Non-identifying witness for an initial workout-start touch reaching this VM.
+ internal val workoutStartRequests=MutableStateFlow(0)
  // A profile save is one durable operation: do not enqueue overlapping taps.
  internal val profileSaveInProgress=MutableStateFlow(false)
  val coachStatus=app.coachStatus
@@ -78,7 +80,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }finally{profileSaveInProgress.value=false}
   }
  }
- fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
+ fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  private suspend fun startServiceOrPause(id:String,session:String){
   val epoch=app.audioFocusEpoch.snapshot()
