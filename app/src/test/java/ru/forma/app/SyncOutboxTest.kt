@@ -131,7 +131,7 @@ class SyncOutboxTest {
    assertEquals(setOf("profile","measurement","workout"),initial.map{it.kind}.toSet())
    assertEquals(setOf("offline-a","measure-a",stopped.id),initial.map{it.recordId}.toSet())
    assertTrue(initial.all{it.accountUid=="uid-A"&&it.profileId==guest.id&&it.revision==1})
-   assertTrue(initial.none{it.snapshot.contains("\\"active\\":")})
+   assertTrue(initial.none{it.snapshot.contains("\"active\":")})
    assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
    assertNull(db.sync().binding("offline-b"))
    repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,"uid-A",3000L)
