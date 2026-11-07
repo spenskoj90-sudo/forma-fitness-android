@@ -42,6 +42,27 @@ class ProfileRepository(private val db:FormaDatabase) {
  val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
  suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
  suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
+ /**
+  * Local persistence primitive for a future Firebase-verified, explicitly
+  * consented profile binding. NO production Auth/consent caller exists yet.
+  * Binding plus the complete existing snapshot commit atomically: a crash
+  * cannot leave a bound historical profile with an empty initial outbox.
+  * Repeated consent for the same UID is idempotent; rehoming to another UID
+  * is forbidden until a separately reviewed ownership/recovery flow exists.
+  */
+ internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
+  profileId:String,verifiedUid:String,consentAtMs:Long
+ )=db.withTransaction {
+  require(verifiedUid.isNotBlank()&&consentAtMs>0){"Verified UID and explicit consent are required"}
+  val profile=load(profileId)?:error("Profile missing")
+  val prior=db.sync().binding(profileId)
+  if(prior!=null){
+   require(prior.accountUid==verifiedUid){"Local profile is already bound to a different account"}
+   return@withTransaction
+  }
+  db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,verifiedUid,consentAtMs))
+  enqueueBoundChanges(db,null,profile,json)
+ }
  suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")

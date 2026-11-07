@@ -47,6 +47,13 @@ class StorageTest {
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).addMigrations(MIGRATION_1_2).build()
   try {
    var repo=ProfileRepository(db)
+   // The real v1 SQLite file migrates through Room's v2 schema validation.
+   // Initial outbox/bindings must be empty, and legacy JSON bytes untouched.
+   assertEquals(0,db.sync().totalRows())
+   assertNull(db.sync().binding(original.id))
+   assertNull(db.sync().binding(second.id))
+   assertEquals(kotlinx.serialization.json.Json.encodeToString(
+    ru.forma.domain.Profile.serializer(),original),db.profiles().get(original.id)!!.document)
    assertEquals(original,repo.load(original.id))
    assertEquals(second,repo.load(second.id))
    repo.mutate(original.id){it.copy(weightKg=83.0)}

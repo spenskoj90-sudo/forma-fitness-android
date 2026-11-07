@@ -37,10 +37,12 @@ data class SyncOutboxRow(
  // Only used by synthetic tests until explicit, verified Auth consent exists.
  @Insert(onConflict=OnConflictStrategy.ABORT)
  suspend fun bindForVerifiedConsent(row:SyncBindingRow)
- @Query("SELECT * FROM sync_outbox ORDER BY accountUid,profileId,kind,recordId,revision")
- suspend fun all():List<SyncOutboxRow>
- @Query("SELECT * FROM sync_outbox WHERE state='PENDING' ORDER BY accountUid,profileId,kind,recordId,revision")
- suspend fun pending():List<SyncOutboxRow>
+ // Diagnostics may count all records, but cannot read another account's payload.
+ @Query("SELECT COUNT(*) FROM sync_outbox")
+ suspend fun totalRows():Int
+ // The eventual sender MUST use the verified Firebase Auth UID, not a UI/profile field.
+ @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,kind,recordId,revision")
+ suspend fun pendingForAccount(uid:String):List<SyncOutboxRow>
  @Query("SELECT MAX(revision) FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId")
  suspend fun latestRevision(uid:String,profileId:String,kind:String,recordId:String):Int?
  @Insert(onConflict=OnConflictStrategy.ABORT)
