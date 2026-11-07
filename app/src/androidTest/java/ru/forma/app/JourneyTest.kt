@@ -76,13 +76,20 @@ class JourneyTest{
   // and the on-screen save never reached Room. Exercise the real Done action,
   // close focus and then require the button to be visible before tapping it.
   composeRule.onNodeWithText("Имя").performImeAction()
-  // On API26 an IME-owned focused field can leave a semantics-only Click
-  // without a durable Room write. Exercise the user's actual touch path.
-  // Keep the original Room persistence assertion and timeout unchanged.
-  // Fixed save action must accept one actual touch while IME/field focus settles.
-  // Keep the original Room-write assertion and exact timeout.
+  // First-launch API26 can leave focus on the name field as the IME closes.
+  // Verify one real button touch actually reaches the ViewModel, separately
+  // from the existing durable Room check; never retry an undelivered touch.
+  val firstSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val firstRequestsBefore=firstSaveVm.profileSaveRequests.value
   composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
+  composeRule.waitForIdle()
+  if(firstSaveVm.profileSaveRequests.value!=firstRequestsBefore+1){
+   runCatching{screenshot("initial-profile-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-FIRST-SAVE-TOUCH-MISSED")}
+   fail("One first-profile Save touch did not dispatch to ViewModel: "+
+    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}")
+  }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
    composeRule.waitUntil(20000) {
