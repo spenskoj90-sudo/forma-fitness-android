@@ -56,12 +56,20 @@ class JourneyTest{
   composeRule.waitForIdle()
   val file=java.io.File(app.filesDir,"evidence/$name.png")
   file.parentFile!!.mkdirs()
-  // Normal screen: capture the same Compose frame as the semantics checks.
-  // A confirmation Dialog has a second Compose root, so capture the *layered*
-  // Android display only after its real confirmation button is visible.
-  // No image is synthetic and no screenshot implies physical-device acceptance.
-  val bitmap=if(name=="stop-confirm-dark"){
-   composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed()
+  // API26 once kept a resized window after Save: a page title on a
+  // keyboard-height viewport is not valid full-screen visual evidence.
+  if(name in setOf("progress-dark","home-dark","body-dark","profile-dark")){
+   val minHeight=composeRule.activity.resources.displayMetrics.heightPixels*0.72f
+   composeRule.waitUntil(20000){
+    composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.height>=minHeight
+   }
+  }
+  // Compose-framed pages are synchronized with the test semantics. Layered
+  // system UI (Dialog, IME on failures) requires a real Android display shot.
+  val diagnostic=name.contains("timeout")||name.contains("not-persisted")||
+   name.endsWith("-undispatched")
+  val bitmap=if(name=="stop-confirm-dark"||diagnostic){
+   if(name=="stop-confirm-dark")composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed()
    InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
   }else composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap()
   bitmap.let{bitmap->
@@ -245,8 +253,9 @@ class JourneyTest{
   waitText("Моё тело")
   composeRule.onNodeWithText("Моё тело").assertIsDisplayed()
   screenshot("body-dark")
-  click("Профиль");waitText("Изменить профиль и цели")
-  composeRule.onNodeWithText("Изменить профиль и цели").assertIsDisplayed()
+  // Edit is below the fold; gate the visible destination, not its hidden action.
+  click("Профиль");waitText("Пользователи · 2")
+  composeRule.onNodeWithText("Пользователи · 2").assertIsDisplayed()
   screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
