@@ -53,3 +53,7 @@ if (( api >= 33 )); then
 fi
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecoveryTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/recovery-api${api}.txt"
 grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
+# Run the unsaved-input restoration regressions on all supported Android APIs.
+# These are real Compose UI tests, not just Kotlin compilation.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormDraftRestorationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/draft-restoration-api${api}.txt"
+grep -F "OK (3 tests)" "verification/draft-restoration-api${api}.txt"

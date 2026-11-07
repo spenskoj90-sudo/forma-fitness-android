@@ -3,11 +3,12 @@ package ru.forma.app
 import android.Manifest
 import android.os.Build
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -46,17 +47,32 @@ class JourneyTest{
  }
  private fun click(text:String){
   if(text in listOf("Главная","Статистика","Профиль","Тренировки"))composeRule.onNodeWithContentDescription(text,useUnmergedTree=true).performClick()
-  else if(text=="Сохранить профиль")composeRule.onNodeWithText(text,useUnmergedTree=true)
+  else if(text=="Сохранить профиль")composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   else composeRule.onNodeWithText(text,useUnmergedTree=true).performScrollTo().performClick()
   composeRule.waitForIdle()
  }
  private fun screenshot(name:String,expectedLight:Boolean?=null){
   composeRule.waitForIdle()
-  val inst=InstrumentationRegistry.getInstrumentation()
   val file=java.io.File(app.filesDir,"evidence/$name.png")
   file.parentFile!!.mkdirs()
-  inst.uiAutomation.takeScreenshot().let{bitmap->
+  // API26 once kept a resized window after Save: a page title on a
+  // keyboard-height viewport is not valid full-screen visual evidence.
+  if(name in setOf("progress-dark","home-dark","body-dark","profile-dark")){
+   val minHeight=composeRule.activity.resources.displayMetrics.heightPixels*0.72f
+   composeRule.waitUntil(20000){
+    composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.height>=minHeight
+   }
+  }
+  // Compose-framed pages are synchronized with the test semantics. Layered
+  // system UI (Dialog, IME on failures) requires a real Android display shot.
+  val diagnostic=name.contains("timeout")||name.contains("not-persisted")||
+   name.endsWith("-undispatched")
+  val bitmap=if(name=="stop-confirm-dark"||diagnostic){
+   if(name=="stop-confirm-dark")composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed()
+   InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+  }else composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap()
+  bitmap.let{bitmap->
    try{
     file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
     // Assert the real composed background, not just the theme preference or filename.
@@ -76,13 +92,20 @@ class JourneyTest{
   // and the on-screen save never reached Room. Exercise the real Done action,
   // close focus and then require the button to be visible before tapping it.
   composeRule.onNodeWithText("Имя").performImeAction()
-  // On API26 an IME-owned focused field can leave a semantics-only Click
-  // without a durable Room write. Exercise the user's actual touch path.
-  // Keep the original Room persistence assertion and timeout unchanged.
-  // Fixed save action must accept one actual touch while IME/field focus settles.
-  // Keep the original Room-write assertion and exact timeout.
-  composeRule.onNodeWithText("Сохранить профиль")
+  // First-launch API26 can leave focus on the name field as the IME closes.
+  // Verify one real button touch actually reaches the ViewModel, separately
+  // from the existing durable Room check; never retry an undelivered touch.
+  val firstSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val firstRequestsBefore=firstSaveVm.profileSaveRequests.value
+  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
+  composeRule.waitForIdle()
+  if(firstSaveVm.profileSaveRequests.value!=firstRequestsBefore+1){
+   runCatching{screenshot("initial-profile-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-FIRST-SAVE-TOUCH-MISSED")}
+   fail("One first-profile Save touch did not dispatch to ViewModel: "+
+    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}")
+  }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
    composeRule.waitUntil(20000) {
@@ -106,7 +129,17 @@ class JourneyTest{
    composeRule.waitUntil(20000){
     runBlocking{app.settings.settings.first().dark==dark}&&themeVm.prefs.value.dark==dark
    }
-   composeRule.waitForIdle()
+   // Persisted settings can precede the actual Compose theme frame.
+   // Wait for the rendered background, not only the DataStore/VM values.
+   composeRule.waitUntil(20000){
+    composeRule.waitForIdle()
+    val bitmap=composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap()
+    try{
+     val pixel=bitmap.getPixel(5,bitmap.height/2)
+     val brightness=(android.graphics.Color.red(pixel)+android.graphics.Color.green(pixel)+android.graphics.Color.blue(pixel))/3
+     (brightness>128)==(!dark)
+    }finally{bitmap.recycle()}
+   }
   }
   useTheme(true)
   screenshot("training-dark",expectedLight=false)
@@ -169,8 +202,19 @@ class JourneyTest{
   click("Добавить пользователя")
   waitText("Имя")
   composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
-  composeRule.onNodeWithText("Сохранить профиль").assertIsEnabled()
+  // Unlike the first-profile setup, do NOT dismiss the focused IME before
+  // the one physical Save touch: this is the original API26 failure path.
+  composeRule.onNodeWithText("Имя").assertIsFocused()
+  val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val requestsBefore=secondSaveVm.profileSaveRequests.value
+  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled()
   click("Сохранить профиль")
+  if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
+   runCatching{screenshot("second-profile-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-TOUCH-MISSED")}
+   fail("One visible Save-button touch did not dispatch to ViewModel: "+
+    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}")
+  }
   // The API26 failure here was previously attributed to one long source line:
   // distinguish Room persistence, selected-profile DataStore, and rendered UI.
   // Keep the original 20-second gate, without weakening the isolation checks.
@@ -188,14 +232,31 @@ class JourneyTest{
    val second=profiles.firstOrNull{it.name=="Тест Б"}
    val vm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
    throw AssertionError("Second profile selection did not persist: roomHasSecond=${second!=null}, "+
-    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}",e)
+    "selectedSecond=${selected==second?.id}, profileCount=${profiles.size}, hasError=${vm.error.value!=null}, "+
+    "saveRequests=${vm.profileSaveRequests.value}",e)
   }
   waitNavigation()
   waitText("Тест Б")
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
   click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
-  screenshot("progress-dark");click("Главная");screenshot("home-dark");click("Главная");composeRule.onNodeWithTag("shortcut-body",useUnmergedTree=true).performScrollTo().performClick();screenshot("body-dark");click("Профиль");screenshot("profile-dark")
+  // Explicit destination checks: earlier CI screenshots for Progress, Home and
+  // Body captured the preceding screen despite a successful journey test.
+  waitText("Прогресс")
+  composeRule.onNodeWithText("Прогресс").assertIsDisplayed()
+  screenshot("progress-dark")
+  click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
+  composeRule.onNodeWithText("Твой путь к сильной и здоровой версии себя").assertIsDisplayed()
+  screenshot("home-dark")
+  click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
+  composeRule.onNodeWithTag("shortcut-body",useUnmergedTree=true).performScrollTo().performClick()
+  waitText("Моё тело")
+  composeRule.onNodeWithText("Моё тело").assertIsDisplayed()
+  screenshot("body-dark")
+  // Edit is below the fold; gate the visible destination, not its hidden action.
+  click("Профиль");waitText("Пользователи · 2")
+  composeRule.onNodeWithText("Пользователи · 2").assertIsDisplayed()
+  screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
   click("Тренировки");composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап")
@@ -227,6 +288,10 @@ class JourneyTest{
   composeRule.waitUntil(20000){current().history.size==3};assertEquals(60,current().history.last().day.durationSec)
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Боль / дискомфорт — стоп");waitText("Сохранить и завершить");click("Сохранить и завершить")
   composeRule.waitUntil(20000){current().recovery==1};assertEquals(0,current().history.last().sets.size);assertEquals(Phase.STOPPED,current().history.last().status)
+  // A completed Room write can precede Compose removing the active Runner.
+  // Wait for the real navigation target; keep the existing 20s timeout and
+  // preserve failure screenshots when the app genuinely cannot leave Runner.
+  waitNavigation()
   click("Профиль");click("Изменить профиль и цели")
   // Slider semantics make the recovery update independent of pixel coordinates.
   composeRule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.SetProgress)).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(3f)}

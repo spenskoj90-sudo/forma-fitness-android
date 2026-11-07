@@ -13,14 +13,49 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.forma.domain.*
 
+// Initial state must not masquerade as an empty Room database or default
+// selected user. Both sources load asynchronously on Android cold start.
+internal enum class LocalLoadStatus { LOADING, READY, FAILED }
+internal data class ProfileSnapshot(
+ val status:LocalLoadStatus,
+ val profiles:List<Profile> = emptyList()
+)
+internal data class SettingsSnapshot(
+ val status:LocalLoadStatus,
+ val settings:Preferences = Preferences()
+)
+internal fun canRenderProfileUi(
+ profiles:ProfileSnapshot,settings:SettingsSnapshot,current:Profile?
+):Boolean {
+ if(profiles.status!=LocalLoadStatus.READY||settings.status!=LocalLoadStatus.READY)return false
+ val expected=profiles.profiles.firstOrNull{it.id==settings.settings.selected}
+  ?:profiles.profiles.firstOrNull()
+ return current?.id==expected?.id
+}
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
+ // No names/IDs: identify whether the user Save touch reached the VM on API26.
+ internal val profileSaveRequests=MutableStateFlow(0)
+ // A profile save is one durable operation: do not enqueue overlapping taps.
+ internal val profileSaveInProgress=MutableStateFlow(false)
  val coachStatus=app.coachStatus
- val profiles=app.repository.profiles.catch{error.value="Не удалось прочитать локальные данные"}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
- val prefs=app.settings.settings.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
- val current=combine(profiles,prefs){ps,s->ps.firstOrNull{it.id==s.selected}?:ps.firstOrNull()}.stateIn(viewModelScope,SharingStarted.Eagerly,null)
+ internal val profileSnapshot=app.repository.profiles
+  .map{ProfileSnapshot(LocalLoadStatus.READY,it)}
+  .catch{error.value="Не удалось прочитать локальные данные";emit(ProfileSnapshot(LocalLoadStatus.FAILED))}
+  .stateIn(viewModelScope,SharingStarted.Eagerly,ProfileSnapshot(LocalLoadStatus.LOADING))
+ internal val settingsSnapshot=app.settings.settings
+  .map{SettingsSnapshot(LocalLoadStatus.READY,it)}
+  .catch{error.value="Не удалось прочитать настройки";emit(SettingsSnapshot(LocalLoadStatus.FAILED))}
+  .stateIn(viewModelScope,SharingStarted.Eagerly,SettingsSnapshot(LocalLoadStatus.LOADING))
+ // Retain the existing read-only observables for callers and instrumentation.
+ val profiles=profileSnapshot.map{it.profiles}.stateIn(viewModelScope,SharingStarted.Eagerly,emptyList())
+ val prefs=settingsSnapshot.map{it.settings}.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
+ val current=combine(profileSnapshot,settingsSnapshot){ps,s->
+  if(ps.status!=LocalLoadStatus.READY||s.status!=LocalLoadStatus.READY)null
+  else ps.profiles.firstOrNull{it.id==s.settings.selected}?:ps.profiles.firstOrNull()
+ }.stateIn(viewModelScope,SharingStarted.Eagerly,null)
  // Recovery applies only to sessions last ticked by an older process.
  // A late init coroutine must never re-pause a workout the Owner just resumed.
  init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->
@@ -28,7 +63,21 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  }}}
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
- fun saveProfile(p:Profile,onSaved:()->Unit={}){action{require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" };if(app.repository.load(p.id)==null)app.repository.saveProfile(p)else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)};app.settings.select(p.id);onSaved()}}
+ fun saveProfile(p:Profile,onSaved:()->Unit={}){
+  // One in-flight save per ViewModel; preserve retry after any Room/DataStore error.
+  if(!profileSaveInProgress.compareAndSet(false,true))return
+  // A synchronous dispatch witness: the Room coroutine can outlive this frame.
+  profileSaveRequests.value++
+  action{
+   try{
+    require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" }
+    if(app.repository.load(p.id)==null)app.repository.saveProfile(p)
+    else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)}
+    app.settings.select(p.id)
+    onSaved()
+   }finally{profileSaveInProgress.value=false}
+  }
+ }
  fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  private suspend fun startServiceOrPause(id:String,session:String){
@@ -95,7 +144,18 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    if(app.repository.load(p.id)?.history?.any{it.id==expected}==true)onSaved()
   }
  }
- fun measurement(values:Map<String,Double>,id:String?=null,dateMs:Long=System.currentTimeMillis(),onSaved:()->Unit={}){val profile=current.value?.id?:return;action{val m=Measurement(id=id?:java.util.UUID.randomUUID().toString(),dateMs=dateMs,values=values);require(m.valid());app.repository.mutate(profile){p->require(id==null||p.measurements.any{it.id==id}){"Замер больше не существует"};val records=if(id==null)p.measurements+m else p.measurements.map{if(it.id==id)m else it};val latest=records.sortedBy{it.dateMs};p.copy(measurements=records,weightKg=latest.lastOrNull{it.values.containsKey("weight")}?.values?.get("weight")?:p.weightKg,heightCm=latest.lastOrNull{it.values.containsKey("height")}?.values?.get("height")?:p.heightCm)};onSaved()}}
+ fun measurement(
+  values:Map<String,Double>,id:String?=null,dateMs:Long=System.currentTimeMillis(),
+  draftId:String?=null,onSaved:()->Unit={}
+ ){
+  val profile=current.value?.id?:return
+  action{
+   val m=Measurement(id=id?:draftId?:java.util.UUID.randomUUID().toString(),
+    dateMs=dateMs,values=values)
+   app.repository.mutate(profile){it.withMeasurement(m,editingId=id)}
+   onSaved()
+  }
+ }
  fun exportBackup(uri:Uri,allProfiles:Boolean=false){val id:String?=if(allProfiles)null else (current.value?.id?:return);action{withContext(Dispatchers.IO){val text=app.repository.exportBackup(id);val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value=if(allProfiles)"Копия всех локальных профилей сохранена. Она содержит персональные данные других пользователей — храните её в защищённом месте." else "Копия текущего профиля сохранена. Храните её в защищённом месте: она содержит историю и замеры."}}
  fun importBackup(uri:Uri){action{val ids=withContext(Dispatchers.IO){val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл");val bytes=input.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=stream.read(buffer);if(n<0)break;require(out.size()+n<=MAX_BACKUP_BYTES){"Файл превышает 32 МБ"};out.write(buffer,0,n)};out.toByteArray()};app.repository.importBackup(bytes.toString(Charsets.UTF_8))};notice.value="Восстановлено профилей: ${ids.size}. Они добавлены отдельно; существующие данные сохранены."}}
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
