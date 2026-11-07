@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.rule.GrantPermissionRule
@@ -55,10 +56,15 @@ class JourneyTest{
   composeRule.waitForIdle()
   val file=java.io.File(app.filesDir,"evidence/$name.png")
   file.parentFile!!.mkdirs()
-  // Capture the same Compose frame used by semantics checks. A SurfaceFlinger
-  // screenshot may still show the previous destination after Compose is idle.
-  // These are real in-app frames, not mock UI or physical-device acceptance.
-  composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap().let{bitmap->
+  // Normal screen: capture the same Compose frame as the semantics checks.
+  // A confirmation Dialog has a second Compose root, so capture the *layered*
+  // Android display only after its real confirmation button is visible.
+  // No image is synthetic and no screenshot implies physical-device acceptance.
+  val bitmap=if(name=="stop-confirm-dark"){
+   composeRule.onNodeWithText("Подтвердить остановку").assertIsDisplayed()
+   InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+  }else composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap()
+  bitmap.let{bitmap->
    try{
     file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
     // Assert the real composed background, not just the theme preference or filename.
