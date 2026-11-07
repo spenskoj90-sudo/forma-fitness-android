@@ -239,6 +239,10 @@ class JourneyTest{
   composeRule.waitUntil(20000){current().history.size==3};assertEquals(60,current().history.last().day.durationSec)
   composeRule.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Боль / дискомфорт — стоп");waitText("Сохранить и завершить");click("Сохранить и завершить")
   composeRule.waitUntil(20000){current().recovery==1};assertEquals(0,current().history.last().sets.size);assertEquals(Phase.STOPPED,current().history.last().status)
+  // A completed Room write can precede Compose removing the active Runner.
+  // Wait for the real navigation target; keep the existing 20s timeout and
+  // preserve failure screenshots when the app genuinely cannot leave Runner.
+  waitNavigation()
   click("Профиль");click("Изменить профиль и цели")
   // Slider semantics make the recovery update independent of pixel coordinates.
   composeRule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.SetProgress)).onFirst().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress){it(3f)}
