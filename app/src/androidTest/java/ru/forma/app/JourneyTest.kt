@@ -113,7 +113,17 @@ class JourneyTest{
    composeRule.waitUntil(20000){
     runBlocking{app.settings.settings.first().dark==dark}&&themeVm.prefs.value.dark==dark
    }
-   composeRule.waitForIdle()
+   // Persisted settings can precede the actual Compose theme frame.
+   // Wait for the rendered background, not only the DataStore/VM values.
+   composeRule.waitUntil(20000){
+    composeRule.waitForIdle()
+    val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+    try{
+     val pixel=bitmap.getPixel(5,bitmap.height/2)
+     val brightness=(android.graphics.Color.red(pixel)+android.graphics.Color.green(pixel)+android.graphics.Color.blue(pixel))/3
+     (brightness>128)==(!dark)
+    }finally{bitmap.recycle()}
+   }
   }
   useTheme(true)
   screenshot("training-dark",expectedLight=false)
