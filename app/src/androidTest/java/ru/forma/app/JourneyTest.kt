@@ -3,11 +3,11 @@ package ru.forma.app
 import android.Manifest
 import android.os.Build
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -53,10 +53,12 @@ class JourneyTest{
  }
  private fun screenshot(name:String,expectedLight:Boolean?=null){
   composeRule.waitForIdle()
-  val inst=InstrumentationRegistry.getInstrumentation()
   val file=java.io.File(app.filesDir,"evidence/$name.png")
   file.parentFile!!.mkdirs()
-  inst.uiAutomation.takeScreenshot().let{bitmap->
+  // Capture the same Compose frame used by semantics checks. A SurfaceFlinger
+  // screenshot may still show the previous destination after Compose is idle.
+  // These are real in-app frames, not mock UI or physical-device acceptance.
+  composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap().let{bitmap->
    try{
     file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
     // Assert the real composed background, not just the theme preference or filename.
@@ -117,7 +119,7 @@ class JourneyTest{
    // Wait for the rendered background, not only the DataStore/VM values.
    composeRule.waitUntil(20000){
     composeRule.waitForIdle()
-    val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+    val bitmap=composeRule.onRoot(useUnmergedTree=true).captureToImage().asAndroidBitmap()
     try{
      val pixel=bitmap.getPixel(5,bitmap.height/2)
      val brightness=(android.graphics.Color.red(pixel)+android.graphics.Color.green(pixel)+android.graphics.Color.blue(pixel))/3
@@ -227,14 +229,18 @@ class JourneyTest{
   // Explicit destination checks: earlier CI screenshots for Progress, Home and
   // Body captured the preceding screen despite a successful journey test.
   waitText("Прогресс")
+  composeRule.onNodeWithText("Прогресс").assertIsDisplayed()
   screenshot("progress-dark")
   click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
+  composeRule.onNodeWithText("Твой путь к сильной и здоровой версии себя").assertIsDisplayed()
   screenshot("home-dark")
   click("Главная");waitText("Твой путь к сильной и здоровой версии себя")
   composeRule.onNodeWithTag("shortcut-body",useUnmergedTree=true).performScrollTo().performClick()
   waitText("Моё тело")
+  composeRule.onNodeWithText("Моё тело").assertIsDisplayed()
   screenshot("body-dark")
   click("Профиль");waitText("Изменить профиль и цели")
+  composeRule.onNodeWithText("Изменить профиль и цели").assertIsDisplayed()
   screenshot("profile-dark")
   click("Изменить профиль и цели");composeRule.onAllNodesWithText("Общая форма").onFirst().performScrollTo().performClick();click("Сохранить профиль");waitText("Пользователи")
   assertEquals(1,current().history.size)
