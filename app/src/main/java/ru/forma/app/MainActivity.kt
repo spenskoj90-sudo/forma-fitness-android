@@ -475,6 +475,7 @@ private val editableProfileSaver=Saver<Profile,String>(
  Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
  Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
  NotificationPanel()
+ EncryptedBackupPanel(vm)
  BackupPanel(vm)
  Panel("FORMA · "+FormaUpdateClient(context).installedVersion()){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
   }
@@ -497,8 +498,8 @@ private val editableProfileSaver=Saver<Profile,String>(
  val import=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(vm::importBackup)}
  var confirm by remember{mutableStateOf(false)}
  var confirmAll by remember{mutableStateOf(false)}
- Panel("Резервная копия"){
-  Text("По умолчанию сохраняется только текущий профиль: его история, тренировки и замеры. На другом телефоне файл можно импортировать как отдельный локальный профиль. Для защищённой автоматической синхронизации потребуется вход в аккаунт.")
+ Panel("JSON без шифрования · совместимость"){
+  Text("Этот формат НЕ шифруется и содержит персональные данные. Используйте его только для совместимости со старыми копиями; для нового переноса рекомендуем защищённый файл выше.")
   Action("Экспортировать текущий профиль",{export.launch("FORMA-profile-${java.time.LocalDate.now()}.json")})
   TextButton({confirmAll=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Экспортировать все локальные профили")}
   OutlinedButton({confirm=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Восстановить из файла")}

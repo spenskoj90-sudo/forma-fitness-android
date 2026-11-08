@@ -57,6 +57,9 @@ grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
 # These are real Compose UI tests, not just Kotlin compilation.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormDraftRestorationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/draft-restoration-api${api}.txt"
 grep -F "OK (3 tests)" "verification/draft-restoration-api${api}.txt"
+# Verify on-device AES-GCM/PBKDF2 support and encrypted-file reopen on API26/30/34.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.EncryptedBackupInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/encrypted-backup-api${api}.txt"
+grep -F "OK (1 test)" "verification/encrypted-backup-api${api}.txt"
 # Exercise a populated on-disk Room v1->v2 upgrade on each Android API.
 # This test uses a dedicated disposable database; never real owner records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"

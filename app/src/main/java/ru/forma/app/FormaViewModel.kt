@@ -169,6 +169,59 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    onSaved()
   }
  }
+ // Passwords stay transient and are cleared after the IO operation completes.
+ // No permanent encryption key, remote upload or password persistence.
+ internal val encryptedBackupBusy=MutableStateFlow(false)
+ fun exportEncryptedBackup(uri:Uri,password:CharArray,allProfiles:Boolean=false){
+  if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
+  val selected=if(allProfiles)null else current.value?.id
+  if(!allProfiles&&selected==null){
+   password.fill('\u0000');encryptedBackupBusy.value=false
+   error.value="Выберите профиль для резервной копии"
+   return
+  }
+  action{
+   try{
+    withContext(Dispatchers.IO){
+     val plaintext=app.repository.exportBackup(selected)
+     val contents=encryptPortableBackup(plaintext,password)
+     try{
+      val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл")
+      output.use{it.write(contents)}
+     }finally{contents.fill(0)}
+    }
+    notice.value=if(allProfiles)
+     "Защищённая копия всех профилей сохранена. Без пароля её невозможно восстановить."
+    else "Защищённая копия профиля сохранена. Без пароля её невозможно восстановить."
+   }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
+  }
+ }
+ fun importEncryptedBackup(uri:Uri,password:CharArray){
+  if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
+  action{
+   try{
+    val ids=withContext(Dispatchers.IO){
+     val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл")
+     val bytes=input.use{stream->
+      val out=java.io.ByteArrayOutputStream()
+      val buffer=ByteArray(8192)
+      while(true){
+       val n=stream.read(buffer)
+       if(n<0)break
+       require(out.size()+n<=MAX_BACKUP_BYTES+128){"Файл защищённой копии слишком большой"}
+       out.write(buffer,0,n)
+      }
+      out.toByteArray()
+     }
+     try{
+      val plaintext=decryptPortableBackup(bytes,password)
+      app.repository.importBackup(plaintext)
+     }finally{bytes.fill(0)}
+    }
+    notice.value="Восстановлено профилей: " + ids.size + ". Существующие данные не заменены."
+   }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
+  }
+ }
  fun exportBackup(uri:Uri,allProfiles:Boolean=false){val id:String?=if(allProfiles)null else (current.value?.id?:return);action{withContext(Dispatchers.IO){val text=app.repository.exportBackup(id);val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value=if(allProfiles)"Копия всех локальных профилей сохранена. Она содержит персональные данные других пользователей — храните её в защищённом месте." else "Копия текущего профиля сохранена. Храните её в защищённом месте: она содержит историю и замеры."}}
  fun importBackup(uri:Uri){action{val ids=withContext(Dispatchers.IO){val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл");val bytes=input.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=stream.read(buffer);if(n<0)break;require(out.size()+n<=MAX_BACKUP_BYTES){"Файл превышает 32 МБ"};out.write(buffer,0,n)};out.toByteArray()};app.repository.importBackup(bytes.toString(Charsets.UTF_8))};notice.value="Восстановлено профилей: ${ids.size}. Они добавлены отдельно; существующие данные сохранены."}}
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
