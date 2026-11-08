@@ -81,6 +81,77 @@ fun recordedLoadVolumeByEquipment(workouts:List<Workout>):Map<Equipment,Double>{
  return volumes
 }
 
+
+/**
+ * Only genuinely measurable external equipment uses kilograms. Resistance
+ * bands, bodyweight, benches, mats and pull-up bars must never invent kg.
+ */
+fun recordsExternalKilograms(equipment:Equipment):Boolean=when(equipment){
+ Equipment.DUMBBELL,Equipment.BARBELL,Equipment.KETTLEBELL,
+ Equipment.CABLE_MACHINE,Equipment.LAT_PULLDOWN,Equipment.LEG_PRESS_MACHINE,
+ Equipment.CHEST_PRESS_MACHINE,Equipment.SEATED_ROW_MACHINE,
+ Equipment.LEG_CURL_MACHINE,Equipment.SMITH_MACHINE->true
+ else->false
+}
+
+// All recorded dumbbell masses remain PER DUMBBELL. Pair movements only
+// clarify presentation; no multiplication or stored data conversion occurs.
+private val pairedDumbbellIds=setOf(
+ "db_row","floor_press","raise","curl","db_rdl","hammer","db_press"
+)
+fun recordedLoadInputLabel(exercise:Exercise):String=
+ if(exercise.equipment==Equipment.DUMBBELL&&exercise.id in pairedDumbbellIds)
+  "Вес одной гантели из пары, кг"
+ else recordedLoadInputLabel(exercise.equipment)
+
+fun recordedExerciseLoadUnit(exercise:Exercise):String=
+ if(exercise.equipment==Equipment.DUMBBELL&&exercise.id in pairedDumbbellIds)
+  "кг на одну гантель из пары"
+ else recordedLoadUnit(exercise.equipment)
+
+fun unmeasuredLoadExplanation(equipment:Equipment):String=when(equipment){
+ Equipment.RESISTANCE_BAND->"Сопротивление резинки не выражается в килограммах. Записывайте повторения и сложность."
+ Equipment.PULL_UP_BAR->"Работа с собственным весом на турнике; килограммы не оцениваются."
+ else->"Работа с собственным весом; килограммы не оцениваются."
+}
+
+/** Preserve positive old entries without misrepresenting them as tonnage. */
+fun recordedExerciseLoadDisplay(set:SetResult,exercise:Exercise?):String {
+ if(exercise==null)return "${set.weight} кг (единица не определена)"
+ if(recordsExternalKilograms(exercise.equipment))
+  return "${set.weight} ${recordedExerciseLoadUnit(exercise)}"
+ if(set.weight>0.0)return "${set.weight} кг (старая запись, нагрузка не подтверждена)"
+ return when(exercise.equipment){
+  Equipment.RESISTANCE_BAND->"сопротивление резинки"
+  else->"собственный вес"
+ }
+}
+
+data class RecordedExerciseVolume(val exercise:Exercise,val kgRepetitions:Double)
+
+/**
+ * Group historical load by exercise, not equipment alone. One dumbbell is not
+ * silently doubled for a pair; unlike true tonnage this is a kg×reps summary
+ * whose values across different movements/machines are not added together.
+ */
+fun recordedLoadVolumeByExercise(workouts:List<Workout>):List<RecordedExerciseVolume>{
+ val totals=linkedMapOf<Pair<String,Equipment>,RecordedExerciseVolume>()
+ for(workout in workouts){
+  val byId=workout.day.exercises.associateBy{it.exercise.id}
+  for(set in workout.sets){
+   val exercise=byId[set.exerciseId]?.exercise?:continue
+   if(!recordsExternalKilograms(exercise.equipment)||!set.weight.isFinite()||
+      set.weight<=0||set.reps<=0)continue
+   val key=exercise.id to exercise.equipment
+   val earlier=totals[key]
+   totals[key]=RecordedExerciseVolume(
+    earlier?.exercise?:exercise,(earlier?.kgRepetitions?:0.0)+set.weight*set.reps
+   )
+  }
+ }
+ return totals.values.sortedWith(compareBy({it.exercise.name},{it.exercise.id},{it.exercise.equipment.name}))
+}
+
 /** Anatomy labels are teaching aids, not a clinical motion analysis. */
 fun secondaryMuscles(exercise: Exercise): Set<Muscle> = when (exercise.id) {
     "squat", "goblet", "chair_squat", "leg_press", "smith_squat", "kettlebell_squat" -> setOf(Muscle.CORE)

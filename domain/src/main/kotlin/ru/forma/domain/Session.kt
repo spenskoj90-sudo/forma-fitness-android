@@ -58,7 +58,7 @@ fun logSet(s:Session,weight:Double,reps:Int,effort:Int,pain:Boolean,now:Long):Se
  if(s.phase!=Phase.WORK||s.paused||s.terminal)return s
  require(weight.isFinite()&&weight in 0.0..500.0&&reps in 1..100&&effort in 1..10)
 
- val current=s.current?:return s;val result=SetResult(current.exercise.id,reps,if(current.exercise.equipment==Equipment.BODYWEIGHT)0.0 else weight,effort,false,now);val v=creditTime(s,now).copy(sets=s.sets+result)
+ val current=s.current?:return s;val result=SetResult(current.exercise.id,reps,if(recordsExternalKilograms(current.exercise.equipment))weight else 0.0,effort,false,now);val v=creditTime(s,now).copy(sets=s.sets+result)
  return if(s.exerciseIndex==s.day.exercises.lastIndex&&s.setNumber==current.sets)v.copy(phase=completionPhase(v),deadlineMs=0)else v.copy(phase=Phase.REST,deadlineMs=now+current.restSec*1000L)
 }
 fun skipStage(s:Session,now:Long):Session { val v=advanceTimed(s,now);if(v.phase!=s.phase)return v;return skipCredited(v,now) }
