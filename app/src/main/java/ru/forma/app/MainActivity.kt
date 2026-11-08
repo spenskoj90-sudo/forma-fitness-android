@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -331,6 +332,31 @@ private val editableProfileSaver=Saver<Profile,String>(
   limitations=p.limitations,primary=p.primary,secondary=p.secondary,
   priorities=p.priorities,days=p.days,recovery=p.recovery
  )
+ // Store only the editable baseline; do not place any history, measurements
+ // or active workout in the Activity's saved-state Bundle.
+ val baseline by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){
+  mutableStateOf((existing?:p).copy(history=emptyList(),measurements=emptyList(),active=null))
+ }
+ val hasChanges=candidate.copy(history=emptyList(),measurements=emptyList(),active=null)!=baseline
+ var confirmDiscard by rememberSaveable(existing?.id){mutableStateOf(false)}
+ val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
+ fun requestCancel(){
+  if(hasChanges)confirmDiscard=true else cancel()
+ }
+ BackHandler(enabled=canCancel){
+  when{
+   saving->Unit // Durable save is already in flight; no premature screen exit.
+   keyboardVisible->{focus.clearFocus(force=true);keyboard?.hide()}
+   else->requestCancel()
+  }
+ }
+ if(confirmDiscard)AlertDialog(
+  onDismissRequest={confirmDiscard=false},
+  title={Text("Несохранённые изменения")},
+  text={Text("Изменения профиля ещё не сохранены. Выйти из редактирования без них? История тренировок и замеры останутся без изменений.")},
+  confirmButton={TextButton(onClick={confirmDiscard=false;cancel()}){Text("Выйти без сохранения")}},
+  dismissButton={TextButton(onClick={confirmDiscard=false}){Text("Продолжить редактирование")}}
+ )
  Column(Modifier.fillMaxSize()){
   Box(Modifier.weight(1f)){
    Page(if(existing==null)"Начнём с тебя"else"Твой профиль","Для взрослых. История каждого пользователя изолирована."){
@@ -369,7 +395,7 @@ private val editableProfileSaver=Saver<Profile,String>(
     Spacer(Modifier.width(8.dp))
     Text("Сохранение профиля…")
    }
-   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!saving){Text("Отмена")}
+   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();requestCancel()},Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("profile-cancel"),enabled=!saving){Text("Отмена")}
   }
  }
 }
