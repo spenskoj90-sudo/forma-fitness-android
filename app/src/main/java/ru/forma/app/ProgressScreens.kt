@@ -97,6 +97,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
 @Composable fun BodyScreen(p:Profile,vm:FormaViewModel)=BodyScreen(p){values,id,dateMs,draftId,done->
  vm.measurement(values,id,dateMs,draftId,done)
 }
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun BodyScreen(
  p:Profile,
  onMeasurement:(Map<String,Double>,String?,Long,String,()->Unit)->Unit
