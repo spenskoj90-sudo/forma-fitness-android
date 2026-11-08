@@ -5,6 +5,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
@@ -15,9 +19,11 @@ import ru.forma.domain.*
  Panel("Ход тренировки") {
   if (state.plannedSets > 0) {
    Text("Упражнение ${state.exerciseNumber} из ${state.exerciseCount} · записано ${state.loggedSets} из ${state.plannedSets} подходов", style=MaterialTheme.typography.bodyMedium)
-   LinearProgressIndicator(progress={state.loggedSets.toFloat()/state.plannedSets},modifier=Modifier.fillMaxWidth())
+   LinearProgressIndicator(progress={state.loggedSets.toFloat()/state.plannedSets},modifier=Modifier.fillMaxWidth().semantics {
+    stateDescription="Записано ${state.loggedSets} из ${state.plannedSets} подходов"
+   })
   }
-  Text(state.nextStep,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+  Text(state.nextStep,modifier=Modifier.semantics { liveRegion=LiveRegionMode.Polite },style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
  }
 }
 

@@ -40,6 +40,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
@@ -103,8 +105,8 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
   }
  }
 }
-@Composable fun Page(title:String,subtitle:String="",compact:Boolean=false,content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(compact)10.dp else 14.dp)){Text(title,style=if(compact)MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,style=if(compact)MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
-@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
+@Composable fun Page(title:String,subtitle:String="",compact:Boolean=false,content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(compact)10.dp else 14.dp)){Text(title,modifier=Modifier.semantics{heading()},style=if(compact)MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,style=if(compact)MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
+@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,modifier=Modifier.semantics{heading()},style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
 @Composable fun NumericField(label:String,value:String,modifier:Modifier=Modifier,onChange:(String)->Unit){
@@ -469,9 +471,20 @@ private val editableProfileSaver=Saver<Profile,String>(
  Panel("${p.name} · ${p.age} лет"){Text("${p.heightCm} см · ${p.weightKg} кг");Text("${p.experience.label} · восстановление ${p.recovery}/5");Action("Изменить профиль и цели",edit)}
  val coach by vm.coachStatus.collectAsState()
  val context=LocalContext.current
- Panel("Сопровождение"){SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)};SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)};SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)};Text(coach);Text("Громкость подсказок: ${settings.volume}%");Slider(settings.volume.toFloat(),{vm.coach(it.toInt(),settings.bpm,settings.speechRate)},valueRange=0f..100f)
- Text("Темп: ${settings.bpm} уд/мин");Slider(settings.bpm.toFloat(),{vm.coach(settings.volume,it.toInt(),settings.speechRate)},valueRange=40f..180f,steps=27)
- Text("Скорость речи: ${"%.1f".format(settings.speechRate)}");Slider(settings.speechRate,{vm.coach(settings.volume,settings.bpm,it)},valueRange=0.7f..1.3f)
+ Panel("Сопровождение"){
+  SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)}
+  SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)}
+  SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)}
+  Text(coach)
+  CoachSettingSlider("Громкость подсказок",settings.volume.toFloat(),"${settings.volume}%",0f..100f){
+   vm.coach(it.toInt(),settings.bpm,settings.speechRate)
+  }
+  CoachSettingSlider("Темп",settings.bpm.toFloat(),"${settings.bpm} уд/мин",40f..180f,steps=27){
+   vm.coach(settings.volume,it.toInt(),settings.speechRate)
+  }
+  CoachSettingSlider("Скорость речи",settings.speechRate,"x${"%.1f".format(settings.speechRate)}",0.7f..1.3f){
+   vm.coach(settings.volume,settings.bpm,it)
+  }
  TextButton({runCatching{context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))}.onFailure{vm.error.value="Настройки синтеза речи недоступны на этом телефоне"}}){Text("Настроить голос Android")}
  Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
  Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
@@ -483,6 +496,24 @@ private val editableProfileSaver=Saver<Profile,String>(
  }
 }
 /** One accessible switch for the full label + control, with a 56dp tap target. */
+/**
+ * Named and unit-labelled sliders for TalkBack without extra UI state.
+ * The underlying DataStore callback and ranges remain unchanged.
+ */
+@Composable fun CoachSettingSlider(
+ label:String,value:Float,displayValue:String,
+ range:ClosedFloatingPointRange<Float>,steps:Int=0,onValueChange:(Float)->Unit
+){
+ Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(2.dp)){
+  Text(label+": "+displayValue)
+  Slider(value=value,onValueChange=onValueChange,
+   modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).semantics{
+    contentDescription=label
+    stateDescription=displayValue
+   },valueRange=range,steps=steps)
+ }
+}
+
 @Composable fun SwitchRow(label:String,value:Boolean,change:(Boolean)->Unit){
  Row(Modifier.fillMaxWidth().heightIn(min=56.dp).toggleable(value=value,role=Role.Switch,onValueChange=change),
   horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){

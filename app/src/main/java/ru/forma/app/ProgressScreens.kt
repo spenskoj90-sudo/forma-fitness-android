@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
@@ -49,7 +50,8 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
   val min=ordered.minOf{it.value}
   val max=ordered.maxOf{it.value}
   val span=(max-min).coerceAtLeast(1.0)
-  Column(Modifier.fillMaxWidth().semantics {
+  Column(Modifier.fillMaxWidth().clearAndSetSemantics {
+   // One complete dated spoken summary, rather than duplicate axis labels.
    contentDescription=summary
   }) {
    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
