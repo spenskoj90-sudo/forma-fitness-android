@@ -1,6 +1,7 @@
 package ru.forma.app
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -57,11 +58,12 @@ class BodyHistoryPaginationTest {
    Measurement(id="a-$it",dateMs=it.toLong(),values=mapOf("weight" to 60.0))
   })
   val b=Profile(id="b",name="B")
-  rule.setContent{MaterialTheme{BodyScreen(a){_,_,_,_,_->}}}
+  val selected=mutableStateOf(a)
+  rule.setContent{MaterialTheme{BodyScreen(selected.value){_,_,_,_,_->}}}
   rule.onNodeWithTag("body-measurements-more").performScrollTo().performClick()
   rule.onNodeWithText("Показано 20 из 21 замеров.",substring=true).assertExists()
-  // Separate composition with a different id cannot carry or edit A's records.
-  rule.setContent{MaterialTheme{BodyScreen(b){_,_,_,_,_->}}}
+  // Recompose the same Activity with a new profile ID, not a second setContent.
+  rule.runOnIdle{selected.value=b}
   rule.onNodeWithText("Сохранённых замеров пока нет.").assertExists()
   rule.onNodeWithText("Показано 20 из 21 замеров.",substring=true).assertDoesNotExist()
  }
