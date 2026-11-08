@@ -132,6 +132,7 @@ jobs:
             verification/room-migration-api${{ matrix.api }}.txt
             verification/encrypted-backup-api${{ matrix.api }}.txt
             verification/load-units-api${{ matrix.api }}.txt
+            verification/technique-catalog-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

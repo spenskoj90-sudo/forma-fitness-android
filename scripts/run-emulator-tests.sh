@@ -63,6 +63,9 @@ grep -F "OK (1 test)" "verification/encrypted-backup-api${api}.txt"
 # Verify actual Compose set/history labels for single/pair dumbbells and bands.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecordedLoadUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/load-units-api${api}.txt"
 grep -F "OK (2 tests)" "verification/load-units-api${api}.txt"
+# Offline technique-search/expand accessibility, with no network or exercise video dependency.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.ExerciseTechniqueCatalogTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-catalog-api${api}.txt"
+grep -F "OK (2 tests)" "verification/technique-catalog-api${api}.txt"
 # Exercise a populated on-disk Room v1->v2 upgrade on each Android API.
 # This test uses a dedicated disposable database; never real owner records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"
