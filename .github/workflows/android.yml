@@ -134,6 +134,7 @@ jobs:
             verification/load-units-api${{ matrix.api }}.txt
             verification/technique-catalog-api${{ matrix.api }}.txt
             verification/accessibility-api${{ matrix.api }}.txt
+            verification/home-responsive-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

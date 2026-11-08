@@ -69,6 +69,9 @@ grep -F "OK (2 tests)" "verification/technique-catalog-api${api}.txt"
 # Check real TalkBack semantics for headings, spoken controls and summary charts.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.AccessibleWorkoutUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/accessibility-api${api}.txt"
 grep -F "OK (4 tests)" "verification/accessibility-api${api}.txt"
+# Check home shortcuts and workout hero at 2x system font.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.HomeResponsiveTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/home-responsive-api${api}.txt"
+grep -F "OK (3 tests)" "verification/home-responsive-api${api}.txt"
 # Exercise a populated on-disk Room v1->v2 upgrade on each Android API.
 # This test uses a dedicated disposable database; never real owner records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"

@@ -46,6 +46,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -170,14 +172,105 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
 }
 
-@Composable fun FormaShortcut(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,tint:Color,onClick:()->Unit,modifier:Modifier=Modifier){
- Card(modifier.height(112.dp).clickable(onClick=onClick),shape=RoundedCornerShape(19.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
-  Column(Modifier.fillMaxSize().padding(horizontal=8.dp,vertical=13.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween){
+/**
+ * Text grows to three lines and cards expand instead of clipping at 2x font.
+ * The original three-column layout is used at standard font scale.
+ */
+@Composable fun FormaShortcut(
+ label:String,
+ icon:androidx.compose.ui.graphics.vector.ImageVector,
+ tint:Color,
+ onClick:()->Unit,
+ modifier:Modifier=Modifier,
+ onLabelLayout:(TextLayoutResult)->Unit={}
+){
+ Card(modifier.heightIn(min=112.dp).clickable(onClick=onClick),
+  shape=RoundedCornerShape(19.dp),
+  colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
+  Column(Modifier.fillMaxWidth().heightIn(min=112.dp).padding(horizontal=8.dp,vertical=13.dp),
+   horizontalAlignment=Alignment.CenterHorizontally,
+   verticalArrangement=Arrangement.SpaceBetween){
    Icon(icon,contentDescription=null,tint=tint,modifier=Modifier.size(28.dp))
-   Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Medium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,lineHeight=14.sp)
+   Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Medium,
+    color=MaterialTheme.colorScheme.onSurface,maxLines=3,lineHeight=16.sp,
+    textAlign=TextAlign.Center,onTextLayout=onLabelLayout)
   }
  }
 }
+
+private data class HomeShortcutItem(
+ val text:String,
+ val icon:androidx.compose.ui.graphics.vector.ImageVector,
+ val tint:Color,
+ val onClick:()->Unit
+)
+
+/** Two wider columns are readable at 1.6x–2x; 3x2 is retained normally. */
+@Composable fun HomeShortcutGrid(
+ onTrain:()->Unit,onProgress:()->Unit,onBody:()->Unit,onProfile:()->Unit,
+ onLabelLayout:(String,TextLayoutResult)->Unit={_,_->}
+){
+ val items=listOf(
+  HomeShortcutItem("Программа\nтренировок",Icons.Outlined.FitnessCenter,MaterialTheme.colorScheme.primary,onTrain),
+  HomeShortcutItem("Моя\nстатистика",Icons.Outlined.BarChart,Color(0xFF72D4AD),onProgress),
+  HomeShortcutItem("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress),
+  HomeShortcutItem("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody),
+  HomeShortcutItem("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile),
+  HomeShortcutItem("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile)
+ )
+ val columns=if(LocalDensity.current.fontScale>=1.6f)2 else 3
+ Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(9.dp)){
+  items.chunked(columns).forEach{row->
+   Row(Modifier.fillMaxWidth().testTag("home-shortcut-row"),
+    horizontalArrangement=Arrangement.spacedBy(9.dp)){
+    row.forEach{item->
+     val extra=if(item.text=="Замеры\nтела")Modifier.testTag("shortcut-body") else Modifier
+     FormaShortcut(item.text,item.icon,item.tint,item.onClick,
+      Modifier.weight(1f).then(extra),
+      onLabelLayout={layout->onLabelLayout(item.text,layout)})
+    }
+   }
+  }
+ }
+}
+
+/** The hero is content-sized (minimum 316dp), not forcibly clipped at 2x. */
+@Composable fun HomeHero(
+ next:TrainingDay?,place:TrainingPlace,
+ onStart:(TrainingDay)->Unit,onProfile:()->Unit
+){
+ val today=java.time.LocalDate.now().dayOfWeek.value
+ Box(Modifier.fillMaxWidth().testTag("home-hero")
+  .clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
+  Image(painter=painterResource(R.drawable.forma_hero),contentDescription=null,
+   modifier=Modifier.align(Alignment.TopEnd).height(316.dp).width(246.dp),
+   contentScale=ContentScale.Crop)
+  Box(Modifier.matchParentSize().background(
+   Brush.horizontalGradient(listOf(Color(0xFF0C171D),
+    Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
+  Column(Modifier.fillMaxWidth().heightIn(min=316.dp).padding(20.dp),
+   verticalArrangement=Arrangement.SpaceBetween){
+   Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+    Text(if(next==null)"День восстановления"else if(next.day==today)"Сегодня\nтренировка"else"Следующая\nтренировка",
+     style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,
+     lineHeight=32.sp,color=Color.White)
+    Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,
+     fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
+   }
+   Spacer(Modifier.height(24.dp))
+   Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+    if(next!=null){
+     Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"
+      else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",
+      color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
+     Text("Место: "+place.label,color=Color(0xFFC8D6D8),style=MaterialTheme.typography.labelSmall)
+     Action("▶  Начать тренировку",{onStart(next)})
+    }else Action("Открыть профиль",onProfile)
+   }
+  }
+ }
+}
+
 @Composable fun Home(p:Profile,place:TrainingPlace,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
  val now=System.currentTimeMillis();val weekStartMs=weekStart(now)
  val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs in weekStartMs..now}
@@ -186,34 +279,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.minByOrNull{(it.day-today+7)%7}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
   Text("Твой путь к сильной и здоровой версии себя",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-  Box(Modifier.fillMaxWidth().height(316.dp).clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
-   Image(painter=painterResource(R.drawable.forma_hero),contentDescription=null,modifier=Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(246.dp),contentScale=ContentScale.Crop)
-   Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xFF0C171D),Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
-   Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.SpaceBetween){
-    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-     Text(if(next==null)"День восстановления"else if(next.day==today)"Сегодня\nтренировка"else"Следующая\nтренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,lineHeight=32.sp,color=Color.White)
-     Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
-    }
-    Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
-     if(next!=null){
-      Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
-       Text("Место: "+place.label,color=Color(0xFFC8D6D8),style=MaterialTheme.typography.labelSmall)
-      Action("▶  Начать тренировку",{vm.start(next)})
-     }else Action("Открыть профиль",onProfile)
-    }
-   }
-  }
-  val green=MaterialTheme.colorScheme.primary
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-   FormaShortcut("Программа\nтренировок",Icons.Outlined.FitnessCenter,green,onTrain,Modifier.weight(1f))
-   FormaShortcut("Моя\nстатистика",Icons.Outlined.BarChart,Color(0xFF72D4AD),onProgress,Modifier.weight(1f))
-   FormaShortcut("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress,Modifier.weight(1f))
-  }
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-   FormaShortcut("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody,Modifier.weight(1f).testTag("shortcut-body"))
-   FormaShortcut("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile,Modifier.weight(1f))
-   FormaShortcut("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile,Modifier.weight(1f))
-  }
+  HomeHero(next,place,{vm.start(it)},onProfile)
+  HomeShortcutGrid(onTrain,onProgress,onBody,onProfile)
   Panel("На этой неделе"){
    Text(weekly.toString()+" завершённых занятий",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
    if(plan.isEmpty())Text("Сейчас нет доступного недельного плана.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
