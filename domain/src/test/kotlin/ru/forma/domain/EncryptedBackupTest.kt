@@ -39,6 +39,16 @@ class EncryptedBackupTest {
   assertTrue(runCatching{decryptPortableBackup(modifiedSalt,password.toCharArray())}.isFailure)
  }
 
+ // Independently generated with Python hashlib.pbkdf2_hmac + AESGCM.
+ // Fixed synthetic fixture validates portable UTF-8 passphrases and ciphertext
+ // across different crypto providers, not just same-device roundtrips.
+ @Test fun independentCrossPlatformFixtureDecryptsWithoutReformatting() {
+  val fixture=java.util.Base64.getDecoder().decode("Rk9STUFCSzIBAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGw2setFPWh7J/KG1PrGo9cBLxVx/EzNVoiSROUiyh1inYkQYOEprgj4Dke/mhv648FEi5t92YFWh3FfKHUP5flkzAARJBqIfVaq2TM1IlAKmlQ==")
+  val result=decryptPortableBackup(fixture,"между устройствами пароль".toCharArray())
+  assertEquals("{\"version\":1,\"profiles\":[{\"id\":\"fixture\",\"name\":\"Cross-device\"}]}",result)
+  assertEquals("fixture",decodeBackup(result).profiles.single().id)
+ }
+
  @Test fun legacyJsonAndUnsupportedVersionAreNeverMisreadAsEncrypted() {
   val json=sample()
   val password="long private passphrase"

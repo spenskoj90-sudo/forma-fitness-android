@@ -130,6 +130,7 @@ jobs:
             verification/recovery-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
             verification/room-migration-api${{ matrix.api }}.txt
+            verification/encrypted-backup-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

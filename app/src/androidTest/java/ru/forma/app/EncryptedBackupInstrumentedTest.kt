@@ -26,6 +26,11 @@ class EncryptedBackupInstrumentedTest {
    assertEquals(original,decoded)
    assertEquals("synthetic-profile",decodeBackup(decoded).profiles.single().id)
    assertTrue(runCatching{decryptPortableBackup(reopened,"incorrect passphrase".toCharArray())}.isFailure)
+   // Ciphertext created by an independent Python provider with a UTF-8
+   // Cyrillic password: catches Android PBKDF2 character encoding mismatch.
+   val independent=java.util.Base64.getDecoder().decode("Rk9STUFCSzIBAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGw2setFPWh7J/KG1PrGo9cBLxVx/EzNVoiSROUiyh1inYkQYOEprgj4Dke/mhv648FEi5t92YFWh3FfKHUP5flkzAARJBqIfVaq2TM1IlAKmlQ==")
+   assertEquals("{\"version\":1,\"profiles\":[{\"id\":\"fixture\",\"name\":\"Cross-device\"}]}",
+    decryptPortableBackup(independent,"между устройствами пароль".toCharArray()))
   }finally{file.delete()}
  }
 }
