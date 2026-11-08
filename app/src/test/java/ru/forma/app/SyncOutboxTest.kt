@@ -191,6 +191,70 @@ class SyncOutboxTest {
   }
  }
 
+
+ @Test fun parentProfileIsAlwaysQueuedBeforeNestedRecords():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val guest=Profile(id="offline",name="Offline",
+    measurements=listOf(Measurement(id="m-1",dateMs=1000L,values=mapOf("waist" to 80.0))))
+   val stopped=stopSession(startSession(guest.id,generateProgram(guest).first(),1000L),false,1300L)
+   repo.saveProfile(finishSession(guest,stopped,1400L))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline","uid-A",2000L)
+   val pending=db.sync().pendingForAccount("uid-A")
+   assertEquals(listOf("profile","measurement","workout"),pending.map{it.kind})
+   assertEquals(pending.first(),db.sync().nextPendingForAccount("uid-A"))
+   assertNull(db.sync().nextPendingForAccount("uid-B"))
+  }finally{db.close()}
+ }
+
+ @Test fun remoteEchoAckRequiresExactUidOperationRevisionAndPayloadAcrossReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-exact-remote-ack-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+   .addMigrations(MIGRATION_1_2).build()
+  try {
+   var repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.mutate("a"){it.copy(weightKg=80.0)}
+   val rows=db.sync().pendingForAccount("uid-A")
+   assertEquals(listOf(1,2),rows.map{it.revision})
+   val first=rows.first()
+   suspend fun ack(row:SyncOutboxRow,uid:String="uid-A",opId:String=row.opId,
+    revision:Int=row.revision,snapshot:String=row.snapshot,tombstone:Boolean=row.tombstone)=
+    db.sync().acknowledgeExactRemoteEcho(
+     uid,opId,row.profileId,row.kind,row.recordId,revision,snapshot,tombstone)
+   assertEquals(0,ack(first,uid="uid-B"))
+   assertEquals(0,ack(first,opId="stale-or-forged"))
+   assertEquals(0,ack(first,revision=2))
+   assertEquals(0,ack(first,snapshot="different-remote-payload"))
+   assertEquals(0,ack(first,tombstone=true))
+   assertEquals(rows,db.sync().pendingForAccount("uid-A"))
+   assertEquals(1,ack(first))
+   assertEquals(0,ack(first))
+   assertEquals(listOf(rows[1]),db.sync().pendingForAccount("uid-A"))
+   assertEquals(rows[1],db.sync().nextPendingForAccount("uid-A"))
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+    .addMigrations(MIGRATION_1_2).build()
+   repo=ProfileRepository(db)
+   assertEquals(2,db.sync().totalRows()) // ACK rows remain for stable revisions.
+   assertEquals(listOf(rows[1]),db.sync().pendingForAccount("uid-A"))
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   assertEquals(1,ack(rows[1]))
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
+   assertEquals(2,db.sync().latestRevision("uid-A","a","profile","a"))
+   repo.mutate("a"){it.copy(weightKg=81.0)}
+   assertEquals(listOf(3),db.sync().pendingForAccount("uid-A").map{it.revision})
+   assertEquals(3,db.sync().totalRows())
+  }finally{
+   db.close()
+   ctx.deleteDatabase(name)
+  }
+ }
+
  @Test fun corruptOldHistoryCannotHalfBindAndPartialQueue():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {

@@ -41,8 +41,22 @@ data class SyncOutboxRow(
  @Query("SELECT COUNT(*) FROM sync_outbox")
  suspend fun totalRows():Int
  // The eventual sender MUST use the verified Firebase Auth UID, not a UI/profile field.
- @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,kind,recordId,revision")
+ // Parent profile must exist before nested measurement/workout creates.
+ // Its final tombstone goes last, as Firestore denies writes below a deleted parent.
+ // Revisions for each document remain in ascending order; never skip older events.
+ @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,CASE WHEN kind='profile' AND tombstone=0 THEN 0 WHEN kind='profile' THEN 2 ELSE 1 END,kind,recordId,revision")
  suspend fun pendingForAccount(uid:String):List<SyncOutboxRow>
+ @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,CASE WHEN kind='profile' AND tombstone=0 THEN 0 WHEN kind='profile' THEN 2 ELSE 1 END,kind,recordId,revision LIMIT 1")
+ suspend fun nextPendingForAccount(uid:String):SyncOutboxRow?
+ // ACK is permitted only AFTER a future authenticated adapter has read back
+ // an exact remote opId/revision/payload/tombstone for this verified UID.
+ // This is merely an optimistic Room transition, NOT proof of server delivery;
+ // no production adapter/caller is enabled at this stage.
+ @Query("UPDATE sync_outbox SET state='ACKED' WHERE state='PENDING' AND accountUid=:uid AND opId=:opId AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision AND snapshot=:snapshot AND tombstone=:tombstone")
+ suspend fun acknowledgeExactRemoteEcho(
+  uid:String,opId:String,profileId:String,kind:String,recordId:String,
+  revision:Int,snapshot:String,tombstone:Boolean
+ ):Int
  @Query("SELECT MAX(revision) FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId")
  suspend fun latestRevision(uid:String,profileId:String,kind:String,recordId:String):Int?
  @Insert(onConflict=OnConflictStrategy.ABORT)
