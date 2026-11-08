@@ -32,12 +32,23 @@ internal fun canRenderProfileUi(
   ?:profiles.profiles.firstOrNull()
  return current?.id==expected?.id
 }
+// Non-identifying in-memory gesture diagnostics for IME/Save regressions.
+internal enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
+internal data class SaveTouchEvidence(val presses:Int=0,val releases:Int=0,val cancels:Int=0)
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  // No names/IDs: identify whether the user Save touch reached the VM on API26.
  internal val profileSaveRequests=MutableStateFlow(0)
+ internal val profileSaveTouchEvidence=MutableStateFlow(SaveTouchEvidence())
+ internal fun noteProfileSaveTouch(stage:SaveTouchStage){
+  profileSaveTouchEvidence.update{old->when(stage){
+   SaveTouchStage.PRESS->old.copy(presses=old.presses+1)
+   SaveTouchStage.RELEASE->old.copy(releases=old.releases+1)
+   SaveTouchStage.CANCEL->old.copy(cancels=old.cancels+1)
+  }}
+ }
  // Non-identifying witness for an initial workout-start touch reaching this VM.
  internal val workoutStartRequests=MutableStateFlow(0)
  // A profile save is one durable operation: do not enqueue overlapping taps.

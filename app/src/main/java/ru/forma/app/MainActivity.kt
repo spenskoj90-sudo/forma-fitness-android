@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -91,7 +93,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
      !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
       Text(if(profilesSnapshot.status==LocalLoadStatus.FAILED||settingsSnapshot.status==LocalLoadStatus.FAILED)
        "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
-     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving)
+     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving,{vm.noteProfileSaveTouch(it)})
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
      else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
@@ -232,8 +234,17 @@ private val editableProfileSaver=Saver<Profile,String>(
  restore={saved->kotlinx.serialization.json.Json.decodeFromString(Profile.serializer(),saved)}
 )
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean,saving:Boolean=false){
+@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean,saving:Boolean=false,onSaveTouch:(SaveTouchStage)->Unit={}){
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+ val saveInteractionSource=remember{MutableInteractionSource()}
+ val touchObserver by rememberUpdatedState(onSaveTouch)
+ LaunchedEffect(saveInteractionSource){
+  saveInteractionSource.interactions.collect{event->when(event){
+   is PressInteraction.Press->touchObserver(SaveTouchStage.PRESS)
+   is PressInteraction.Release->touchObserver(SaveTouchStage.RELEASE)
+   is PressInteraction.Cancel->touchObserver(SaveTouchStage.CANCEL)
+  }}
+ }
  var p by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){mutableStateOf(existing?:Profile())}
  var name by rememberSaveable(existing?.id){mutableStateOf(p.name)}
  var age by rememberSaveable(existing?.id){mutableStateOf(p.age.toString())}
@@ -279,7 +290,7 @@ private val editableProfileSaver=Saver<Profile,String>(
    // Target the actual Button in UI tests, not its nested text bounds.
    Button(onClick={save(candidate);focus.clearFocus(force=true);keyboard?.hide()},
     modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("profile-save"),
-    enabled=candidate.valid()&&!saving){Text("Сохранить профиль")}
+    enabled=candidate.valid()&&!saving,interactionSource=saveInteractionSource){Text("Сохранить профиль")}
    if(saving)Row(Modifier.fillMaxWidth().padding(top=6.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){
     CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)
     Spacer(Modifier.width(8.dp))

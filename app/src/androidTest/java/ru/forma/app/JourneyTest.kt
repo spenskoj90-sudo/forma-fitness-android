@@ -97,14 +97,19 @@ class JourneyTest{
   // from the existing durable Room check; never retry an undelivered touch.
   val firstSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val firstRequestsBefore=firstSaveVm.profileSaveRequests.value
+  val firstTouchBefore=firstSaveVm.profileSaveTouchEvidence.value
   composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   composeRule.waitForIdle()
   if(firstSaveVm.profileSaveRequests.value!=firstRequestsBefore+1){
    runCatching{screenshot("initial-profile-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-FIRST-SAVE-TOUCH-MISSED")}
+   val touchAfter=firstSaveVm.profileSaveTouchEvidence.value
    fail("One first-profile Save touch did not dispatch to ViewModel: "+
-    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}")
+    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}, "+
+    "press=${touchAfter.presses-firstTouchBefore.presses}, "+
+    "release=${touchAfter.releases-firstTouchBefore.releases}, "+
+    "cancel=${touchAfter.cancels-firstTouchBefore.cancels}")
   }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
@@ -207,13 +212,18 @@ class JourneyTest{
   composeRule.onNodeWithText("Имя").assertIsFocused()
   val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val requestsBefore=secondSaveVm.profileSaveRequests.value
+  val touchBefore=secondSaveVm.profileSaveTouchEvidence.value
   composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled()
   click("Сохранить профиль")
   if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
    runCatching{screenshot("second-profile-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-TOUCH-MISSED")}
+   val touchAfter=secondSaveVm.profileSaveTouchEvidence.value
    fail("One visible Save-button touch did not dispatch to ViewModel: "+
-    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}")
+    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}, "+
+    "press=${touchAfter.presses-touchBefore.presses}, "+
+    "release=${touchAfter.releases-touchBefore.releases}, "+
+    "cancel=${touchAfter.cancels-touchBefore.cancels}")
   }
   // The API26 failure here was previously attributed to one long source line:
   // distinguish Room persistence, selected-profile DataStore, and rendered UI.
