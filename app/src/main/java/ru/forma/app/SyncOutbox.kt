@@ -75,6 +75,9 @@ data class SyncOutboxRow(
  ):Int
  @Query("SELECT * FROM sync_outbox WHERE state='CONFLICT' AND accountUid=:uid ORDER BY profileId,kind,recordId,revision")
  suspend fun conflictsForAccount(uid:String):List<SyncOutboxRow>
+ // A child is eligible only after an exact parent-profile server ACK.
+ @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind='profile' AND state='ACKED' ORDER BY revision DESC LIMIT 1")
+ suspend fun latestAcknowledgedProfileForAccount(uid:String,profileId:String):SyncOutboxRow?
  @Query("SELECT MAX(revision) FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId")
  suspend fun latestRevision(uid:String,profileId:String,kind:String,recordId:String):Int?
  @Insert(onConflict=OnConflictStrategy.ABORT)

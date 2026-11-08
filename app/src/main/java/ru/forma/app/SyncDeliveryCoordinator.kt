@@ -30,6 +30,9 @@ internal data class SyncRemoteEcho(
  * read() must operate inside the token-bound UID scope; compareAndCommit() must
  * perform an atomic Firestore transaction whose precondition is *the entire*
  * previous echo (or absence), never a blind set()/last-write-wins update.
+ * For a nested document it must ALSO verify expectedParent in the SAME
+ * Firestore transaction before committing the child: a parent that changed
+ * after read-back is never a safe target for local measurements/workouts.
  * The adapter must canonicalize the remote payload identically to the Room
  * snapshot before producing SyncRemoteEcho. A locally constructed echo is NOT
  * server acknowledgement.
@@ -37,7 +40,8 @@ internal data class SyncRemoteEcho(
 internal interface AuthenticatedSyncRemote {
  suspend fun read(lease: VerifiedSyncLease, row: SyncOutboxRow): SyncRemoteEcho?
  suspend fun compareAndCommit(
-  lease: VerifiedSyncLease, row: SyncOutboxRow, expected: SyncRemoteEcho?
+  lease: VerifiedSyncLease, row: SyncOutboxRow, expected: SyncRemoteEcho?,
+  expectedParent: SyncRemoteEcho?
  ): Boolean
 }
 
@@ -61,6 +65,20 @@ internal class SyncDeliveryCoordinator(
   val dao = db.sync()
   val row = dao.nextPendingForAccount(lease.uid) ?: return SyncDeliveryStep.EMPTY
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
+  // A nested write cannot rely on parentActive() alone: Firestore only checks
+  // that the parent exists, not that its revision still matches this device.
+  // Recheck the most recent ACKed parent before each child operation; the
+  // adapter must repeat this precondition atomically at remote commit time.
+  val parentEcho = if (row.kind == "profile") null else {
+   val ackedParent = dao.latestAcknowledgedProfileForAccount(lease.uid, row.profileId)
+    ?: return SyncDeliveryStep.RETRY
+   if (ackedParent.tombstone) return park(lease, row)
+   val observed = remote.read(lease, ackedParent)
+   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
+   if (observed?.matches(ackedParent) != true) return park(lease, row)
+   observed
+  }
+  if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
   val current = remote.read(lease, row)
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
   if (current?.matches(row) == true) return ack(lease, row)
@@ -78,7 +96,7 @@ internal class SyncDeliveryCoordinator(
    else -> return park(lease, row)
   }
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
-  if (!remote.compareAndCommit(lease, row, previous)) return SyncDeliveryStep.RETRY
+  if (!remote.compareAndCommit(lease, row, previous, parentEcho)) return SyncDeliveryStep.RETRY
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
   val echoed = remote.read(lease, row)
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED

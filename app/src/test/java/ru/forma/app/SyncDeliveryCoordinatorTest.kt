@@ -24,6 +24,7 @@ class SyncDeliveryCoordinatorTest {
   var failOnRead=0
   var rejectWrite=false
   var afterRead:(()->Unit)?=null
+  var beforeCommit:(()->Unit)?=null
   private fun key(row:SyncOutboxRow)=
    row.accountUid+"/"+row.profileId+"/"+row.kind+"/"+row.recordId
   override suspend fun read(lease:VerifiedSyncLease,row:SyncOutboxRow):SyncRemoteEcho? {
@@ -35,9 +36,16 @@ class SyncDeliveryCoordinatorTest {
    return snapshot
   }
   override suspend fun compareAndCommit(
-   lease:VerifiedSyncLease,row:SyncOutboxRow,expected:SyncRemoteEcho?
+   lease:VerifiedSyncLease,row:SyncOutboxRow,expected:SyncRemoteEcho?,
+   expectedParent:SyncRemoteEcho?
   ):Boolean {
    require(lease.uid==row.accountUid)
+   beforeCommit?.invoke()
+   if(row.kind=="profile") require(expectedParent==null)
+   else {
+    val parentKey=row.accountUid+"/"+row.profileId+"/profile/"+row.profileId
+    if(expectedParent==null||documents[parentKey]!=expectedParent)return false
+   }
    if(rejectWrite||documents[key(row)]!=expected)return false
    documents[key(row)]=SyncRemoteEcho(
     row.accountUid,row.profileId,row.kind,row.recordId,row.revision,
@@ -195,9 +203,11 @@ class SyncDeliveryCoordinatorTest {
     var stored:SyncRemoteEcho?=null
     override suspend fun read(lease:VerifiedSyncLease,row:SyncOutboxRow):SyncRemoteEcho?=stored
     override suspend fun compareAndCommit(
-     lease:VerifiedSyncLease,row:SyncOutboxRow,expected:SyncRemoteEcho?
+     lease:VerifiedSyncLease,row:SyncOutboxRow,expected:SyncRemoteEcho?,
+     expectedParent:SyncRemoteEcho?
     ):Boolean {
      assertEquals("uid-A",lease.uid)
+     assertNull(expectedParent)
      assertNull(expected)
      stored=SyncRemoteEcho(row.accountUid,row.profileId,row.kind,row.recordId,
       row.revision,row.opId,row.snapshot,row.tombstone)
@@ -256,6 +266,56 @@ class SyncDeliveryCoordinatorTest {
    assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
    assertEquals(3,db.sync().totalRows())
    assertEquals(1,db.sync().conflictsForAccount("uid-A").size)
+   assertEquals(1,repo.load("a")!!.measurements.size)
+  }finally{db.close()}
+ }
+
+ @Test fun changedRemoteParentBlocksNestedChildAfterLocalParentAck():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
+    Measurement(id="waist-a",dateMs=1000L,values=mapOf("waist" to 80.0)))))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   val remote=FakeRemote()
+   val coord=SyncDeliveryCoordinator(db,SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)
+   assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
+   val parent=db.sync().latestAcknowledgedProfileForAccount("uid-A","a")!!
+   val child=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals("measurement",child.kind)
+   remote.overwrite(parent,remote.stored(parent)!!.copy(snapshot="another-device-parent-edit"))
+   // A valid Firestore parent exists but has diverged since local ACK.
+   assertEquals(SyncDeliveryStep.CONFLICT,coord.deliverOne())
+   assertEquals(listOf(child.copy(state="CONFLICT")),db.sync().conflictsForAccount("uid-A"))
+   assertEquals(1,remote.writes)
+   assertEquals(2,db.sync().totalRows())
+   assertEquals(1,repo.load("a")!!.measurements.size)
+  }finally{db.close()}
+ }
+
+ @Test fun parentChangeDuringRemoteChildTransactionRefusesWriteAndKeepsQueue():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
+    Measurement(id="metric-a",dateMs=1000L,values=mapOf("weight" to 75.0)))))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   val remote=FakeRemote()
+   val coord=SyncDeliveryCoordinator(db,SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)
+   assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
+   val parent=db.sync().latestAcknowledgedProfileForAccount("uid-A","a")!!
+   val child=db.sync().nextPendingForAccount("uid-A")!!
+   remote.beforeCommit={
+    remote.beforeCommit=null
+    remote.overwrite(parent,remote.stored(parent)!!.copy(snapshot="raced-remote-profile-edit"))
+   }
+   // Read-back was fresh before the transaction, but the atomic parent
+   // precondition rejects a child if parent changed during the write.
+   assertEquals(SyncDeliveryStep.RETRY,coord.deliverOne())
+   assertEquals(1,remote.writes)
+   assertEquals(child,db.sync().nextPendingForAccount("uid-A"))
+   assertEquals(SyncDeliveryStep.CONFLICT,coord.deliverOne())
+   assertEquals(listOf(child.copy(state="CONFLICT")),db.sync().conflictsForAccount("uid-A"))
    assertEquals(1,repo.load("a")!!.measurements.size)
   }finally{db.close()}
  }
