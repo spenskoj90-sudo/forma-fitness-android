@@ -29,7 +29,7 @@ class RecordedLoadUiTest {
    SetResult(band.id,15,0.0,7,false,1700L)
   ),Phase.STOPPED)
   rule.setContent { MaterialTheme { ProgressScreen(Profile(name="Tester",history=listOf(workout))) } }
-  rule.onNodeWithText("Объём по упражнениям:",substring=true).assertExists()
+  rule.onAllNodesWithText("Объём по упражнениям:",substring=true).assertCountEquals(3) // week, month, all-time
   rule.onNodeWithText("Жим гантелей на полу: 120.0 кг·повт",substring=true).assertExists()
   rule.onNodeWithText("Приседание с гантелью: 140.0 кг·повт",substring=true).assertExists()
   rule.onNodeWithText("Тяга резинки к поясу: сопротивление резинки",substring=true).assertExists()
