@@ -320,6 +320,40 @@ class SyncDeliveryCoordinatorTest {
   }finally{db.close()}
  }
 
+ @Test fun successiveAckedRevisionsAdvanceOnlyFromExactRemotePredecessor():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
+   val remote=FakeRemote()
+   val coord=SyncDeliveryCoordinator(db,auth,remote)
+   val initial=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals(1,initial.revision)
+   assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
+   assertEquals(1,remote.writes)
+   repo.mutate("a"){it.copy(weightKg=76.0)}
+   val second=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals(2,second.revision)
+   assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
+   assertEquals(2,remote.writes)
+   assertEquals(2,remote.stored(second)!!.revision)
+   repo.mutate("a"){it.copy(weightKg=77.0)}
+   val third=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals(3,third.revision)
+   assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
+   assertEquals(3,remote.writes)
+   assertEquals(3,remote.stored(third)!!.revision)
+   assertEquals(SyncDeliveryStep.EMPTY,coord.deliverOne())
+   assertEquals(3,remote.writes)
+   assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   assertTrue(db.sync().conflictsForAccount("uid-A").isEmpty())
+   assertEquals(3,db.sync().totalRows())
+   assertEquals(77.0,repo.load("a")!!.weightKg,0.0)
+  }finally{db.close()}
+ }
+
  @Test fun failedRemoteCompareAndSetLeavesQueuePending():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
