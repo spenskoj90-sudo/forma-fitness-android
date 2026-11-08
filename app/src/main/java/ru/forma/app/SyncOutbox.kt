@@ -79,6 +79,10 @@ data class SyncOutboxRow(
  val sets:List<SetResult>,val status:String,val activeSeconds:Int,
  val painReported:Boolean
 )
+// Keep the local→cloud path contract identical to Firestore stableId().
+// A legacy odd ID remains safe in Room; explicit binding fails atomically
+// rather than silently rewriting historical UUIDs or losing queued data.
+private val cloudDocumentId=Regex("^[A-Za-z0-9_-]{1,128}$")
 private fun Profile.cloudPayload()=CloudProfilePayload(
  name,age,heightCm,weightKg,experience.name,
  equipment.map{it.name}.sorted(),limitations,primary.name,secondary?.name,
@@ -100,8 +104,9 @@ internal suspend fun enqueueBoundChanges(db:FormaDatabase,before:Profile?,after:
  require(binding.profileId==after.id&&binding.accountUid.isNotBlank()&&binding.consentAtMs>0){
   "Verified account consent is required"
  }
+ require(cloudDocumentId.matches(after.id)){"Profile ID cannot be represented in Firestore"}
  suspend fun queue(kind:String,id:String,payload:String,tombstone:Boolean=false){
-  require(id.isNotBlank()){"Missing record ID"}
+  require(cloudDocumentId.matches(id)){"Record ID cannot be represented in Firestore"}
   val last=db.sync().latestRevision(binding.accountUid,after.id,kind,id)?:0
   require(last<Int.MAX_VALUE){"Sync revision exhausted"}
   db.sync().enqueue(SyncOutboxRow(

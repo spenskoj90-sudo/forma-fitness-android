@@ -255,6 +255,53 @@ class SyncOutboxTest {
   }
  }
 
+
+ @Test fun legacyPathIdsFailConsentWithoutMutatingOrLosingLocalHistory():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val legacy=Profile(id="legacy/profile",name="Historical")
+   repo.saveProfile(legacy) // Room supports this; Cloud Firestore path does not.
+   val other=Profile(id="safe-profile",name="Saved",
+    measurements=listOf(Measurement(id="metric/unsafe",dateMs=1000L,
+     values=mapOf("waist" to 80.0))))
+   repo.saveProfile(other)
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(legacy.id,"uid-A",100L)
+   }.isFailure)
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(other.id,"uid-A",200L)
+   }.isFailure)
+   assertNull(db.sync().binding(legacy.id))
+   assertNull(db.sync().binding(other.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(legacy,repo.load(legacy.id))
+   assertEquals(other,repo.load(other.id))
+   // A legacy profile is still usable locally and can be exported unchanged.
+   assertTrue(repo.exportBackup(legacy.id).contains(legacy.id))
+  }finally{db.close()}
+ }
+
+ @Test fun boundProfileRejectsUnsafeNewMeasurementIdAtomically():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val local=Profile(id="safe",name="Safe")
+   repo.saveProfile(local)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(local.id,"uid-A",300L)
+   val initial=db.sync().pendingForAccount("uid-A")
+   assertEquals(1,initial.size)
+   val unsafe=Measurement(id="not/a/cloud-id",dateMs=1000L,
+    values=mapOf("weight" to 75.0))
+   assertTrue(runCatching {
+    repo.mutate(local.id){it.copy(measurements=listOf(unsafe))}
+   }.isFailure)
+   assertEquals(local,repo.load(local.id))
+   assertEquals(initial,db.sync().pendingForAccount("uid-A"))
+   assertEquals(1,db.sync().totalRows())
+  }finally{db.close()}
+ }
+
  @Test fun corruptOldHistoryCannotHalfBindAndPartialQueue():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
