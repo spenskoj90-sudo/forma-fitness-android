@@ -72,10 +72,10 @@ internal class SyncDeliveryCoordinator(
      lease.uid, row.profileId, row.kind, row.recordId, row.revision - 1
     )
     if (committed?.state != "ACKED" || current.tombstone ||
-     !current.matches(committed)) return SyncDeliveryStep.CONFLICT
+     !current.matches(committed)) return park(lease, row)
     current
    }
-   else -> return SyncDeliveryStep.CONFLICT
+   else -> return park(lease, row)
   }
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
   if (!remote.compareAndCommit(lease, row, previous)) return SyncDeliveryStep.RETRY
@@ -84,6 +84,18 @@ internal class SyncDeliveryCoordinator(
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
   if (echoed?.matches(row) != true) return SyncDeliveryStep.RETRY
   return ack(lease, row)
+ }
+
+ // A genuine remote divergence must survive process death, without deleting
+ // local data, overwriting the remote, or allowing subsequent revisions for
+ // this document to be sent ahead of the conflicting one.
+ private suspend fun park(lease: VerifiedSyncLease, row: SyncOutboxRow): SyncDeliveryStep {
+  if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
+  val n = db.sync().parkExactConflict(
+   lease.uid, row.opId, row.profileId, row.kind, row.recordId,
+   row.revision, row.snapshot, row.tombstone
+  )
+  return if (n == 1) SyncDeliveryStep.CONFLICT else SyncDeliveryStep.RETRY
  }
 
  private suspend fun ack(lease: VerifiedSyncLease, row: SyncOutboxRow): SyncDeliveryStep {

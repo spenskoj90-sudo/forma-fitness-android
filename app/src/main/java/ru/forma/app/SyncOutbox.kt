@@ -44,9 +44,11 @@ data class SyncOutboxRow(
  // Parent profile must exist before nested measurement/workout creates.
  // Its final tombstone goes last, as Firestore denies writes below a deleted parent.
  // Revisions for each document remain in ascending order; never skip older events.
- @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,CASE WHEN kind='profile' AND tombstone=0 THEN 0 WHEN kind='profile' THEN 2 ELSE 1 END,kind,recordId,revision")
+ // Newer revisions of the *same* document may not skip an unresolved
+ // conflict. Other independent documents remain eligible for progress.
+ @Query("SELECT * FROM sync_outbox AS current WHERE current.state='PENDING' AND current.accountUid=:uid AND NOT EXISTS (SELECT 1 FROM sync_outbox AS older WHERE older.accountUid=current.accountUid AND older.profileId=current.profileId AND older.kind=current.kind AND older.recordId=current.recordId AND older.revision<current.revision AND older.state='CONFLICT') ORDER BY current.profileId,CASE WHEN current.kind='profile' AND current.tombstone=0 THEN 0 WHEN current.kind='profile' THEN 2 ELSE 1 END,current.kind,current.recordId,current.revision")
  suspend fun pendingForAccount(uid:String):List<SyncOutboxRow>
- @Query("SELECT * FROM sync_outbox WHERE state='PENDING' AND accountUid=:uid ORDER BY profileId,CASE WHEN kind='profile' AND tombstone=0 THEN 0 WHEN kind='profile' THEN 2 ELSE 1 END,kind,recordId,revision LIMIT 1")
+ @Query("SELECT * FROM sync_outbox AS current WHERE current.state='PENDING' AND current.accountUid=:uid AND NOT EXISTS (SELECT 1 FROM sync_outbox AS older WHERE older.accountUid=current.accountUid AND older.profileId=current.profileId AND older.kind=current.kind AND older.recordId=current.recordId AND older.revision<current.revision AND older.state='CONFLICT') ORDER BY current.profileId,CASE WHEN current.kind='profile' AND current.tombstone=0 THEN 0 WHEN current.kind='profile' THEN 2 ELSE 1 END,current.kind,current.recordId,current.revision LIMIT 1")
  suspend fun nextPendingForAccount(uid:String):SyncOutboxRow?
  // ACK is permitted only AFTER a future authenticated adapter has read back
  // an exact remote opId/revision/payload/tombstone for this verified UID.
@@ -61,6 +63,16 @@ data class SyncOutboxRow(
  // treating a different account/device revision as its own confirmed history.
  @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision LIMIT 1")
  suspend fun revisionForAccount(uid:String,profileId:String,kind:String,recordId:String,revision:Int):SyncOutboxRow?
+ // Conflicts preserve the exact local snapshot/opId and survive process death.
+ // No remote conflicting payload is stored until reviewed by an authenticated
+ // conflict UI. Only a future explicit review flow may resolve this state.
+ @Query("UPDATE sync_outbox SET state='CONFLICT' WHERE state='PENDING' AND accountUid=:uid AND opId=:opId AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision AND snapshot=:snapshot AND tombstone=:tombstone")
+ suspend fun parkExactConflict(
+  uid:String,opId:String,profileId:String,kind:String,recordId:String,
+  revision:Int,snapshot:String,tombstone:Boolean
+ ):Int
+ @Query("SELECT * FROM sync_outbox WHERE state='CONFLICT' AND accountUid=:uid ORDER BY profileId,kind,recordId,revision")
+ suspend fun conflictsForAccount(uid:String):List<SyncOutboxRow>
  @Query("SELECT MAX(revision) FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId")
  suspend fun latestRevision(uid:String,profileId:String,kind:String,recordId:String):Int?
  @Insert(onConflict=OnConflictStrategy.ABORT)

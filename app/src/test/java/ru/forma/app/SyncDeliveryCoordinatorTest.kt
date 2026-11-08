@@ -121,16 +121,64 @@ class SyncDeliveryCoordinatorTest {
    val firstRemote=remote.stored(revised)!!
    remote.overwrite(revised,firstRemote.copy(snapshot="conflicting edit"))
    assertEquals(SyncDeliveryStep.CONFLICT,coordinator.deliverOne())
-   assertEquals(revised,db.sync().nextPendingForAccount("uid-A"))
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
+   assertEquals(listOf(revised.copy(state="CONFLICT")),db.sync().conflictsForAccount("uid-A"))
    assertEquals(1,remote.writes)
-   // Only a precise previously confirmed remote predecessor permits update.
+   // Even if the remote later changes, never silently retry a conflict.
    remote.overwrite(revised,firstRemote)
-   assertEquals(SyncDeliveryStep.ACKED,coordinator.deliverOne())
-   assertEquals(2,remote.writes)
-   assertEquals(2,db.sync().totalRows())
+   assertEquals(SyncDeliveryStep.EMPTY,coordinator.deliverOne())
+   repo.mutate("a"){it.copy(weightKg=81.0)}
+   assertEquals(3,db.sync().totalRows())
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
    assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   assertEquals(1,db.sync().conflictsForAccount("uid-A").size)
+   assertEquals(1,remote.writes)
    assertEquals(original.opId,firstRemote.opId)
   }finally{db.close()}
+ }
+
+
+ @Test fun conflictSurvivesRestartAndRemainsPrivateToItsVerifiedUid():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-durable-conflict-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+   .addMigrations(MIGRATION_1_2).build()
+  try {
+   var repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice"))
+   repo.saveProfile(Profile(id="b",name="Bob"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b","uid-B",200L)
+   val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
+   val remote=FakeRemote()
+   val a=db.sync().nextPendingForAccount("uid-A")!!
+   remote.overwrite(a,SyncRemoteEcho("uid-A","a","profile","a",1,
+    "different-device-op","remote-content",false))
+   assertEquals(SyncDeliveryStep.CONFLICT,SyncDeliveryCoordinator(db,auth,remote).deliverOne())
+   val parked=db.sync().conflictsForAccount("uid-A").single()
+   assertEquals(a.copy(state="CONFLICT"),parked)
+   assertTrue(db.sync().conflictsForAccount("uid-B").isEmpty())
+   assertEquals(0,remote.writes)
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+    .addMigrations(MIGRATION_1_2).build()
+   repo=ProfileRepository(db)
+   assertEquals(listOf(parked),db.sync().conflictsForAccount("uid-A"))
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
+   assertTrue(db.sync().conflictsForAccount("uid-B").isEmpty())
+   assertEquals("Alice",repo.load("a")!!.name)
+   auth.active=VerifiedSyncLease("uid-B",2L)
+   assertEquals(SyncDeliveryStep.ACKED,SyncDeliveryCoordinator(db,auth,remote).deliverOne())
+   assertEquals(1,remote.writes)
+   assertEquals(listOf(parked),db.sync().conflictsForAccount("uid-A"))
+   // Local edit after divergence remains in Room but cannot jump the
+   // conflicting earlier document revision.
+   repo.mutate("a"){it.copy(weightKg=88.0)}
+   assertEquals(88.0,repo.load("a")!!.weightKg,0.0)
+   assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   assertEquals(3,db.sync().totalRows())
+  }finally{db.close();ctx.deleteDatabase(name)}
  }
 
  @Test fun failedRemoteCompareAndSetLeavesQueuePending():Unit=runBlocking {
