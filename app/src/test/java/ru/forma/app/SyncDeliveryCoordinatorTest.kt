@@ -224,6 +224,42 @@ class SyncDeliveryCoordinatorTest {
   }finally{db.close()}
  }
 
+ @Test fun conflictingParentProfileBlocksNestedUploadsButNotAnotherProfile():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
+    Measurement(id="m-a",dateMs=1000L,values=mapOf("weight" to 75.0)))))
+   repo.saveProfile(Profile(id="z",name="Other"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("z","uid-A",200L)
+   assertEquals(3,db.sync().totalRows())
+   val identity=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
+   val remote=FakeRemote()
+   val coordinator=SyncDeliveryCoordinator(db,identity,remote)
+   val first=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals("a",first.profileId)
+   assertEquals("profile",first.kind)
+   // Same verified UID, but the remote parent was created by another device
+   // with a different operation. We must not attach local measurements to it.
+   remote.overwrite(first,SyncRemoteEcho("uid-A","a","profile","a",1,
+    "other-device-op","remote-profile-content",false))
+   assertEquals(SyncDeliveryStep.CONFLICT,coordinator.deliverOne())
+   assertEquals("a",db.sync().conflictsForAccount("uid-A").single().profileId)
+   // The child measurement is still PENDING in Room, but is not eligible
+   // for any remote operation until the profile conflict is reviewed.
+   assertEquals(listOf("z"),db.sync().pendingForAccount("uid-A").map{it.profileId})
+   assertEquals("z",db.sync().nextPendingForAccount("uid-A")!!.profileId)
+   assertEquals(SyncDeliveryStep.ACKED,coordinator.deliverOne())
+   assertEquals(1,remote.writes)
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
+   assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   assertEquals(3,db.sync().totalRows())
+   assertEquals(1,db.sync().conflictsForAccount("uid-A").size)
+   assertEquals(1,repo.load("a")!!.measurements.size)
+  }finally{db.close()}
+ }
+
  @Test fun failedRemoteCompareAndSetLeavesQueuePending():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
