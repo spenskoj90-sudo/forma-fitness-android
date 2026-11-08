@@ -213,13 +213,27 @@ class JourneyTest{
   val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val requestsBefore=secondSaveVm.profileSaveRequests.value
   val touchBefore=secondSaveVm.profileSaveTouchEvidence.value
-  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled()
+  // A Compose semantics node can be "displayed" even while the OS IME covers
+  // its screen position during an API26 resize. Require the smaller IME-open
+  // viewport to settle BEFORE the single physical Save touch; never retry.
+  if(Build.VERSION.SDK_INT==26){
+   composeRule.waitUntil(10000){
+    composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.height <
+     composeRule.activity.resources.displayMetrics.heightPixels*0.8f
+   }
+  }
+  composeRule.waitForIdle()
+  val saveBefore=composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
+   .assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+  val rootBefore=composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+  assertTrue("Save must be inside the actual resized app viewport: save=$saveBefore root=$rootBefore",
+   saveBefore.bottom<=rootBefore.bottom && saveBefore.top>=rootBefore.top)
   click("Сохранить профиль")
   if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
    runCatching{screenshot("second-profile-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-TOUCH-MISSED")}
    val touchAfter=secondSaveVm.profileSaveTouchEvidence.value
-   fail("One visible Save-button touch did not dispatch to ViewModel: "+
+   fail("One visible Save-button touch did not dispatch to ViewModel: saveBefore=$saveBefore rootBefore=$rootBefore; "+
     "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}, "+
     "press=${touchAfter.presses-touchBefore.presses}, "+
     "release=${touchAfter.releases-touchBefore.releases}, "+
