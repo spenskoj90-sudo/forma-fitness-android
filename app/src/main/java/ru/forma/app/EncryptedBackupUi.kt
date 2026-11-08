@@ -3,6 +3,8 @@ package ru.forma.app
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,6 +19,7 @@ import java.time.LocalDate
  */
 @Composable internal fun EncryptedBackupPanel(vm:FormaViewModel) {
  val busy by vm.encryptedBackupBusy.collectAsState()
+ val selectedProfile by vm.current.collectAsState()
  // 0 closed, 1 selected-profile export, 2 explicitly all-profile export,
  // 3 restore encrypted copy. Never persist passwords across process death.
  var mode by remember{mutableIntStateOf(0)}
@@ -24,13 +27,14 @@ import java.time.LocalDate
  var confirmation by remember{mutableStateOf("")}
  var staged by remember{mutableStateOf<CharArray?>(null)}
  var stagedAll by remember{mutableStateOf(false)}
+ var stagedProfileId by remember{mutableStateOf<String?>(null)}
 
  val export=rememberLauncherForActivityResult(
   ActivityResultContracts.CreateDocument("application/octet-stream")
  ){uri->
   val secret=staged
   staged=null
-  if(uri!=null&&secret!=null)vm.exportEncryptedBackup(uri,secret,stagedAll)
+  if(uri!=null&&secret!=null)vm.exportEncryptedBackup(uri,secret,stagedAll,stagedProfileId)
   else {
    secret?.fill('\u0000')
    if(uri!=null)vm.error.value="Пароль не сохранился после выбора файла. Повторите создание копии."
@@ -70,7 +74,7 @@ import java.time.LocalDate
    onDismissRequest={dismiss()},
    title={Text(if(isRestore)"Открыть защищённую копию" else "Задать пароль копии")},
    text={
-    Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+    Column(modifier=Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
      if(mode==2)Text("Файл включит персональные данные ВСЕХ локальных пользователей. Создавайте его только с их разрешения.")
      Text(if(isRestore)
       "Введите пароль этой копии. При ошибке файл не будет импортирован и существующие данные останутся без изменений."
@@ -97,6 +101,7 @@ import java.time.LocalDate
      staged?.fill('\u0000')
      staged=secret
      stagedAll=option==2
+     stagedProfileId=if(option==1)selectedProfile?.id else null
      if(option==3)restore.launch(arrayOf("*/*"))
      else export.launch("FORMA-" +
       (if(option==2)"all-profiles-" else "profile-") +

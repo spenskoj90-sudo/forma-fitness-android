@@ -172,12 +172,12 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  // Passwords stay transient and are cleared after the IO operation completes.
  // No permanent encryption key, remote upload or password persistence.
  internal val encryptedBackupBusy=MutableStateFlow(false)
- fun exportEncryptedBackup(uri:Uri,password:CharArray,allProfiles:Boolean=false){
+ fun exportEncryptedBackup(uri:Uri,password:CharArray,allProfiles:Boolean=false,expectedProfileId:String?=null){
   if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
-  val selected=if(allProfiles)null else current.value?.id
-  if(!allProfiles&&selected==null){
+  val selected=if(allProfiles)null else expectedProfileId
+  if(!allProfiles&&(selected==null||current.value?.id!=selected)){
    password.fill('\u0000');encryptedBackupBusy.value=false
-   error.value="Выберите профиль для резервной копии"
+   error.value="Текущий профиль сменился. Повторите создание копии."
    return
   }
   action{
