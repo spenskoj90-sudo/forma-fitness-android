@@ -146,6 +146,51 @@ class SyncOutboxTest {
    assertEquals(historical.history,repo.load(guest.id)!!.history)
   }finally{db.close()}
  }
+
+ @Test fun consentedBacklogSurvivesReopenWithoutCrossAccountReplay():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-consented-outbox-restart-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+   .addMigrations(MIGRATION_1_2).build()
+  try {
+   var repo=ProfileRepository(db)
+   val a=Profile(id="offline-a",name="Alice",
+    measurements=listOf(Measurement(id="measure-a",dateMs=1000L,
+     values=mapOf("weight" to 75.0))))
+   repo.saveProfile(a)
+   repo.saveProfile(Profile(id="offline-b",name="Bob"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",3000L)
+   val original=db.sync().pendingForAccount("uid-A")
+   assertEquals(2,original.size)
+   assertEquals(setOf("profile","measurement"),original.map{it.kind}.toSet())
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   db.close()
+
+   // Simulates process death/account B signing in while A's work is pending.
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+    .addMigrations(MIGRATION_1_2).build()
+   repo=ProfileRepository(db)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   assertEquals("uid-A",db.sync().binding("offline-a")!!.accountUid)
+   assertNull(db.sync().binding("offline-b"))
+   assertEquals(a,repo.load("offline-a"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b","uid-B",4000L)
+   val bRows=db.sync().pendingForAccount("uid-B")
+   assertEquals(1,bRows.size)
+   assertEquals("offline-b",bRows.single().profileId)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   // Retrying A consent after restart must not generate new revisions.
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",5000L)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   assertEquals(3,db.sync().totalRows())
+  }finally{
+   db.close()
+   ctx.deleteDatabase(name)
+  }
+ }
+
  @Test fun corruptOldHistoryCannotHalfBindAndPartialQueue():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
