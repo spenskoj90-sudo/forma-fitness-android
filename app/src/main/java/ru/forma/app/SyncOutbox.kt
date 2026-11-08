@@ -57,6 +57,10 @@ data class SyncOutboxRow(
   uid:String,opId:String,profileId:String,kind:String,recordId:String,
   revision:Int,snapshot:String,tombstone:Boolean
  ):Int
+ // Comparing remote predecessor prevents a newly connected device from
+ // treating a different account/device revision as its own confirmed history.
+ @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision LIMIT 1")
+ suspend fun revisionForAccount(uid:String,profileId:String,kind:String,recordId:String,revision:Int):SyncOutboxRow?
  @Query("SELECT MAX(revision) FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId")
  suspend fun latestRevision(uid:String,profileId:String,kind:String,recordId:String):Int?
  @Insert(onConflict=OnConflictStrategy.ABORT)
