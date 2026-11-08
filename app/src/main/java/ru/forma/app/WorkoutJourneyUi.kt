@@ -43,7 +43,7 @@ import ru.forma.domain.*
  if(logged.isNotEmpty()) {
   Text("Записанные результаты упражнения",style=MaterialTheme.typography.titleSmall)
   logged.forEachIndexed { recordIndex,result ->
-   val load=recordedSetLoadDisplay(result,current.exercise.equipment)
+   val load=recordedExerciseLoadDisplay(result,current.exercise)
    Text("Запись ${recordIndex+1}: $load · ${result.reps} повторений · сложность ${result.effort}/10",style=MaterialTheme.typography.bodyMedium)
   }
  }

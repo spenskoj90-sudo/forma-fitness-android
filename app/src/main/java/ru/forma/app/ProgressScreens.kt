@@ -171,8 +171,8 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   Text(dateLabel(w.finishedMs))
   Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов")
   w.sets.forEach{s->
-   val recordedEquipment=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment
-   Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${recordedSetLoadDisplay(s,recordedEquipment)} × ${s.reps} · сложность ${s.effort}")
+   val recordedExercise=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise
+   Text("${recordedExercise?.name?:s.exerciseId}: ${recordedExerciseLoadDisplay(s,recordedExercise)} × ${s.reps} · сложность ${s.effort}")
   }
  }}
  if(p.history.size>10){
@@ -186,10 +186,10 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
    context.startActivity(Intent.createChooser(send,"Отчёт FORMA"))
   })
  }
- listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByGear=recordedLoadVolumeByEquipment(records);Text("Записанный объём: кг × повторения; значения разных снарядов не суммируются.")
- if(loadByGear.isEmpty())Text("Подходы без записанного дополнительного веса.")
- else loadByGear.forEach{(gear,total)->
-  Text("${gear.label}: ${"%.1f".format(total)} кг·повт (${recordedLoadUnit(gear)})")
+ listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByExercise=recordedLoadVolumeByExercise(records);Text("Объём по упражнениям: кг × повторения. Для пары гантелей указан вес одной, без удвоения. Разные упражнения и тренажёры не суммируются.")
+ if(loadByExercise.isEmpty())Text("Подходы без записанного дополнительного веса.")
+ else loadByExercise.forEach{entry->
+  Text("${entry.exercise.name}: ${"%.1f".format(entry.kgRepetitions)} кг·повт (${recordedExerciseLoadUnit(entry.exercise)})")
  };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
 
  if(p.history.any{it.sets.isNotEmpty()}){
@@ -199,12 +199,12 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   if(chartsExpanded){
  p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){val savedEquipment=p.history.asSequence().flatMap{it.day.exercises.asSequence()}
   .firstOrNull{it.exercise.id==id}?.exercise?.equipment
- if(savedEquipment==Equipment.BODYWEIGHT){
-  Text("Собственный вес · максимум: ${sets.maxOf{it.reps}} повторений")
+ if(savedEquipment!=null&&!recordsExternalKilograms(savedEquipment)){
+  Text("${if(savedEquipment==Equipment.RESISTANCE_BAND)"Резинка (сопротивление без кг)" else "Собственный вес"} · максимум: ${sets.maxOf{it.reps}} повторений")
   HistoryChart(sets.map{ChartSample(it.timeMs,it.reps.toDouble())},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,"повторений")
  }else{
-  Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
-  HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")
+  Text("Максимум: ${sets.maxOf{it.weight}} ${p.history.asSequence().flatMap{it.day.exercises.asSequence()}.firstOrNull{it.exercise.id==id}?.exercise?.let(::recordedExerciseLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
+  HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,p.history.asSequence().flatMap{it.day.exercises.asSequence()}.firstOrNull{it.exercise.id==id}?.exercise?.let(::recordedExerciseLoadUnit)?:"кг (единица не определена)")
  }}}
   }
  }

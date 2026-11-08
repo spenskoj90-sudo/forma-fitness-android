@@ -389,12 +389,14 @@ private val editableProfileSaver=Saver<Profile,String>(
       Panel("Текущий подход"){
        Text("Текущий",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
        Text("Подход "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
-      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
+      if(recordsExternalKilograms(current.exercise.equipment))NumericField(recordedLoadInputLabel(current.exercise),weight){weight=it}
+      else Text(unmeasuredLoadExplanation(current.exercise.equipment),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
       Slider(effort,{effort=it},modifier=Modifier.semantics{contentDescription="Сложность подхода от 1 до 10"},valueRange=1f..10f,steps=8)
       val w=number(weight);val n=reps.toIntOrNull()
-      Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
+      val measuredLoad=recordsExternalKilograms(current.exercise.equipment)
+      Action("Подход выполнен",{vm.done(s.id,if(measuredLoad)w?:0.0 else 0.0,n?:1,effort.toInt(),false)},!s.paused&&(!measuredLoad||(w!=null&&w in 0.0..500.0))&&n!=null&&n in 1..100)
      }
      // The detailed read-only list is optional: older phones should show the set action first.
      var setPlanExpanded by rememberSaveable(s.id,s.exerciseIndex){mutableStateOf(false)}
