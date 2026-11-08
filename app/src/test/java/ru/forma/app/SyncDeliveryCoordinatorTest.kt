@@ -181,6 +181,49 @@ class SyncDeliveryCoordinatorTest {
   }finally{db.close();ctx.deleteDatabase(name)}
  }
 
+ @Test fun switchingIdentityAfterRemoteCommitCannotAcknowledgeOldAccount():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Alice"))
+   repo.saveProfile(Profile(id="b",name="Bob"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b","uid-B",200L)
+   val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
+   val remote=object:AuthenticatedSyncRemote {
+    var writes=0
+    var stored:SyncRemoteEcho?=null
+    override suspend fun read(lease:VerifiedSyncLease,row:SyncOutboxRow):SyncRemoteEcho?=stored
+    override suspend fun compareAndCommit(
+     lease:VerifiedSyncLease,row:SyncOutboxRow,expected:SyncRemoteEcho?
+    ):Boolean {
+     assertEquals("uid-A",lease.uid)
+     assertNull(expected)
+     stored=SyncRemoteEcho(row.accountUid,row.profileId,row.kind,row.recordId,
+      row.revision,row.opId,row.snapshot,row.tombstone)
+     writes++
+     // Sign-out/sign-in occurs after the remote commit but before readback.
+     auth.active=VerifiedSyncLease("uid-B",2L)
+     return true
+    }
+   }
+   val coordinator=SyncDeliveryCoordinator(db,auth,remote)
+   val pendingA=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals(SyncDeliveryStep.SESSION_CHANGED,coordinator.deliverOne())
+   assertEquals(1,remote.writes)
+   assertEquals(pendingA,db.sync().nextPendingForAccount("uid-A"))
+   assertEquals(1,db.sync().pendingForAccount("uid-B").size)
+   assertTrue(db.sync().conflictsForAccount("uid-A").isEmpty())
+   // After A signs in again, the server echo is sufficient for an exact
+   // local ACK; the already committed write must not be repeated.
+   auth.active=VerifiedSyncLease("uid-A",3L)
+   assertEquals(SyncDeliveryStep.ACKED,coordinator.deliverOne())
+   assertEquals(1,remote.writes)
+   assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   assertEquals(1,db.sync().pendingForAccount("uid-B").size)
+  }finally{db.close()}
+ }
+
  @Test fun failedRemoteCompareAndSetLeavesQueuePending():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {
