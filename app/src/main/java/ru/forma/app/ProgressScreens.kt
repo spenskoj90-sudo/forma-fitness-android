@@ -1,5 +1,7 @@
 package ru.forma.app
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -156,6 +158,9 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
 @Composable fun ProgressScreen(p:Profile){
  var visibleCount by rememberSaveable(p.id){mutableIntStateOf(10)}
  var chartsExpanded by rememberSaveable(p.id){mutableStateOf(false)}
+ // Transient in-memory preview: no Bundle/DataStore/Room persistence or cross-profile carryover.
+ var reportPreview by remember(p.id){mutableStateOf<String?>(null)}
+ var reportError by remember(p.id){mutableStateOf<String?>(null)}
  val visibleHistory=remember(p.history,visibleCount){recentWorkoutHistory(p.history,visibleCount)}
  val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
  val context=LocalContext.current
@@ -182,12 +187,36 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   if(visibleHistory.size<p.history.size)OutlinedButton({visibleCount=(visibleCount+10).coerceAtMost(p.history.size)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Показать ещё тренировки")}
  }
  Panel("Еженедельный отчёт"){
-  Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
+  Text("Отчёт содержит имя профиля, цель и результаты тренировок. Перед передачей в другое приложение его можно просмотреть и отменить.")
   Action("Поделиться отчётом",{
-   val send=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,weeklyReport(p,now))}
-   context.startActivity(Intent.createChooser(send,"Отчёт FORMA"))
+   reportError=null
+   reportPreview=weeklyReport(p,now)
   })
+  if(reportError!=null)Text(reportError!!,color=MaterialTheme.colorScheme.error)
  }
+ // The preview must match the bytes sent; switching profile resets this state.
+ val preview=reportPreview
+ if(preview!=null)AlertDialog(
+  onDismissRequest={reportPreview=null},
+  title={Text("Поделиться недельным отчётом?")},
+  text={
+   Column(Modifier.heightIn(max=320.dp).verticalScroll(rememberScrollState()),
+    verticalArrangement=Arrangement.spacedBy(10.dp)){
+    Text("Ниже именно те данные, которые будут переданы. Проверьте получателя в системном меню. Ничего не отправляется без вашего подтверждения.")
+    Text(preview,style=MaterialTheme.typography.bodySmall)
+   }
+  },
+  confirmButton={TextButton(onClick={
+   reportPreview=null
+   val intent=Intent(Intent.ACTION_SEND).apply{
+    type="text/plain"
+    putExtra(Intent.EXTRA_TEXT,preview)
+   }
+   runCatching{context.startActivity(Intent.createChooser(intent,"Отчёт FORMA"))}
+    .onFailure{reportError="На устройстве не удалось открыть выбор приложения для отправки. Отчёт остаётся локальным."}
+  }){Text("Открыть выбор приложения")}},
+  dismissButton={TextButton(onClick={reportPreview=null}){Text("Отмена")}}
+ )
  listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByExercise=recordedLoadVolumeByExercise(records);Text("Объём по упражнениям: кг × повторения. Для пары гантелей указан вес одной, без удвоения. Разные упражнения и тренажёры не суммируются.")
  if(loadByExercise.isEmpty())Text("Подходы без записанного дополнительного веса.")
  else loadByExercise.forEach{entry->
