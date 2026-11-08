@@ -137,6 +137,7 @@ jobs:
             verification/home-responsive-api${{ matrix.api }}.txt
             verification/report-consent-api${{ matrix.api }}.txt
             verification/profile-edit-exit-api${{ matrix.api }}.txt
+            verification/body-history-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

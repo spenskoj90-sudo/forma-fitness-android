@@ -1,5 +1,7 @@
 package ru.forma.app
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import android.content.Intent
@@ -109,10 +111,15 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
  var draftDateMs by rememberSaveable(p.id){mutableLongStateOf(System.currentTimeMillis())}
  val submittingDraftId=draftId
  var selected by rememberSaveable(p.id){mutableStateOf("weight")}
+ var shownMeasurements by rememberSaveable(p.id){mutableIntStateOf(10)}
+ val measurementEditorRequester=remember{BringIntoViewRequester()}
+ LaunchedEffect(editingId){if(editingId!=null)measurementEditorRequester.bringIntoView()}
+ val orderedMeasurements=remember(p.measurements){p.measurements.sortedWith(compareByDescending<Measurement>{it.dateMs}.thenByDescending{it.id})}
  val editing=p.measurements.firstOrNull{it.id==editingId}
  val missingEditedRecord=editingId!=null&&editing==null
  Page("Моё тело","Замеры в одинаковых условиях помогают видеть изменения."){
   Panel("Манекен · параметры тела"){BodyMannequin(p)}
+  Box(Modifier.fillMaxWidth().bringIntoViewRequester(measurementEditorRequester)){
   Panel(if(editingId==null)"Новый замер" else "Исправить замер"){
    if(missingEditedRecord)Text("Исходная запись больше недоступна. Отмените исправление, чтобы не создать случайный дубликат.")
    measurementLabels.forEach{(key,label)->
@@ -132,6 +139,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
     draftDateMs=System.currentTimeMillis()
    }){Text("Отменить исправление")}
   }
+  }
   Panel("Динамика"){
    measurementLabels.forEach{(key,label)->TextButton({selected=key}){
     Text(if(selected==key)"✓ $label" else label)
@@ -144,13 +152,25 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
    HistoryChart(samples,measurementLabels[selected].orEmpty(),unit)
    if(samples.isNotEmpty())Text("Первый: ${samples.first().value} $unit · последний: ${samples.last().value} $unit")
   }
-  p.measurements.sortedByDescending{it.dateMs}.forEach{m->
-   Panel(dateLabel(m.dateMs)){
-    m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")}
-    TextButton({
-     editingId=m.id
-     values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}
-    }){Text("Исправить запись")}
+  Panel("История замеров"){
+   if(orderedMeasurements.isEmpty())Text("Сохранённых замеров пока нет.")
+   else {
+    Text("Показано ${minOf(shownMeasurements,orderedMeasurements.size)} из ${orderedMeasurements.size} замеров. Все записи хранятся локально и не удаляются при сворачивании списка.",
+     style=MaterialTheme.typography.bodySmall)
+    orderedMeasurements.take(shownMeasurements).forEach{m->
+     Panel(dateLabel(m.dateMs)){
+      m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")}
+      TextButton({
+       editingId=m.id
+       values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}
+      },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Исправить запись")}
+     }
+    }
+    if(shownMeasurements<orderedMeasurements.size)OutlinedButton({
+     shownMeasurements=(shownMeasurements+10).coerceAtMost(orderedMeasurements.size)
+    },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("body-measurements-more")){
+     Text("Показать ещё замеры")
+    }
    }
   }
  }
