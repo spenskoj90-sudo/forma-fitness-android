@@ -33,7 +33,7 @@ internal fun canRenderProfileUi(
  return current?.id==expected?.id
 }
 // Non-identifying in-memory gesture diagnostics for IME/Save regressions.
-internal enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
+enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
 internal data class SaveTouchEvidence(val presses:Int=0,val releases:Int=0,val cancels:Int=0)
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
