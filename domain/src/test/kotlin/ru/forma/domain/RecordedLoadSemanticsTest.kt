@@ -36,6 +36,21 @@ class RecordedLoadSemanticsTest {
   assertFalse(rows.any{it.exercise.id=="band_row"})
  }
 
+ @Test fun plannerNeverReusesHistoricalUnmeasuredKilogramsAsNewPrescription(){
+  val band=exerciseCatalog.single{it.id=="band_row"}
+  val p=Profile(id="a",name="Test",
+   equipment=setOf(Equipment.BODYWEIGHT,Equipment.RESISTANCE_BAND))
+  val day=TrainingDay(1,"Legacy",exercises=listOf(Prescription(band,1,12)))
+  val legacy=Workout("legacy",day,1000L,2000L,listOf(
+   SetResult("band_row",12,30.0,7,false,1500L)),Phase.DONE)
+  val program=generateProgram(p.copy(history=listOf(legacy)),now=3000L)
+  val unmeasured=program.flatMap{it.exercises}
+   .filter{!recordsExternalKilograms(it.exercise.equipment)}
+  assertTrue(unmeasured.isNotEmpty())
+  assertTrue(unmeasured.all{it.weight==0.0})
+  assertTrue(unmeasured.all{it.reason.contains("кг")})
+ }
+
  @Test fun unmeasuredBandAndBodyweightRecordZeroWithoutInventingKilograms(){
   val band=exercise("band_row")
   val body=exercise("squat")

@@ -328,6 +328,8 @@ private val editableProfileSaver=Saver<Profile,String>(
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
    Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
+   if(recordsExternalKilograms(item.exercise.equipment))Text("Плановый вес: ${item.weight} ${recordedExerciseLoadUnit(item.exercise)}",style=MaterialTheme.typography.bodySmall)
+   else Text(unmeasuredLoadExplanation(item.exercise.equipment),style=MaterialTheme.typography.bodySmall)
    val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
    if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
   }
