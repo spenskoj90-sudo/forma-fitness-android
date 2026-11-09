@@ -242,7 +242,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
  if(loadByExercise.isEmpty())Text("Подходы без записанного дополнительного веса.")
  else loadByExercise.forEach{entry->
   Text("${entry.exercise.name}: ${"%.1f".format(entry.kgRepetitions)} кг·повт (${recordedExerciseLoadUnit(entry.exercise)})")
- };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
+ };Text("Активное время тренировок с кардио: ${recordedCardioSessionActiveSeconds(records)/60} мин (включая разминку и другие этапы таких занятий)")}}
 
  if(p.history.any{it.sets.isNotEmpty()}){
   OutlinedButton({chartsExpanded=!chartsExpanded},Modifier.fillMaxWidth().heightIn(min=52.dp)){
@@ -263,10 +263,16 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
 }}
 
 /** Local-only export: no automatic server upload of personal fitness data. */
+/** Recorded time of sessions that include cardio; also includes other stages of mixed days. */
+internal fun recordedCardioSessionActiveSeconds(records:List<Workout>):Long =
+ records.asSequence().filter{it.day.cardio!=null &&
+  (it.status==Phase.DONE||it.status==Phase.STOPPED)}
+  .sumOf{it.activeSeconds.coerceAtLeast(0).toLong()}
+
 fun weeklyReport(p:Profile,now:Long=System.currentTimeMillis()):String{
  val records=p.history.filter{it.finishedMs>=weekStart(now)&&it.finishedMs<=now}
  val sets=records.flatMap{it.sets}
- val cardio=records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.activeSeconds}/60
+ val cardio=recordedCardioSessionActiveSeconds(records)
  return buildString{
   appendLine("FORMA · недельный отчёт")
   appendLine("Профиль: "+p.name)
@@ -274,7 +280,7 @@ fun weeklyReport(p:Profile,now:Long=System.currentTimeMillis()):String{
   appendLine("Завершено: "+records.count{it.status==Phase.DONE})
   appendLine("Остановлено: "+records.count{it.status==Phase.STOPPED})
   appendLine("Подходы: "+sets.size+"; повторения: "+sets.sumOf{it.reps})
-  appendLine("Кардио: "+cardio+" минут активного времени")
+  appendLine("Активное время тренировок с кардио: ${cardio/60} мин ${cardio%60} сек (включая другие этапы таких занятий)")
   appendLine("Цель: "+p.primary.label)
   append("Сводка локальная; не является медицинским заключением.")
  }
