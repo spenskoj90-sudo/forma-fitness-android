@@ -31,7 +31,18 @@ data class SyncOutboxRow(
  val tombstone:Boolean,
  val createdAtMs:Long
 )
+/**
+ * Aggregate counts have no account data or JSON snapshots. This does not
+ * establish remote delivery and must be queried only under a verified lease.
+ */
+internal data class SyncOutboxCounts(
+ val total:Int,val pending:Int,val conflicts:Int,val acknowledged:Int
+)
+
 @Dao interface SyncOutboxDao {
+ @Query("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN state='PENDING' THEN 1 ELSE 0 END), 0) AS pending, COALESCE(SUM(CASE WHEN state='CONFLICT' THEN 1 ELSE 0 END), 0) AS conflicts, COALESCE(SUM(CASE WHEN state='ACKED' THEN 1 ELSE 0 END), 0) AS acknowledged FROM sync_outbox WHERE accountUid=:uid")
+ suspend fun countsForVerifiedAccount(uid:String):SyncOutboxCounts
+
  @Query("SELECT * FROM sync_bindings WHERE profileId=:profileId")
  suspend fun binding(profileId:String):SyncBindingRow?
  // Only used by synthetic tests until explicit, verified Auth consent exists.
