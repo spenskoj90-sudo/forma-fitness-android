@@ -110,7 +110,7 @@ class SyncStatusReaderTest {
   try {
    db.sync().enqueue(SyncOutboxRow(
     "fake-op","uid-A","profile","profile","profile",1,
-    "{\\\"notExported\\\":true}","UNKNOWN",false,1L
+    """{"notExported":true}""","UNKNOWN",false,1L
    ))
    val lease=VerifiedSyncLease("uid-A",1L)
    val result=runCatching{SyncStatusReader(db,identity(lease,lease)).read()}

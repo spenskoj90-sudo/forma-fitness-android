@@ -35,7 +35,7 @@ data class SyncOutboxRow(
  * Aggregate counts have no account data or JSON snapshots. This does not
  * establish remote delivery and must be queried only under a verified lease.
  */
-internal data class SyncOutboxCounts(
+data class SyncOutboxCounts(
  val total:Int,val pending:Int,val conflicts:Int,val acknowledged:Int
 )
 
