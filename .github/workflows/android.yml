@@ -135,6 +135,7 @@ jobs:
             verification/technique-catalog-api${{ matrix.api }}.txt
             verification/accessibility-api${{ matrix.api }}.txt
             verification/home-responsive-api${{ matrix.api }}.txt
+            verification/profile-header-api${{ matrix.api }}.txt
             verification/report-consent-api${{ matrix.api }}.txt
             verification/profile-edit-exit-api${{ matrix.api }}.txt
             verification/body-history-api${{ matrix.api }}.txt

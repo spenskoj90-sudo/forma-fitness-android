@@ -58,6 +58,27 @@ class MainActivity:ComponentActivity(){
 
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{FormaRoot(vm)}}
 }
+/** Keep the complete selected identity available to TalkBack even when visually elided.
+ * The weighted name never pushes the brand outside a small 2x-font viewport.
+ */
+@Composable internal fun FormaBrandAndProfileHeader(profileName:String?) {
+ Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+  Text("FORM",style=MaterialTheme.typography.headlineMedium,
+   fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.onSurface)
+  Text("A",style=MaterialTheme.typography.headlineMedium,
+   fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)
+  if(profileName!=null)Text(
+   profileName,
+   modifier=Modifier.weight(1f).padding(start=12.dp)
+    .testTag("active-profile-header")
+    .semantics { contentDescription="Активный профиль: $profileName" },
+   maxLines=2,
+   overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+   color=MaterialTheme.colorScheme.onSurfaceVariant,
+   style=MaterialTheme.typography.labelMedium
+  )
+ }
+}
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
  val p by vm.current.collectAsState()
@@ -87,8 +108,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
       val exerciseCount=active.day.exercises.size
       Text(if(exerciseCount>0)"${(active.exerciseIndex+1).coerceAtMost(exerciseCount)}/$exerciseCount" else active.day.cardio?.label.orEmpty(),style=MaterialTheme.typography.titleMedium,color=colors.onSurfaceVariant)
      }else{
-      Row(verticalAlignment=Alignment.CenterVertically){Text("FORM",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.onSurface);Text("A",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.primary)}
-      p?.let{Text(it.name.take(22),Modifier.padding(start=14.dp),color=colors.onSurfaceVariant,maxLines=1,style=MaterialTheme.typography.labelMedium)}
+      FormaBrandAndProfileHeader(p?.name)
      }
     }
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
