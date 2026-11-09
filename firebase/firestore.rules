@@ -54,24 +54,38 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)) &&
         get(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)).data.deleted == false;
     }
+    function goalCodes() {
+      return ['MUSCLE', 'STRENGTH', 'ENDURANCE', 'FITNESS', 'FAT_LOSS'];
+    }
     function validProfile(p) {
-      // Never upload a live workout, journal or unsaved editing draft as a
-      // nested profile value. Completed workouts and measurements have own IDs.
-      return p.keys().hasAll(['name', 'age', 'heightCm', 'weightKg']) &&
-        p.keys().hasOnly(['name', 'age', 'heightCm', 'weightKg',
-          'experience', 'equipment', 'limitations', 'primary',
-          'secondary', 'priorities', 'days', 'recovery']) &&
+      // Match CloudProfilePayload, not an arbitrary Firebase-authenticated map.
+      // Local Room-only history and active workout never enter this document.
+      let fields = ['name', 'age', 'heightCm', 'weightKg', 'experience',
+                    'equipment', 'limitations', 'primary', 'secondary',
+                    'priorities', 'days', 'recovery'];
+      return p.keys().hasAll(fields) && p.keys().hasOnly(fields) &&
         p.name is string && p.name.size() > 0 && p.name.size() <= 80 &&
         p.age is int && p.age >= 18 && p.age <= 100 &&
         p.heightCm is number && p.heightCm >= 100 && p.heightCm <= 240 &&
         p.weightKg is number && p.weightKg >= 30 && p.weightKg <= 300 &&
-        p.get('limitations', '') is string &&
-        p.get('limitations', '').size() <= 2000 &&
-        p.get('equipment', []) is list && p.get('equipment', []).size() <= 15 &&
-        p.get('priorities', []) is list && p.get('priorities', []).size() <= 6 &&
-        p.get('days', []) is list && p.get('days', []).size() <= 7 &&
-        p.get('recovery', 3) is int &&
-        p.get('recovery', 3) >= 1 && p.get('recovery', 3) <= 5;
+        p.experience in ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'] &&
+        p.equipment is list && p.equipment.size() <= 15 &&
+        p.equipment.hasOnly(['BODYWEIGHT', 'DUMBBELL', 'BARBELL',
+          'KETTLEBELL', 'RESISTANCE_BAND', 'PULL_UP_BAR', 'MAT', 'BENCH',
+          'CABLE_MACHINE', 'LAT_PULLDOWN', 'LEG_PRESS_MACHINE',
+          'CHEST_PRESS_MACHINE', 'SEATED_ROW_MACHINE', 'LEG_CURL_MACHINE',
+          'SMITH_MACHINE']) &&
+        p.equipment.toSet().size() == p.equipment.size() &&
+        p.limitations is string && p.limitations.size() <= 2000 &&
+        p.primary in goalCodes() &&
+        (p.secondary == null || p.secondary in goalCodes()) &&
+        p.priorities is list && p.priorities.size() <= 6 &&
+        p.priorities.hasOnly(['LEGS', 'BACK', 'CHEST', 'SHOULDERS', 'ARMS', 'CORE']) &&
+        p.priorities.toSet().size() == p.priorities.size() &&
+        p.days is list && p.days.size() <= 7 &&
+        p.days.hasOnly([1, 2, 3, 4, 5, 6, 7]) &&
+        p.days.toSet().size() == p.days.size() &&
+        p.recovery is int && p.recovery >= 1 && p.recovery <= 5;
     }
     function validMetric(m, k, minValue, maxValue) {
       return !m.keys().hasAny([k]) ||
@@ -97,20 +111,37 @@ service cloud.firestore {
         validMetric(p.values, 'neck', 0.01, 300) &&
         validMetric(p.values, 'calves', 0.01, 300);
     }
+    function validWorkoutDay(d) {
+      // Kotlin TrainingDay is embedded in CloudWorkoutPayload; reject
+      // arbitrary nested extra fields and non-day values before upload.
+      let fields = ['day', 'name', 'exercises', 'cardio',
+                    'durationSec', 'intervals', 'explanation'];
+      return d is map && d.keys().hasAll(fields) &&
+        d.keys().hasOnly(fields) &&
+        d.day is int && d.day >= 1 && d.day <= 7 &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 200 &&
+        d.exercises is list && d.exercises.size() <= 20 &&
+        (d.cardio == null || d.cardio in ['WALK', 'BRISK', 'JOG', 'INTERVAL']) &&
+        (d.cardio != null || d.exercises.size() > 0) &&
+        d.durationSec is int && d.durationSec >= 60 && d.durationSec <= 7200 &&
+        d.intervals is list && d.intervals.size() >= 2 &&
+        d.intervals.size() <= 20 &&
+        d.explanation is string && d.explanation.size() <= 4000;
+    }
     function validWorkout(p) {
       // Only finalized or explicitly stopped workouts can leave the device.
-      // Active sessions, timers and unfinished sets remain Room-local.
-      return p.keys().hasAll(['startedMs', 'finishedMs', 'status', 'sets', 'day']) &&
-        p.keys().hasOnly(['startedMs', 'finishedMs', 'status', 'sets',
-                          'day', 'activeSeconds', 'painReported']) &&
+      // Bound the saved session projection; live timer/active state stay local.
+      let fields = ['startedMs', 'finishedMs', 'status', 'sets',
+                    'day', 'activeSeconds', 'painReported'];
+      return p.keys().hasAll(fields) && p.keys().hasOnly(fields) &&
         p.startedMs is int && p.startedMs > 0 &&
         p.finishedMs is int && p.finishedMs >= p.startedMs &&
         p.status in ['DONE', 'STOPPED'] &&
-        p.sets is list && p.sets.size() <= 500 &&
-        p.day is map &&
-        p.get('activeSeconds', 0) is int &&
-        p.get('activeSeconds', 0) >= 0 &&
-        p.get('painReported', false) is bool;
+        p.sets is list && p.sets.size() <= 200 &&
+        validWorkoutDay(p.day) &&
+        p.activeSeconds is int && p.activeSeconds >= 0 &&
+        p.activeSeconds <= 86400 &&
+        p.painReported is bool;
     }
 
     match /accounts/{uid}/profiles/{profileId} {

@@ -28,15 +28,21 @@ function client(uid) {
              : env.unauthenticatedContext().firestore();
 }
 function profile(name = "Synthetic athlete") {
+  // The complete CloudProfilePayload projection (no Room history or active session).
   return { name, age: 30, heightCm: 178, weightKg: 75,
-           experience: "BEGINNER", equipment: ["BODYWEIGHT"], recovery: 3 };
+           experience: "BEGINNER", equipment: ["BODYWEIGHT"],
+           limitations: "", primary: "MUSCLE", secondary: "FITNESS",
+           priorities: [], days: [1, 3, 5], recovery: 3 };
 }
 function measurement() {
   return { dateMs: 1700000000000, values: { waist: 80, weight: 75 } };
 }
 function workout() {
   return { startedMs: 1700000000000, finishedMs: 1700000001000,
-           status: "DONE", sets: [], day: { day: 1 },
+           status: "DONE", sets: [],
+           day: { day: 1, name: "Synthetic cardio", exercises: [],
+                  cardio: "BRISK", durationSec: 1200, intervals: [120, 60],
+                  explanation: "" },
            activeSeconds: 1, painReported: false };
 }
 function envelope(uid, profileId, id, payload, patch = {}) {
@@ -153,6 +159,66 @@ test("unknown metrics, nonnumeric measurements and unfinished workouts are rejec
     "alice", "p-one", "w-active", { ...workout(), status: "WORK" })));
   await assertFails(setDoc(workoutRef(a, "alice", "p-one", "w-reversed"), envelope(
     "alice", "p-one", "w-reversed", { ...workout(), finishedMs: 1 })));
+});
+
+
+test("profile enum, schedule, type and nested data violations are denied before any account import", async () => {
+  const a = client("alice");
+  const invalid = [
+    ["experience", { experience: "SUPERUSER" }],
+    ["equipment", { equipment: ["BODYWEIGHT", "UNKNOWN_MACHINE"] }],
+    ["equipment-type", { equipment: [123] }],
+    ["equipment-duplicate", { equipment: ["MAT", "MAT"] }],
+    ["priority", { priorities: ["ADMIN"] }],
+    ["goal", { primary: "UNSUPPORTED" }],
+    ["secondary", { secondary: "UNKNOWN_GOAL" }],
+    ["days", { days: [1, 8] }],
+    ["days-type", { days: ["1", "3"] }],
+    ["days-duplicate", { days: [1, 1] }],
+    ["recovery", { recovery: "3" }],
+    ["private-history", { history: [{ private: "not a cloud projection" }] }]
+  ];
+  for (const [id, patch] of invalid) {
+    await assertFails(setDoc(profileRef(a, "alice", "p-" + id),
+      envelope("alice", "p-" + id, "p-" + id, { ...profile(), ...patch })));
+  }
+  const ref = profileRef(a);
+  await assertSucceeds(setDoc(ref, envelope("alice", "p-one", "p-one", profile())));
+  await assertFails(updateDoc(ref, {
+    revision: 2, opId: "op-invalid", updatedAt: serverTimestamp(),
+    payload: { ...profile(), secondary: 17 }
+  }));
+  // A normal Kotlin-compatible profile edit still advances one revision.
+  await assertSucceeds(updateDoc(ref, {
+    revision: 2, opId: "op-valid", updatedAt: serverTimestamp(),
+    payload: { ...profile(), equipment: ["BARBELL", "MAT"],
+               secondary: null, days: [2, 5], priorities: ["BACK"] }
+  }));
+  assert.equal((await getDoc(ref)).data().revision, 2);
+});
+
+test("finished workout rejects malformed embedded day and out-of-bounds active clock", async () => {
+  await seedProfile();
+  const a = client("alice");
+  const invalid = [
+    ["fake-day", { day: { ...workout().day, day: 0 } }],
+    ["fake-cardio", { day: { ...workout().day, cardio: "ADMIN" } }],
+    ["extra-day", { day: { ...workout().day, active: { phase: "WORK" } } }],
+    ["fake-intervals", { day: { ...workout().day, intervals: "120,60" } }],
+    ["fake-explanation", { day: { ...workout().day, explanation: { token: "bad" } } }],
+    ["no-cardio-or-exercises", { day: { ...workout().day, cardio: null } }],
+    ["extra-top-level", { unrelated: { private: "not a workout" } }],
+    ["active-time", { activeSeconds: 86401 }],
+    ["bad-active-type", { activeSeconds: "60" }],
+    ["bad-pain-type", { painReported: "false" }]
+  ];
+  for (const [id, patch] of invalid) {
+    await assertFails(setDoc(workoutRef(a, "alice", "p-one", "w-" + id),
+      envelope("alice", "p-one", "w-" + id, { ...workout(), ...patch })));
+  }
+  await assertSucceeds(setDoc(workoutRef(a),
+    envelope("alice", "p-one", "w-one", workout())));
+  assert.equal((await getDoc(workoutRef(a))).data().payload.activeSeconds, 1);
 });
 
 test("one revision at a time, exact no-op replay, immutable identity and timestamps", async () => {

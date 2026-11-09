@@ -17,6 +17,13 @@ Android sign-in, account import or a working cloud synchronization client.
   tombstone instead of hard delete. An exact identical replay is permitted.
   Stale writes and resurrection are forbidden. The uploader must read/reconcile
   after ambiguous network errors; Rules are not a general conflict resolver.
+- Source-only Rules validate the full `CloudProfilePayload` projection: known enum values,
+  unique equipment/priorities/day selections, expected types and no history/active
+  session fields. A finished/STOPPED workout must match bounded
+  `CloudWorkoutPayload` and `TrainingDay` fields; the Firestore Rules
+  language cannot generally validate every member of arbitrarily long nested
+  `sets`/`exercises` lists, which still needs a reviewed transport/schema
+  acceptance gate before real account import.
 - Finished or STOPPED workouts only; **active sessions stay local**.
   No automatic guest-profile attachment or cross-profile imports.
 - Deploying Rules, creating the real database, registering \`ru.forma.fitness\`,
