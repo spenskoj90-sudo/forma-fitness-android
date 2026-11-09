@@ -24,6 +24,10 @@ Android sign-in, account import or a working cloud synchronization client.
   language cannot generally validate every member of arbitrarily long nested
   `sets`/`exercises` lists, which still needs a reviewed transport/schema
   acceptance gate before real account import.
+- The payload date contract preserves valid local history at Unix epoch zero
+  (`dateMs` and `startedMs` may equal 0, never negative); nonweight body
+  measurements must be finite and strictly positive, with no 0.01 rounding or
+  rewriting existing Room values.
 - Finished or STOPPED workouts only; **active sessions stay local**.
   No automatic guest-profile attachment or cross-profile imports.
 - Deploying Rules, creating the real database, registering \`ru.forma.fitness\`,

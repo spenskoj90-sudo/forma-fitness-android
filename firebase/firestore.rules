@@ -89,12 +89,12 @@ service cloud.firestore {
     }
     function validMetric(m, k, minValue, maxValue) {
       return !m.keys().hasAny([k]) ||
-        (m[k] is number && m[k] >= minValue && m[k] <= maxValue);
+        (m[k] is number && m[k] > 0 && m[k] >= minValue && m[k] <= maxValue);
     }
     function validMeasurement(p) {
       return p.keys().hasAll(['dateMs', 'values']) &&
         p.keys().hasOnly(['dateMs', 'values']) &&
-        p.dateMs is int && p.dateMs > 0 &&
+        p.dateMs is int && p.dateMs >= 0 &&
         p.get('values', {}) is map &&
         p.get('values', {}).keys().size() > 0 &&
         p.get('values', {}).keys().hasOnly(
@@ -102,14 +102,14 @@ service cloud.firestore {
            'biceps', 'forearms', 'neck', 'calves']) &&
         validMetric(p.values, 'weight', 30, 300) &&
         validMetric(p.values, 'height', 100, 240) &&
-        validMetric(p.values, 'chest', 0.01, 300) &&
-        validMetric(p.values, 'waist', 0.01, 300) &&
-        validMetric(p.values, 'hips', 0.01, 300) &&
-        validMetric(p.values, 'shoulders', 0.01, 300) &&
-        validMetric(p.values, 'biceps', 0.01, 300) &&
-        validMetric(p.values, 'forearms', 0.01, 300) &&
-        validMetric(p.values, 'neck', 0.01, 300) &&
-        validMetric(p.values, 'calves', 0.01, 300);
+        validMetric(p.values, 'chest', 0, 300) &&
+        validMetric(p.values, 'waist', 0, 300) &&
+        validMetric(p.values, 'hips', 0, 300) &&
+        validMetric(p.values, 'shoulders', 0, 300) &&
+        validMetric(p.values, 'biceps', 0, 300) &&
+        validMetric(p.values, 'forearms', 0, 300) &&
+        validMetric(p.values, 'neck', 0, 300) &&
+        validMetric(p.values, 'calves', 0, 300);
     }
     function validWorkoutDay(d) {
       // Kotlin TrainingDay is embedded in CloudWorkoutPayload; reject
@@ -134,7 +134,7 @@ service cloud.firestore {
       let fields = ['startedMs', 'finishedMs', 'status', 'sets',
                     'day', 'activeSeconds', 'painReported'];
       return p.keys().hasAll(fields) && p.keys().hasOnly(fields) &&
-        p.startedMs is int && p.startedMs > 0 &&
+        p.startedMs is int && p.startedMs >= 0 &&
         p.finishedMs is int && p.finishedMs >= p.startedMs &&
         p.status in ['DONE', 'STOPPED'] &&
         p.sets is list && p.sets.size() <= 200 &&

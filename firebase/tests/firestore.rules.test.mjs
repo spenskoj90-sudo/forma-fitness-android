@@ -221,6 +221,35 @@ test("finished workout rejects malformed embedded day and out-of-bounds active c
   assert.equal((await getDoc(workoutRef(a))).data().payload.activeSeconds, 1);
 });
 
+test("epoch-zero local history and positive sub-centimeter measurements keep their exact values", async () => {
+  // Local Backup.kt explicitly permits dateMs/startedMs == 0 and
+  // Measurement.valid() permits finite nonweight values greater than zero.
+  // Do not reject or re-date these records during future opt-in cloud import.
+  await seedProfile();
+  const a = client("alice");
+  const oldMetric = { dateMs: 0, values: { waist: 0.001 } };
+  await assertSucceeds(setDoc(measurementRef(a, "alice", "p-one", "m-epoch"),
+    envelope("alice", "p-one", "m-epoch", oldMetric)));
+  const oldWorkout = { ...workout(), startedMs: 0, finishedMs: 0,
+                       status: "STOPPED", activeSeconds: 0 };
+  await assertSucceeds(setDoc(workoutRef(a, "alice", "p-one", "w-epoch"),
+    envelope("alice", "p-one", "w-epoch", oldWorkout)));
+  const stored = (await getDoc(measurementRef(a, "alice", "p-one", "m-epoch"))).data();
+  assert.equal(stored.payload.dateMs, 0);
+  assert.equal(stored.payload.values.waist, 0.001);
+  assert.equal((await getDoc(workoutRef(a, "alice", "p-one", "w-epoch")))
+    .data().payload.startedMs, 0);
+  await assertFails(setDoc(measurementRef(a, "alice", "p-one", "m-negative"),
+    envelope("alice", "p-one", "m-negative",
+      { dateMs: -1, values: { waist: 81 } })));
+  await assertFails(setDoc(measurementRef(a, "alice", "p-one", "m-zero"),
+    envelope("alice", "p-one", "m-zero",
+      { dateMs: 0, values: { waist: 0 } })));
+  await assertFails(setDoc(workoutRef(a, "alice", "p-one", "w-negative"),
+    envelope("alice", "p-one", "w-negative",
+      { ...workout(), startedMs: -1 })));
+});
+
 test("one revision at a time, exact no-op replay, immutable identity and timestamps", async () => {
   const a = client("alice");
   const ref = profileRef(a);
