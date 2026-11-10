@@ -557,16 +557,7 @@ private val editableProfileSaver=Saver<Profile,String>(
       }
       2->Panel("Работа мышц"){
        val secondary=secondaryMuscles(current.exercise)
-       Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
-        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
-         Text("Спереди",style=MaterialTheme.typography.labelMedium)
-         MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(166.dp),secondary,backView=false)
-        }
-        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
-         Text("Сзади",style=MaterialTheme.typography.labelMedium)
-         MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(166.dp),secondary,backView=true)
-        }
-       }
+       WorkoutMuscleViews(current.exercise.muscle,secondary)
        Text("Основная группа: "+current.exercise.muscle.label)
        if(secondary.isNotEmpty())Text("Дополнительно: "+secondary.joinToString{it.label})
        Text("Схематичные зоны нагрузки спереди и сзади. Это не инструкция по движению и не медицинская анатомия.",

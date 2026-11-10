@@ -1,6 +1,14 @@
 package ru.forma.app
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -10,6 +18,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 import ru.forma.domain.*
 
@@ -60,4 +69,22 @@ class AccessibleWorkoutUiTest {
   rule.onNodeWithContentDescription("Прогресс: 2 значений, кг.",substring=true).assertExists()
   rule.onNodeWithText("Макс. 15.0 кг").assertDoesNotExist()
  }
+ @Test fun anteriorAndPosteriorFiguresStackAtDoubleFontAndNarrowWidth(){
+  rule.setContent {
+   val density=LocalDensity.current
+   CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
+    MaterialTheme{
+     Column(Modifier.width(260.dp).verticalScroll(rememberScrollState())){
+      WorkoutMuscleViews(Muscle.BACK,emptySet())
+     }
+    }
+   }
+  }
+  val front=rule.onNodeWithTag("workout-muscle-view-front").fetchSemanticsNode().boundsInRoot
+  val back=rule.onNodeWithTag("workout-muscle-view-back").fetchSemanticsNode().boundsInRoot
+  assertTrue("Two readable views must stack, not squeeze into a narrow row",front.bottom<=back.top)
+  rule.onNodeWithContentDescription("Условная схема спереди",substring=true).assertExists()
+  rule.onNodeWithContentDescription("Условная схема сзади",substring=true).assertExists()
+ }
+
 }
