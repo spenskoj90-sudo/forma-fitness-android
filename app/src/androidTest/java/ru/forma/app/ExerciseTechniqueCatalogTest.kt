@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -78,6 +80,28 @@ class ExerciseTechniqueCatalogTest {
   rule.onNodeWithText("Весь каталог").performScrollTo().assertIsDisplayed().performClick()
   rule.onNodeWithTag("technique-search").performScrollTo().performTextInput("жим ногами")
   rule.onNodeWithTag("technique-item-leg_press").assertExists()
+ }
+
+ @Test fun narrowWorkoutTabsRemainOperableWithDoubleFontScale(){
+  rule.setContent {
+   val density=LocalDensity.current
+   CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
+    val selected=remember{mutableIntStateOf(1)}
+    MaterialTheme {
+     Column(Modifier.width(260.dp).verticalScroll(rememberScrollState())){
+      WorkoutTechniqueTabs(selected.intValue){selected.intValue=it}
+     }
+    }
+   }
+  }
+  for(index in 0..2){
+   rule.onNodeWithTag("workout-technique-tab-$index")
+    .performScrollTo().assertIsDisplayed()
+  }
+  rule.onNodeWithTag("workout-technique-tab-0").performScrollTo().performClick()
+  rule.onNodeWithTag("workout-technique-tab-0").assertIsSelected()
+  rule.onNodeWithTag("workout-technique-tab-2").performScrollTo().performClick()
+  rule.onNodeWithTag("workout-technique-tab-2").assertIsSelected()
  }
 
 }

@@ -547,12 +547,7 @@ private val editableProfileSaver=Saver<Profile,String>(
      }
      var techniqueTab by rememberSaveable(s.id,s.exerciseIndex){mutableIntStateOf(1)}
      // Set completion stays above nonessential media; video never autoplays.
-     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-      listOf("Видео","Инструкция","Мышцы").forEachIndexed{index,title->
-       FilterChip(selected=techniqueTab==index,onClick={techniqueTab=index},
-        label={Text(title)},modifier=Modifier.weight(1f).heightIn(min=48.dp))
-      }
-     }
+     WorkoutTechniqueTabs(techniqueTab){techniqueTab=it}
      when(techniqueTab){
       0->Panel("Демонстрация техники"){ExerciseTechnique(current.exercise,showInstructions=false,initiallyOpen=true)}
       1->Panel("Инструкция и ошибки"){
