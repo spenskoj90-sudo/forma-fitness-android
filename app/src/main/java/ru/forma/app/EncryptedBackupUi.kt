@@ -64,7 +64,7 @@ import java.time.LocalDate
    Text("Восстановить защищённую копию")
   }
   if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-  Text("Это ручной перенос файлов, а не облачная синхронизация.",style=MaterialTheme.typography.bodySmall)
+  Text("После записи FORMA повторно прочитает зашифрованный файл и проверит его целостность. Это не заменяет независимую проверку восстановления. Ручной перенос не является облачной синхронизацией.",style=MaterialTheme.typography.bodySmall)
  }
  if(mode!=0){
   val isRestore=mode==3

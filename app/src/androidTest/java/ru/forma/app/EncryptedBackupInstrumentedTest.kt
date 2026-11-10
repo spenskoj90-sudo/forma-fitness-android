@@ -19,7 +19,10 @@ class EncryptedBackupInstrumentedTest {
    )
   ))))
   try {
-   file.writeBytes(encryptPortableBackup(original,"strong passphrase 123".toCharArray()))
+   val ciphertext=encryptPortableBackup(original,"strong passphrase 123".toCharArray())
+   try{
+    writeVerifiedEncryptedBackup(ciphertext,{file.outputStream()},{file.inputStream()})
+   }finally{ciphertext.fill(0)}
    val reopened=file.readBytes()
    assertFalse(reopened.toString(Charsets.ISO_8859_1).contains("synthetic-profile"))
    val decoded=decryptPortableBackup(reopened,"strong passphrase 123".toCharArray())

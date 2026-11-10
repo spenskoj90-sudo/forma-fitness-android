@@ -186,13 +186,22 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
      val plaintext=app.repository.exportBackup(selected)
      val contents=encryptPortableBackup(plaintext,password)
      try{
-      val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл")
-      output.use{it.write(contents)}
+      // A SAF provider may close the write successfully yet persist only part
+      // of the ciphertext. Do not announce a usable copy without readback.
+      try{
+       writeVerifiedEncryptedBackup(contents,
+        {app.contentResolver.openOutputStream(uri,"wt")},
+        {app.contentResolver.openInputStream(uri)})
+      }catch(e:Exception){
+       throw java.io.IOException(
+        "Защищённую копию не удалось проверить после записи. Не полагайтесь на этот файл; выберите другое хранилище.",e
+       )
+      }
      }finally{contents.fill(0)}
     }
     notice.value=if(allProfiles)
-     "Защищённая копия всех профилей сохранена. Без пароля её невозможно восстановить."
-    else "Защищённая копия профиля сохранена. Без пароля её невозможно восстановить."
+     "Защищённая копия всех профилей сохранена и сверена повторным чтением. Пароль храните отдельно."
+    else "Защищённая копия профиля сохранена и сверена повторным чтением. Пароль храните отдельно."
    }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
   }
  }
