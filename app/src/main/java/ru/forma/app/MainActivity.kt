@@ -444,6 +444,13 @@ private val editableProfileSaver=Saver<Profile,String>(
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
    Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
+   key(item.exercise.id,item.exercise.equipment){
+    var techniqueOpen by remember{mutableStateOf(false)}
+    TextButton({techniqueOpen=!techniqueOpen},Modifier.fillMaxWidth().heightIn(min=48.dp)){
+     Text(if(techniqueOpen)"Скрыть технику: ${item.exercise.name}" else "Техника и видео: ${item.exercise.name}")
+    }
+    if(techniqueOpen)ExerciseTechnique(item.exercise)
+   }
    if(recordsExternalKilograms(item.exercise.equipment))Text("Плановый вес: ${item.weight} ${recordedExerciseLoadUnit(item.exercise)}",style=MaterialTheme.typography.bodySmall)
    else Text(unmeasuredLoadExplanation(item.exercise.equipment),style=MaterialTheme.typography.bodySmall)
    val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
@@ -526,27 +533,36 @@ private val editableProfileSaver=Saver<Profile,String>(
       FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
       Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
        MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(145.dp),secondaryMuscles(current.exercise))
-       Text("Зона нагрузки",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
+       Text("Схема мышц",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
       }
       Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color(0xFF091217)))).padding(14.dp)){
        Text("Основная группа: "+current.exercise.muscle.label,style=MaterialTheme.typography.bodyMedium,color=Color.White)
       }
      }
-     var techniqueExpanded by rememberSaveable(s.id,s.exerciseIndex){mutableStateOf(false)}
-     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){
-      FilledTonalButton({techniqueExpanded=!techniqueExpanded},modifier=Modifier.weight(1f)){
-       Text(if(techniqueExpanded)"Скрыть ошибки"else"Инструкция и ошибки")
-      }
-      Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer){
-       Text(current.exercise.muscle.label,Modifier.padding(horizontal=14.dp,vertical=11.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSecondaryContainer)
+     var techniqueTab by rememberSaveable(s.id,s.exerciseIndex){mutableIntStateOf(1)}
+     // Set completion stays above nonessential media; video never autoplays.
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+      listOf("Видео","Инструкция","Мышцы").forEachIndexed{index,title->
+       FilterChip(selected=techniqueTab==index,onClick={techniqueTab=index},
+        label={Text(title)},modifier=Modifier.weight(1f).heightIn(min=48.dp))
       }
      }
-     val secondary=secondaryMuscles(current.exercise)
-     if(secondary.isNotEmpty())Text("Дополнительно работают: "+secondary.joinToString { it.label },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-     Text("Схема мышц не заменяет демонстрацию техники. Проверенные видео для отдельных упражнений пока готовятся.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-      if(techniqueExpanded)Panel("Частые ошибки"){
-       Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."},style=MaterialTheme.typography.bodySmall)
+     when(techniqueTab){
+      0->Panel("Демонстрация техники"){ExerciseTechnique(current.exercise,showInstructions=false,initiallyOpen=true)}
+      1->Panel("Инструкция и ошибки"){
+       Text(current.exercise.cue)
+       Text("Частые ошибки",style=MaterialTheme.typography.titleSmall)
+       Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."})
       }
+      2->Panel("Работа мышц"){
+       MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(180.dp),secondaryMuscles(current.exercise))
+       Text("Основная группа: "+current.exercise.muscle.label)
+       val secondary=secondaryMuscles(current.exercise)
+       if(secondary.isNotEmpty())Text("Дополнительно: "+secondary.joinToString{it.label})
+       Text("Схематичные зоны нагрузки. Это не инструкция по движению и не медицинская анатомия.",
+        style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+     }
     }
    }else{
     Panel("Текущий этап"){

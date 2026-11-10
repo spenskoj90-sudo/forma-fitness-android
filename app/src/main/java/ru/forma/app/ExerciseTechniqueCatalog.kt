@@ -28,7 +28,7 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
  )
  fun resetDisclosure(){openId="";shown=8}
  Panel("Техника упражнений"){
-  Text("Текстовые подсказки доступны без интернета. Это не видеодемонстрация и не оценка техники. При боли остановите упражнение.")
+  Text("Текстовые подсказки доступны без интернета. Проверенных видеодемонстраций: ${techniqueMediaCatalog.size} из ${exerciseCatalog.size}. Это не видеодемонстрация и не оценка техники; схема мышц условная. При боли остановите упражнение.")
   OutlinedTextField(
    value=query,
    onValueChange={query=it.take(120);resetDisclosure()},
@@ -82,6 +82,7 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
      Text(exercise.cue)
      Text("Частые ошибки",style=MaterialTheme.typography.titleSmall)
      Text(exercise.mistakes.ifBlank{"Подробные ошибки для упражнения пока не проверены."})
+     ExerciseTechnique(exercise,showInstructions=false)
      if(exercise.equipment !in available)Text(
       "Этот снаряд не выбран для текущего места тренировки. Инструкция доступна для ознакомления.",
       color=MaterialTheme.colorScheme.onSurfaceVariant)

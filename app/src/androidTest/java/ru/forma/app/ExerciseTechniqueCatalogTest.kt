@@ -28,6 +28,9 @@ class ExerciseTechniqueCatalogTest {
   rule.onNodeWithTag("technique-item-band_row").assertExists()
    .performScrollTo().performClick()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
+  rule.onNodeWithText("Показать демонстрацию").assertExists().performClick()
+  rule.waitUntil(10_000){rule.onAllNodesWithText("Подтверждённая демонстрация пока недоступна.").fetchSemanticsNodes().isNotEmpty()}
+  rule.onNodeWithText("Подтверждённая демонстрация пока недоступна.").assertExists()
   rule.onNodeWithText("Это не видеодемонстрация",substring=true).assertExists()
   rule.onNodeWithTag("technique-item-band_row").performScrollTo().performClick()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertDoesNotExist()

@@ -88,3 +88,7 @@ grep -F "OK (2 tests)" "verification/body-history-api${api}.txt"
 # This test uses a dedicated disposable database; never real owner records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"
 grep -F "OK (1 test)" "verification/room-migration-api${api}.txt"
+
+# Synthetic test-only MP4 exercises actual decoder, lifecycle and honest offline fallback.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.TechniqueMediaTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-media-api${api}.txt"
+grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"
