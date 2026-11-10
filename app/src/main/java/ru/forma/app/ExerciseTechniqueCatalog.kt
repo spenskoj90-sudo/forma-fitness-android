@@ -5,7 +5,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
@@ -40,7 +39,12 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
    singleLine=true,
    modifier=Modifier.fillMaxWidth().testTag("technique-search")
   )
-  Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+  // Let choices wrap at narrow widths and 1.3–2x font scale.
+  // A fixed horizontal Row clips "Весь каталог" on smaller devices.
+  FlowRow(
+   horizontalArrangement=Arrangement.spacedBy(8.dp),
+   verticalArrangement=Arrangement.spacedBy(4.dp)
+  ){
    FilterChip(selected=!allEquipment,onClick={allEquipment=false;resetDisclosure()},
     label={Text("Мои снаряды")},modifier=Modifier.heightIn(min=48.dp))
    FilterChip(selected=allEquipment,onClick={allEquipment=true;resetDisclosure()},
@@ -67,7 +71,9 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
   }
   matches.take(shown).forEach{exercise->
    val expanded=openId==exercise.id
-   val hasReviewedVideo=techniqueMediaCatalog.any{it.exerciseId==exercise.id && it.equipment==exercise.equipment}
+   // An allowlist entry is not proof that the packaged bytes survived storage.
+   // Only the loader validates hash and produces playable Ready media.
+   val hasListedVideo=techniqueMediaCatalog.any{it.exerciseId==exercise.id && it.equipment==exercise.equipment}
    OutlinedButton(
     onClick={openId=if(expanded)"" else exercise.id},
     modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)
@@ -78,9 +84,9 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
      Text(exercise.name,style=MaterialTheme.typography.titleSmall)
      Text(exercise.muscle.label+" · "+exercise.equipment.label,
       style=MaterialTheme.typography.bodySmall)
-     Text(if(hasReviewedVideo) "Проверенная видеодемонстрация" else "Текстовая техника · видео пока нет",
+     Text(if(hasListedVideo) "Видео добавлено · проверяется при открытии" else "Текстовая техника · видео пока нет",
       style=MaterialTheme.typography.labelSmall,
-      color=if(hasReviewedVideo)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+      color=if(hasListedVideo)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
      Text(if(expanded)"Скрыть инструкцию" else "Показать инструкцию",
       style=MaterialTheme.typography.bodySmall)
     }

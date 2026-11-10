@@ -4,7 +4,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -58,4 +63,21 @@ class ExerciseTechniqueCatalogTest {
   rule.onNodeWithText("Очистить поиск и группу").performScrollTo().performClick()
   rule.onNodeWithText("Все мышцы").performScrollTo().assertExists()
  }
+ @Test fun narrowWidthAndDoubleFontScaleKeepEquipmentChipsAccessible(){
+  rule.setContent{
+   val density=LocalDensity.current
+   CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
+    MaterialTheme{
+     Column(Modifier.width(260.dp).verticalScroll(rememberScrollState())){
+      ExerciseTechniqueCatalog("scaled-profile",setOf(Equipment.BODYWEIGHT))
+     }
+    }
+   }
+  }
+  rule.onNodeWithText("Мои снаряды").performScrollTo().assertIsDisplayed()
+  rule.onNodeWithText("Весь каталог").performScrollTo().assertIsDisplayed().performClick()
+  rule.onNodeWithTag("technique-search").performScrollTo().performTextInput("жим ногами")
+  rule.onNodeWithTag("technique-item-leg_press").assertExists()
+ }
+
 }
