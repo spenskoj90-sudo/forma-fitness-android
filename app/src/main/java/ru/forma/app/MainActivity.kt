@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
@@ -579,7 +580,16 @@ private val editableProfileSaver=Saver<Profile,String>(
    Panel("Пользователи · ${profiles.size}"){
     if(profiles.size>4)OutlinedTextField(profileSearch,{profileSearch=it},label={Text("Найти профиль")},singleLine=true,modifier=Modifier.fillMaxWidth())
     val matches=profiles.filter{it.name.contains(profileSearch,ignoreCase=true)}
-    matches.take(40).forEach{v->OutlinedButton({vm.select(v.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(p.id==v.id)"✓ ${v.name}"else v.name)}}
+    matches.take(40).forEach { v ->
+     // Selection is a real accessibility state, not only a visual checkmark.
+     // Keep the button's 48dp hit target and a stable per-profile semantics key.
+     OutlinedButton(
+      {vm.select(v.id)},
+      Modifier.fillMaxWidth().heightIn(min=48.dp)
+       .testTag("profile-choice:${v.id}")
+       .semantics { selected=p.id==v.id }
+     ) { Text(if(p.id==v.id)"✓ ${v.name}"else v.name) }
+    }
     if(matches.size>40)Text("Показаны первые 40. Уточните поиск.",style=MaterialTheme.typography.bodySmall)
     Action("Добавить пользователя",create)
     Text("Это локальные профили. До подключения защищённой синхронизации переносите данные между телефонами через резервные копии.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

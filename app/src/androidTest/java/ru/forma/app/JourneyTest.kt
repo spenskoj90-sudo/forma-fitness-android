@@ -285,11 +285,23 @@ class JourneyTest{
   waitText("Пользователи · 2")
   waitText("Тест А")
   val originalProfile=runBlocking{app.repository.profiles.first().single{it.name=="Тест А"}}
+  val secondProfile=runBlocking{app.repository.profiles.first().single{it.name=="Тест Б"}}
+  val selection=androidx.compose.ui.semantics.SemanticsProperties.Selected
+  // TalkBack must expose which local user owns the visible history.
+  composeRule.onNodeWithTag("profile-choice:${originalProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,false))
+  composeRule.onNodeWithTag("profile-choice:${secondProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,true))
   click("Тест А")
   composeRule.waitUntil(20000){
    current().id==originalProfile.id &&
     runBlocking{app.settings.settings.first().selected}==originalProfile.id
   }
+  waitText("✓ Тест А")
+  composeRule.onNodeWithTag("profile-choice:${originalProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,true))
+  composeRule.onNodeWithTag("profile-choice:${secondProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,false))
   click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   // Explicit destination checks: earlier CI screenshots for Progress, Home and
