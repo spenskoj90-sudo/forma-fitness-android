@@ -57,9 +57,9 @@ grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
 # These are real Compose UI tests, not just Kotlin compilation.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormDraftRestorationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/draft-restoration-api${api}.txt"
 grep -F "OK (3 tests)" "verification/draft-restoration-api${api}.txt"
-# Verify on-device AES-GCM/PBKDF2 support and encrypted-file reopen on API26/30/34.
+# Verify on-device AES-GCM/PBKDF2, ciphertext readback and additive Room restore on API26/30/34.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.EncryptedBackupInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/encrypted-backup-api${api}.txt"
-grep -F "OK (1 test)" "verification/encrypted-backup-api${api}.txt"
+grep -F "OK (2 tests)" "verification/encrypted-backup-api${api}.txt"
 # Verify actual Compose set/history labels for single/pair dumbbells and bands.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecordedLoadUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/load-units-api${api}.txt"
 grep -F "OK (2 tests)" "verification/load-units-api${api}.txt"
