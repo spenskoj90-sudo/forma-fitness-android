@@ -28,9 +28,11 @@ class ExerciseTechniqueCatalogTest {
   rule.onNodeWithTag("technique-item-band_row").assertExists()
    .performScrollTo().performClick()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
-  rule.onNodeWithText("Показать демонстрацию").assertExists().performClick()
-  rule.waitUntil(10_000){rule.onAllNodesWithText("Подтверждённая демонстрация пока недоступна.").fetchSemanticsNodes().isNotEmpty()}
+  // No reviewed media exists in the packaged source allowlist. A dead play
+  // button would mislead users; the truthful fallback must render immediately.
   rule.onNodeWithText("Подтверждённая демонстрация пока недоступна.").assertExists()
+  rule.onNodeWithText("Показать демонстрацию").assertDoesNotExist()
+  rule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
   rule.onNodeWithText("Это не видеодемонстрация",substring=true).assertExists()
   rule.onNodeWithTag("technique-item-band_row").performScrollTo().performClick()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertDoesNotExist()

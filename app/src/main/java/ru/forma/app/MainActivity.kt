@@ -401,11 +401,11 @@ private val editableProfileSaver=Saver<Profile,String>(
   Panel("Восстановление: ${p.recovery}/5"){Text("1 — выраженное недомогание; 3 — нормально; 5 — хорошо.");Slider(p.recovery.toFloat(),{p=p.copy(recovery=it.toInt())},valueRange=1f..5f,steps=3)}
    }
   }
-  // Keep the primary action inside the real IME-safe viewport. On API26
-  // adjustResize can lag a focused TextField and a fixed footer otherwise
-  // appears as a click target while Gboard consumes the physical pointer.
-  // The form remains scrollable in the weighted area above this footer.
-  Column(Modifier.fillMaxWidth().imePadding().padding(vertical=8.dp)){
+  // MainActivity uses adjustResize: its root already shrinks for the IME.
+  // A second imePadding() on the fixed footer can push Save outside that
+  // resized root (API30: save.bottom=1584 while root.bottom=990).
+  // The weighted form above remains scrollable; the Save target stays fixed.
+  Column(Modifier.fillMaxWidth().padding(vertical=8.dp)){
    // Dispatch the durable save before focus/IME changes can recompose the editor.
    // Target the actual Button in UI tests, not its nested text bounds.
    Button(onClick={save(candidate);focus.clearFocus(force=true);keyboard?.hide()},

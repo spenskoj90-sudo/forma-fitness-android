@@ -19,14 +19,22 @@ import ru.forma.domain.*
  val localSource=remember(assets){AssetTechniqueMediaSource(assets)}
  key(exercise.id,exercise.equipment){
   var open by remember(initiallyOpen){mutableStateOf(initiallyOpen)}
+  // The packaged allowlist is empty until every license and exercise-specific
+  // technique review is accepted. Do not offer a dead video button: show the
+  // honest offline state immediately, without decoding or seeking network media.
+  // Explicit injected sources are only for synthetic verified-player tests.
+  val videoCanBeOffered=source!=null || techniqueMediaCatalog.any{
+   it.exerciseId==exercise.id && it.equipment==exercise.equipment
+  }
   if(showInstructions){
    Text(exercise.cue)
    Text("Частые ошибки: ${exercise.mistakes.ifBlank{"Пока не описаны."}}")
   }
-  if(!initiallyOpen)TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){
+  if(!videoCanBeOffered)Text("Подтверждённая демонстрация пока недоступна.")
+  if(videoCanBeOffered && !initiallyOpen)TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){
    Text(if(open)"Скрыть демонстрацию" else "Показать демонстрацию")
   }
-  if(open){
+  if(videoCanBeOffered && open){
    val loader=source?:localSource
    var result by remember(loader){mutableStateOf<TechniqueMediaResult?>(null)}
    LaunchedEffect(loader){result=loader.load(exercise)}
