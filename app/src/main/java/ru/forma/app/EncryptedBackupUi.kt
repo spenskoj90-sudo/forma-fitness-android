@@ -20,6 +20,7 @@ import java.time.LocalDate
 @Composable internal fun EncryptedBackupPanel(vm:FormaViewModel) {
  val busy by vm.encryptedBackupBusy.collectAsState()
  val selectedProfile by vm.current.collectAsState()
+ val profileSnapshot by vm.profileSnapshot.collectAsState()
  // 0 closed, 1 selected-profile export, 2 explicitly all-profile export,
  // 3 restore encrypted copy. Never persist passwords across process death.
  var mode by remember{mutableIntStateOf(0)}
@@ -28,13 +29,14 @@ import java.time.LocalDate
  var staged by remember{mutableStateOf<CharArray?>(null)}
  var stagedAll by remember{mutableStateOf(false)}
  var stagedProfileId by remember{mutableStateOf<String?>(null)}
+ var stagedProfileIds by remember{mutableStateOf<Set<String>?>(null)}
 
  val export=rememberLauncherForActivityResult(
   ActivityResultContracts.CreateDocument("application/octet-stream")
  ){uri->
   val secret=staged
   staged=null
-  if(uri!=null&&secret!=null)vm.exportEncryptedBackup(uri,secret,stagedAll,stagedProfileId)
+  if(uri!=null&&secret!=null)vm.exportEncryptedBackup(uri,secret,stagedAll,stagedProfileId,stagedProfileIds)
   else {
    secret?.fill('\u0000')
    if(uri!=null)vm.error.value="Пароль не сохранился после выбора файла. Повторите создание копии."
@@ -102,6 +104,7 @@ import java.time.LocalDate
      staged=secret
      stagedAll=option==2
      stagedProfileId=if(option==1)selectedProfile?.id else null
+     stagedProfileIds=if(option==2)profileSnapshot.profiles.map{it.id}.toSet() else null
      if(option==3)restore.launch(arrayOf("*/*"))
      else export.launch("FORMA-" +
       (if(option==2)"all-profiles-" else "profile-") +

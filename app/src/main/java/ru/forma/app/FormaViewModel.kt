@@ -172,20 +172,33 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  // Passwords stay transient and are cleared after the IO operation completes.
  // No permanent encryption key, remote upload or password persistence.
  internal val encryptedBackupBusy=MutableStateFlow(false)
- fun exportEncryptedBackup(uri:Uri,password:CharArray,allProfiles:Boolean=false,expectedProfileId:String?=null){
+ fun exportEncryptedBackup(
+  uri:Uri,password:CharArray,allProfiles:Boolean=false,expectedProfileId:String?=null,
+  expectedProfileIds:Set<String>?=null
+ ){
   if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
   val selected=if(allProfiles)null else expectedProfileId
-  if(!allProfiles&&(selected==null||current.value?.id!=selected)){
+  if ((!allProfiles && (selected.isNullOrBlank() || current.value?.id!=selected)) ||
+   (allProfiles && expectedProfileIds.isNullOrEmpty())) {
    password.fill('\u0000');encryptedBackupBusy.value=false
-   error.value="Текущий профиль сменился. Повторите создание копии."
+   error.value="Состав или выбор профилей изменился. Повторите создание копии."
    return
   }
   action{
    try{
     withContext(Dispatchers.IO){
+     suspend fun verifyScope()=requireBackupExportScope(
+      allProfiles,expectedProfileId,expectedProfileIds,current.value?.id,
+      app.settings.settings.first().selected,
+      app.repository.profiles.first().map{it.id}.toSet()
+     )
+     verifyScope()
      val plaintext=app.repository.exportBackup(selected)
      val contents=encryptPortableBackup(plaintext,password)
      try{
+      // SAF selection may outlive a profile switch or creation/deletion.
+      // Reject stale scope before writing any encrypted personal records.
+      verifyScope()
       // A SAF provider may close the write successfully yet persist only part
       // of the ciphertext. Do not announce a usable copy without readback.
       try{
