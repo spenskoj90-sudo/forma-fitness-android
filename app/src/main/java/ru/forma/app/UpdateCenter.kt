@@ -144,6 +144,21 @@ class FormaUpdateClient(private val context: Context) {
         } finally { connection.disconnect() }
     }
 
+    /** A verified signed release is cached by its version and exact APK hash. */
+    private fun validateCachedApk(apk: File, release: FormaRelease) {
+        val directory = File(context.cacheDir, "verified-updates")
+        verifyUpdateCachePath(directory, apk, release.versionCode, release.sha256)
+        verifyUpdateApkBytes(apk, release.sizeBytes, release.sha256)
+        val archive = androidPackageInfo(context, apk.absolutePath)
+        require(archive.packageName == context.packageName &&
+            versionCode(archive) == release.versionCode) {
+            "Неверная версия или имя пакета APK"
+        }
+        require(certificateFingerprint(archive) == release.certificateSha256) {
+            "APK подписан другим сертификатом"
+        }
+    }
+
     suspend fun downloadAndVerify(release: FormaRelease): File = withContext(Dispatchers.IO) {
         val base = validHttps(context.getString(R.string.forma_update_feed_url).trim())
         val source = validHttps(release.apkUrl)
@@ -153,13 +168,31 @@ class FormaUpdateClient(private val context: Context) {
             context.packageName, versionCode(installed), certificateFingerprint(installed),
             release.applicationId, release.versionCode, release.sha256, release.certificateSha256
         )) { "Обновление уже установлено или имеет неверную версию" }
-        val dir = File(context.cacheDir, "verified-updates").apply { mkdirs() }
-        val temp = File(dir, "forma-update.apk")
-        temp.delete()
-        val connection = (URL(release.apkUrl).openConnection() as HttpsURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 30000
-            instanceFollowRedirects = false
+
+        val dir = File(context.cacheDir, "verified-updates")
+        require(dir.isDirectory || dir.mkdirs()) { "Не удалось подготовить хранилище обновлений" }
+        val cached = File(dir, expectedUpdateApkName(release.versionCode, release.sha256))
+        if (cached.exists()) {
+            if (runCatching { validateCachedApk(cached, release) }.isSuccess)
+                return@withContext cached
+            require(cached.delete()) { "Не удалось убрать повреждённый файл обновления" }
+        }
+
+        // Never truncate/replace a file currently exposed by FileProvider.
+        // A unique temporary name only becomes a content-addressed .apk
+        // after hash, package, version and certificate verification.
+        val temp = File.createTempFile("forma-downloading-", ".apk", dir)
+        var moved = false
+        // Failure constructing a provider connection must not leak temp APKs.
+        val connection = try {
+            (URL(release.apkUrl).openConnection() as HttpsURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 30000
+                instanceFollowRedirects = false
+            }
+        } catch (e: Exception) {
+            temp.delete()
+            throw e
         }
         try {
             require(connection.responseCode == 200) { "Не удалось скачать обновление" }
@@ -171,43 +204,91 @@ class FormaUpdateClient(private val context: Context) {
                     while (true) {
                         val n = input.read(buffer)
                         if (n < 0) break
+                        require(n > 0) { "Не удалось прочитать файл обновления" }
                         total += n
-                        require(total <= MAX_UPDATE_APK_BYTES) { "APK превышает допустимый размер" }
+                        require(total <= MAX_UPDATE_APK_BYTES) {
+                            "APK превышает допустимый размер"
+                        }
                         md.update(buffer, 0, n)
                         output.write(buffer, 0, n)
                     }
                 }
             }
-            require(total == release.sizeBytes) { "Размер APK не совпадает с подписанным описанием" }
-            require(hex(md.digest()) == release.sha256) { "Контрольная сумма APK не совпадает" }
+            require(total == release.sizeBytes) {
+                "Размер APK не совпадает с подписанным описанием"
+            }
+            require(hex(md.digest()) == release.sha256) {
+                "Контрольная сумма APK не совпадает"
+            }
             val archive = androidPackageInfo(context, temp.absolutePath)
             require(archive.packageName == context.packageName &&
-                versionCode(archive) == release.versionCode) { "Неверная версия или имя пакета APK" }
-            require(certificateFingerprint(archive) == release.certificateSha256) { "APK подписан другим ключом" }
-            temp
+                versionCode(archive) == release.versionCode) {
+                "Неверная версия или имя пакета APK"
+            }
+            require(certificateFingerprint(archive) == release.certificateSha256) {
+                "APK подписан другим ключом"
+            }
+
+            // Another in-flight copy of the SAME signed release may win.
+            // It can be reused only after independent on-disk verification.
+            if (cached.exists()) {
+                validateCachedApk(cached, release)
+                return@withContext cached
+            }
+            if (temp.renameTo(cached)) {
+                moved = true
+            } else {
+                require(cached.isFile) { "Не удалось сохранить проверенный APK" }
+            }
+            validateCachedApk(cached, release)
+            cached
         } catch (e: Exception) {
-            temp.delete()
+            if (moved) cached.delete()
             throw e
-        } finally { connection.disconnect() }
+        } finally {
+            temp.delete()
+            connection.disconnect()
+        }
     }
 
-    fun requestSystemInstallation(apk: File) {
-        // Never install silently. Android must display its own install prompt.
-        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-            context.startActivity(
-                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:" + context.packageName))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            throw IllegalStateException("Разрешите установку из FORMA и повторите действие.")
+    suspend fun requestSystemInstallation(apk: File, release: FormaRelease) {
+        // Recheck the immutable cache file off the UI thread immediately
+        // before sharing it: a previously verified path is not permanent proof.
+        withContext(Dispatchers.IO) {
+            val installed = androidPackageInfo(context)
+            require(validateUpdateCandidate(
+                context.packageName, versionCode(installed), certificateFingerprint(installed),
+                release.applicationId, release.versionCode, release.sha256, release.certificateSha256
+            )) { "Обновление уже установлено или потеряло совместимость" }
+            validateCachedApk(apk, release)
         }
-        val uri = FileProvider.getUriForFile(context, context.packageName + ".updates", apk)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+        withContext(Dispatchers.Main) {
+            // Android alone approves installation; no silent package install.
+            if (Build.VERSION.SDK_INT >= 26 &&
+                !context.packageManager.canRequestPackageInstalls()) {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + context.packageName))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                throw IllegalStateException(
+                    "Разрешите установку из FORMA и повторите действие."
+                )
+            }
+            val uri = FileProvider.getUriForFile(
+                context, context.packageName + ".updates", apk
+            )
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+            )
+        }
     }
+
 }
 
 @Composable
@@ -248,7 +329,7 @@ fun UpdateCenter() {
                     try {
                         val apk = client.downloadAndVerify(available)
                         message = "APK проверен. Android запросит подтверждение установки."
-                        client.requestSystemInstallation(apk)
+                        client.requestSystemInstallation(apk, available)
                     } catch (e: Exception) { message = e.message ?: "Не удалось подготовить установку" }
                     finally { working = false }
                 }
