@@ -222,7 +222,23 @@ class JourneyTest{
      composeRule.activity.resources.displayMetrics.heightPixels*0.8f
    }
   }
-  composeRule.waitForIdle()
+  // Window/IME insets may resize the root before Compose has repositioned
+  // the persistent save footer (observed API30: root bottom=990, save=1584).
+  // Gate the *actual clickable button bounds*, not an arbitrary animation delay.
+  // A permanently hidden button still FAILS with full UI/Room evidence.
+  try{
+   composeRule.waitUntil(10000){
+    val nodes=composeRule.onAllNodesWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNodes()
+    val root=composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+    nodes.size==1 && nodes.single().boundsInRoot.let{it.top>=root.top && it.bottom<=root.bottom}
+   }
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("profile-save-viewport-timeout")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-VIEWPORT-TIMEOUT")}
+   val saveBounds=runCatching{composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot}.getOrNull()
+   val rootBounds=runCatching{composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot}.getOrNull()
+   throw AssertionError("Save remained outside resized IME viewport: save=$saveBounds root=$rootBounds",e)
+  }
   val saveBefore=composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
   val rootBefore=composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
