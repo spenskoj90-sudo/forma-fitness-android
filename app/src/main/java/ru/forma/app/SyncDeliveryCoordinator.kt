@@ -45,6 +45,16 @@ internal interface AuthenticatedSyncRemote {
  ): Boolean
 }
 
+/** Check durable outbox ownership and cloud path safety before remote I/O. */
+private fun SyncOutboxRow.hasSafeCloudIdentity(uid:String):Boolean =
+ accountUid==uid && revision>0 && opId.isNotBlank() && snapshot.isNotBlank() &&
+ cloudDocumentId.matches(profileId) && cloudDocumentId.matches(recordId) &&
+ when(kind) {
+  "profile" -> recordId==profileId
+  "measurement","workout" -> true
+  else -> false
+ }
+
 internal enum class SyncDeliveryStep {
  NO_AUTH, EMPTY, SESSION_CHANGED, CONFLICT, RETRY, ACKED
 }
@@ -65,6 +75,13 @@ internal class SyncDeliveryCoordinator(
   val dao = db.sync()
   val row = dao.nextPendingForAccount(lease.uid) ?: return SyncDeliveryStep.EMPTY
   if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
+  // A queued UID alone does not authorize a local profile. An orphaned,
+  // corrupted or replayed record must never reach a remote adapter.
+  val binding = dao.binding(row.profileId)
+  if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
+  if (binding==null || binding.profileId!=row.profileId ||
+   binding.accountUid!=lease.uid || binding.consentAtMs<=0L ||
+   !row.hasSafeCloudIdentity(lease.uid)) return park(lease,row)
   // A nested write cannot rely on parentActive() alone: Firestore only checks
   // that the parent exists, not that its revision still matches this device.
   // Recheck the most recent ACKed parent before each child operation; the
@@ -72,7 +89,9 @@ internal class SyncDeliveryCoordinator(
   val parentEcho = if (row.kind == "profile") null else {
    val ackedParent = dao.latestAcknowledgedProfileForAccount(lease.uid, row.profileId)
     ?: return SyncDeliveryStep.RETRY
-   if (ackedParent.tombstone) return park(lease, row)
+   if (ackedParent.tombstone || ackedParent.kind!="profile" ||
+    ackedParent.profileId!=row.profileId ||
+    !ackedParent.hasSafeCloudIdentity(lease.uid)) return park(lease, row)
    val observed = remote.read(lease, ackedParent)
    if (identity.currentLease() != lease) return SyncDeliveryStep.SESSION_CHANGED
    if (observed?.matches(ackedParent) != true) return park(lease, row)

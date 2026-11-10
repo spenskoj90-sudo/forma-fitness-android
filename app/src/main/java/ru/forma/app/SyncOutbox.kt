@@ -110,7 +110,7 @@ data class SyncOutboxCounts(
 // Keep the local→cloud path contract identical to Firestore stableId().
 // A legacy odd ID remains safe in Room; explicit binding fails atomically
 // rather than silently rewriting historical UUIDs or losing queued data.
-private val cloudDocumentId=Regex("^[A-Za-z0-9_-]{1,128}$")
+internal val cloudDocumentId=Regex("^[A-Za-z0-9_-]{1,128}$")
 private fun Profile.cloudPayload()=CloudProfilePayload(
  name,age,heightCm,weightKg,experience.name,
  equipment.map{it.name}.sorted(),limitations,primary.name,secondary?.name,

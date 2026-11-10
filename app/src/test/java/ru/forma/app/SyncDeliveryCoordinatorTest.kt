@@ -371,4 +371,66 @@ class SyncDeliveryCoordinatorTest {
    assertEquals(1,remote.writes)
   }finally{db.close()}
  }
+ @Test fun crossAccountCorruptOutboxIsParkedWithoutAnyRemoteAccess():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),
+   FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="Private B"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-B",100L)
+   val forged=SyncOutboxRow("forged-op","uid-A","a","profile","a",1,
+    """{"private":"never-send"}""","PENDING",false,200L)
+   db.sync().enqueue(forged)
+   val remote=FakeRemote()
+   val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
+   val sender=SyncDeliveryCoordinator(db,auth,remote)
+   assertEquals(SyncDeliveryStep.CONFLICT,sender.deliverOne())
+   assertEquals(0,remote.reads)
+   assertEquals(0,remote.writes)
+   assertEquals(listOf(forged.copy(state="CONFLICT")),
+    db.sync().conflictsForAccount("uid-A"))
+   assertEquals(1,db.sync().pendingForAccount("uid-B").size)
+   auth.active=VerifiedSyncLease("uid-B",2L)
+   assertEquals(SyncDeliveryStep.ACKED,sender.deliverOne())
+   assertEquals("uid-B",remote.documents.values.single().accountUid)
+   assertEquals("Private B",repo.load("a")!!.name)
+  }finally{db.close()}
+ }
+
+ @Test fun badPathUnknownKindAndMalformedParentAreNeverRemoteReads():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),
+   FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="safe",name="Offline",measurements=listOf(
+    Measurement(id="m1",dateMs=1000L,values=mapOf("weight" to 75.0)))))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("safe","uid-A",100L)
+   val remote=FakeRemote()
+   val sender=SyncDeliveryCoordinator(db,
+    SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)
+   assertEquals(SyncDeliveryStep.ACKED,sender.deliverOne())
+   val child=db.sync().nextPendingForAccount("uid-A")!!
+   assertEquals("measurement",child.kind)
+   // An ACKed parent with an invalid record path cannot authorize the child.
+   db.sync().enqueue(SyncOutboxRow("corrupt-parent","uid-A","safe",
+    "profile","wrong-id",2,"{}","ACKED",false,200L))
+   val before=remote.reads
+   assertEquals(SyncDeliveryStep.CONFLICT,sender.deliverOne())
+   assertEquals(before,remote.reads)
+   val invalid=listOf(
+    SyncOutboxRow("bad-path","uid-A","safe","measurement","x/unsafe",1,
+     "{}","PENDING",false,201L),
+    SyncOutboxRow("unknown","uid-A","safe","unknown","m2",1,
+     "{}","PENDING",false,202L)
+   )
+   invalid.forEach{db.sync().enqueue(it)}
+   repeat(invalid.size){assertEquals(SyncDeliveryStep.CONFLICT,sender.deliverOne())}
+   assertEquals(before,remote.reads)
+   assertEquals(1,remote.writes)
+   assertEquals(setOf(child.opId)+invalid.map{it.opId}.toSet(),
+    db.sync().conflictsForAccount("uid-A").map{it.opId}.toSet())
+   assertEquals(75.0,repo.load("safe")!!.measurements.single().values["weight"]!!,0.0)
+  }finally{db.close()}
+ }
+
 }
