@@ -262,7 +262,19 @@ class JourneyTest{
   waitNavigation()
   waitText("Тест Б")
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
-  click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
+  // The navigation bar can switch before the profile choices finish composing.
+  // Wait for the actual destination and available original profile; do not retry
+  // a missed tap or relax either the selection or history-isolation checks.
+  click("Профиль")
+  waitText("Пользователи · 2")
+  waitText("Тест А")
+  val originalProfile=runBlocking{app.repository.profiles.first().single{it.name=="Тест А"}}
+  click("Тест А")
+  composeRule.waitUntil(20000){
+   current().id==originalProfile.id &&
+    runBlocking{app.settings.settings.first().selected}==originalProfile.id
+  }
+  click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   // Explicit destination checks: earlier CI screenshots for Progress, Home and
   // Body captured the preceding screen despite a successful journey test.
