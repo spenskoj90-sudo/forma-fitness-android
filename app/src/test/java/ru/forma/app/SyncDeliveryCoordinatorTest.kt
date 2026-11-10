@@ -17,6 +17,7 @@ class SyncDeliveryCoordinatorTest {
  private class SyntheticIdentity(var active:VerifiedSyncLease?):VerifiedSyncIdentity {
   override suspend fun currentLease()=active
  }
+ private fun fixtureIdentity(uid:String)=SyntheticIdentity(VerifiedSyncLease(uid,1L))
  private class FakeRemote:AuthenticatedSyncRemote {
   val documents=mutableMapOf<String,SyncRemoteEcho>()
   var writes=0
@@ -64,7 +65,7 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="offline-a",name="Alice",measurements=listOf(
     Measurement(id="metric-a",dateMs=1000L,values=mapOf("weight" to 75.0)))))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",2000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),2000L)
    val identity=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote().apply{failOnRead=2}
    val coordinator=SyncDeliveryCoordinator(db,identity,remote)
@@ -91,8 +92,8 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
    repo.saveProfile(Profile(id="b",name="Bob"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b","uid-B",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b",fixtureIdentity("uid-B"),200L)
    val identity=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote()
    remote.afterRead={identity.active=VerifiedSyncLease("uid-B",2L)}
@@ -117,7 +118,7 @@ class SyncDeliveryCoordinatorTest {
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote()
    val coordinator=SyncDeliveryCoordinator(db,auth,remote)
@@ -156,8 +157,8 @@ class SyncDeliveryCoordinatorTest {
    var repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
    repo.saveProfile(Profile(id="b",name="Bob"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b","uid-B",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b",fixtureIdentity("uid-B"),200L)
    val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote()
    val a=db.sync().nextPendingForAccount("uid-A")!!
@@ -195,8 +196,8 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
    repo.saveProfile(Profile(id="b",name="Bob"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b","uid-B",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("b",fixtureIdentity("uid-B"),200L)
    val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=object:AuthenticatedSyncRemote {
     var writes=0
@@ -241,8 +242,8 @@ class SyncDeliveryCoordinatorTest {
    repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
     Measurement(id="m-a",dateMs=1000L,values=mapOf("weight" to 75.0)))))
    repo.saveProfile(Profile(id="z",name="Other"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("z","uid-A",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("z",fixtureIdentity("uid-A"),200L)
    assertEquals(3,db.sync().totalRows())
    val identity=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote()
@@ -276,7 +277,7 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
     Measurement(id="waist-a",dateMs=1000L,values=mapOf("waist" to 80.0)))))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    val remote=FakeRemote()
    val coord=SyncDeliveryCoordinator(db,SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)
    assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
@@ -299,7 +300,7 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice",measurements=listOf(
     Measurement(id="metric-a",dateMs=1000L,values=mapOf("weight" to 75.0)))))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    val remote=FakeRemote()
    val coord=SyncDeliveryCoordinator(db,SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)
    assertEquals(SyncDeliveryStep.ACKED,coord.deliverOne())
@@ -325,7 +326,7 @@ class SyncDeliveryCoordinatorTest {
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote()
    val coord=SyncDeliveryCoordinator(db,auth,remote)
@@ -359,7 +360,7 @@ class SyncDeliveryCoordinatorTest {
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    val auth=SyntheticIdentity(VerifiedSyncLease("uid-A",1L))
    val remote=FakeRemote().apply{rejectWrite=true}
    val coordinator=SyncDeliveryCoordinator(db,auth,remote)
@@ -377,7 +378,7 @@ class SyncDeliveryCoordinatorTest {
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Private B"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-B",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-B"),100L)
    val forged=SyncOutboxRow("forged-op","uid-A","a","profile","a",1,
     """{"private":"never-send"}""","PENDING",false,200L)
    db.sync().enqueue(forged)
@@ -404,7 +405,7 @@ class SyncDeliveryCoordinatorTest {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="safe",name="Offline",measurements=listOf(
     Measurement(id="m1",dateMs=1000L,values=mapOf("weight" to 75.0)))))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("safe","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("safe",fixtureIdentity("uid-A"),100L)
    val remote=FakeRemote()
    val sender=SyncDeliveryCoordinator(db,
     SyntheticIdentity(VerifiedSyncLease("uid-A",1L)),remote)

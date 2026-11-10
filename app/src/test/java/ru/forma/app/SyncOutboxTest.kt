@@ -13,6 +13,10 @@ import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class SyncOutboxTest {
+ // A fixed synthetic lease is test evidence, NEVER a production Firebase login.
+ private fun fixtureIdentity(uid:String)=object:VerifiedSyncIdentity {
+  override suspend fun currentLease()=VerifiedSyncLease(uid,1L)
+ }
  @Test fun guestAndBackupImportNeverAutoBindOrQueue():Unit=runBlocking{
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try{
@@ -125,7 +129,7 @@ class SyncOutboxTest {
    val active=repo.start(guest.id,generateProgram(guest).first(),2000L)
    assertNotNull(active)
    assertEquals(0,db.sync().totalRows())
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,"uid-A",3000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-A"),3000L)
    val initial=db.sync().pendingForAccount("uid-A")
    assertEquals(3,initial.size)
    assertEquals(setOf("profile","measurement","workout"),initial.map{it.kind}.toSet())
@@ -134,13 +138,13 @@ class SyncOutboxTest {
    assertTrue(initial.none{it.snapshot.contains("\"active\":")})
    assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
    assertNull(db.sync().binding("offline-b"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,"uid-A",3000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-A"),3000L)
    assertEquals(3,db.sync().totalRows())
    assertTrue(runCatching{
-    repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,"uid-B",4000L)
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-B"),4000L)
    }.isFailure)
    assertEquals("uid-A",db.sync().binding(guest.id)!!.accountUid)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b","uid-B",5000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b",fixtureIdentity("uid-B"),5000L)
    assertEquals(3,db.sync().pendingForAccount("uid-A").size)
    assertEquals(listOf("offline-b"),db.sync().pendingForAccount("uid-B").map{it.profileId})
    assertEquals(historical.history,repo.load(guest.id)!!.history)
@@ -160,7 +164,7 @@ class SyncOutboxTest {
      values=mapOf("weight" to 75.0))))
    repo.saveProfile(a)
    repo.saveProfile(Profile(id="offline-b",name="Bob"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",3000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),3000L)
    val original=db.sync().pendingForAccount("uid-A")
    assertEquals(2,original.size)
    assertEquals(setOf("profile","measurement"),original.map{it.kind}.toSet())
@@ -176,13 +180,13 @@ class SyncOutboxTest {
    assertEquals("uid-A",db.sync().binding("offline-a")!!.accountUid)
    assertNull(db.sync().binding("offline-b"))
    assertEquals(a,repo.load("offline-a"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b","uid-B",4000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b",fixtureIdentity("uid-B"),4000L)
    val bRows=db.sync().pendingForAccount("uid-B")
    assertEquals(1,bRows.size)
    assertEquals("offline-b",bRows.single().profileId)
    assertEquals(original,db.sync().pendingForAccount("uid-A"))
    // Retrying A consent after restart must not generate new revisions.
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",5000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),5000L)
    assertEquals(original,db.sync().pendingForAccount("uid-A"))
    assertEquals(3,db.sync().totalRows())
   }finally{
@@ -200,7 +204,7 @@ class SyncOutboxTest {
     measurements=listOf(Measurement(id="m-1",dateMs=1000L,values=mapOf("waist" to 80.0))))
    val stopped=stopSession(startSession(guest.id,generateProgram(guest).first(),1000L),false,1300L)
    repo.saveProfile(finishSession(guest,stopped,1400L))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline","uid-A",2000L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline",fixtureIdentity("uid-A"),2000L)
    val pending=db.sync().pendingForAccount("uid-A")
    assertEquals(listOf("profile","measurement","workout"),pending.map{it.kind})
    assertEquals(pending.first(),db.sync().nextPendingForAccount("uid-A"))
@@ -217,7 +221,7 @@ class SyncOutboxTest {
   try {
    var repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="A"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a","uid-A",100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
    repo.mutate("a"){it.copy(weightKg=80.0)}
    val rows=db.sync().pendingForAccount("uid-A")
    assertEquals(listOf(1,2),rows.map{it.revision})
@@ -267,10 +271,10 @@ class SyncOutboxTest {
      values=mapOf("waist" to 80.0))))
    repo.saveProfile(other)
    assertTrue(runCatching{
-    repo.bindAndQueueInitialSnapshotForVerifiedConsent(legacy.id,"uid-A",100L)
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(legacy.id,fixtureIdentity("uid-A"),100L)
    }.isFailure)
    assertTrue(runCatching{
-    repo.bindAndQueueInitialSnapshotForVerifiedConsent(other.id,"uid-A",200L)
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(other.id,fixtureIdentity("uid-A"),200L)
    }.isFailure)
    assertNull(db.sync().binding(legacy.id))
    assertNull(db.sync().binding(other.id))
@@ -288,7 +292,7 @@ class SyncOutboxTest {
    val repo=ProfileRepository(db)
    val local=Profile(id="safe",name="Safe")
    repo.saveProfile(local)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent(local.id,"uid-A",300L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(local.id,fixtureIdentity("uid-A"),300L)
    val initial=db.sync().pendingForAccount("uid-A")
    assertEquals(1,initial.size)
    val unsafe=Measurement(id="not/a/cloud-id",dateMs=1000L,
@@ -312,11 +316,53 @@ class SyncOutboxTest {
    db.profiles().put(ProfileRow(corrupt.id,corrupt.name,
     kotlinx.serialization.json.Json.encodeToString(Profile.serializer(),corrupt)))
    assertTrue(runCatching{
-    repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline","uid-A",3000L)
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline",fixtureIdentity("uid-A"),3000L)
    }.isFailure)
    assertNull(db.sync().binding("offline"))
    assertEquals(0,db.sync().totalRows())
    assertEquals(corrupt,repo.load("offline"))
   }finally{db.close()}
  }
+ @Test fun switchingVerifiedLeaseDuringInitialConsentRollsBackAllRows():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val existing=Profile(id="offline-a",name="Local")
+   repo.saveProfile(existing)
+   var reads=0
+   val changing=object:VerifiedSyncIdentity {
+    override suspend fun currentLease():VerifiedSyncLease {
+     reads++
+     return if(reads<3)VerifiedSyncLease("uid-A",1L)
+      else VerifiedSyncLease("uid-B",2L)
+    }
+   }
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(existing.id,changing,100L)
+   }.isFailure)
+   assertEquals(3,reads)
+   assertNull(db.sync().binding(existing.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(existing,repo.load(existing.id))
+  }finally{db.close()}
+ }
+
+ @Test fun missingVerifiedLeaseNeverGrantsConsent():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val existing=Profile(id="offline-a",name="Local")
+   repo.saveProfile(existing)
+   val signedOut=object:VerifiedSyncIdentity {
+    override suspend fun currentLease():VerifiedSyncLease?=null
+   }
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(existing.id,signedOut,100L)
+   }.isFailure)
+   assertNull(db.sync().binding(existing.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(existing,repo.load(existing.id))
+  }finally{db.close()}
+ }
+
 }

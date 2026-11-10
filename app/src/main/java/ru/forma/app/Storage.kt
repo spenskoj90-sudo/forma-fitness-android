@@ -51,17 +51,28 @@ class ProfileRepository(private val db:FormaDatabase) {
   * is forbidden until a separately reviewed ownership/recovery flow exists.
   */
  internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
-  profileId:String,verifiedUid:String,consentAtMs:Long
- )=db.withTransaction {
-  require(verifiedUid.isNotBlank()&&consentAtMs>0){"Verified UID and explicit consent are required"}
-  val profile=load(profileId)?:error("Profile missing")
-  val prior=db.sync().binding(profileId)
-  if(prior!=null){
-   require(prior.accountUid==verifiedUid){"Local profile is already bound to a different account"}
-   return@withTransaction
+  profileId:String,identity:VerifiedSyncIdentity,consentAtMs:Long
+ ) {
+  // A user-entered or stored UID is never authority to bind personal history.
+  // A verified Auth lease must be the same before and after this transaction.
+  require(consentAtMs>0){"Explicit consent is required"}
+  val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}
+   ?:error("A verified account session is required")
+  db.withTransaction {
+   require(identity.currentLease()==lease){"Account session changed during consent"}
+   val profile=load(profileId)?:error("Profile missing")
+   val prior=db.sync().binding(profileId)
+   if(prior!=null){
+    require(prior.accountUid==lease.uid){"Local profile is already bound to a different account"}
+    require(identity.currentLease()==lease){"Account session changed during consent"}
+    return@withTransaction
+   }
+   db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,lease.uid,consentAtMs))
+   enqueueBoundChanges(db,null,profile,json)
+   // Roll back binding and all initial historical rows if sign-out,
+   // account switch or generation change occurs while queuing.
+   require(identity.currentLease()==lease){"Account session changed during consent"}
   }
-  db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,verifiedUid,consentAtMs))
-  enqueueBoundChanges(db,null,profile,json)
  }
  suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }

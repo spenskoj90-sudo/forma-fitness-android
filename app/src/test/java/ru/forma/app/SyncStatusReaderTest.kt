@@ -24,6 +24,7 @@ class SyncStatusReaderTest {
   }
  }
  private fun identity(vararg leases:VerifiedSyncLease?)=ScriptedIdentity(leases.toList())
+ private fun fixtureIdentity(uid:String)=identity(VerifiedSyncLease(uid,1L))
  private suspend fun transition(
   db:FormaDatabase,row:SyncOutboxRow,toConflict:Boolean
  ):Int=if(toConflict)db.sync().parkExactConflict(
@@ -43,8 +44,8 @@ class SyncStatusReaderTest {
     measurements=listOf(Measurement(id="m-a",dateMs=100L,
      values=mapOf("weight" to 75.0)))))
    repo.saveProfile(Profile(id="offline-b",name="Bob private"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a","uid-A",100L)
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b","uid-B",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),100L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b",fixtureIdentity("uid-B"),200L)
    val first=db.sync().pendingForAccount("uid-A").first()
    val second=db.sync().pendingForAccount("uid-A").last()
    assertEquals("profile",first.kind)
@@ -87,7 +88,7 @@ class SyncStatusReaderTest {
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="persisted",name="Keep history"))
-   repo.bindAndQueueInitialSnapshotForVerifiedConsent("persisted","uid-p",200L)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("persisted",fixtureIdentity("uid-p"),200L)
    val pending=db.sync().nextPendingForAccount("uid-p")!!
    assertEquals(1,transition(db,pending,true))
    val lease=VerifiedSyncLease("uid-p",4L)
