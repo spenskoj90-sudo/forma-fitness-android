@@ -26,7 +26,13 @@ class ExerciseTechniqueCatalogTest {
   }}
   rule.onNodeWithTag("technique-search").performTextInput("тяга резинки")
   rule.onNodeWithTag("technique-item-band_row").assertExists()
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
+    androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Инструкция свёрнута"))
    .performScrollTo().performClick()
+  rule.onNodeWithTag("technique-item-band_row").assert(
+   androidx.compose.ui.test.SemanticsMatcher.expectValue(
+    androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Инструкция раскрыта"))
+  rule.onNodeWithText("Текстовая техника · видео пока нет").assertExists()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
   // No reviewed media exists in the packaged source allowlist. A dead play
   // button would mislead users; the truthful fallback must render immediately.
