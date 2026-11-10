@@ -231,7 +231,44 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
   }
  }
- fun exportBackup(uri:Uri,allProfiles:Boolean=false){val id:String?=if(allProfiles)null else (current.value?.id?:return);action{withContext(Dispatchers.IO){val text=app.repository.exportBackup(id);val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value=if(allProfiles)"Копия всех локальных профилей сохранена. Она содержит персональные данные других пользователей — храните её в защищённом месте." else "Копия текущего профиля сохранена. Храните её в защищённом месте: она содержит историю и замеры."}}
+ fun exportBackup(
+  uri:Uri,allProfiles:Boolean=false,expectedProfileId:String?=null,
+  expectedProfileIds:Set<String>?=null
+ ){
+  // A stale SAF result cannot silently select a different person's profile.
+  if ((!allProfiles && (expectedProfileId.isNullOrBlank() ||
+   current.value?.id!=expectedProfileId)) ||
+   (allProfiles && expectedProfileIds.isNullOrEmpty())) {
+   error.value="Выбранный профиль изменился. Повторите экспорт."
+   return
+  }
+  action {
+   withContext(Dispatchers.IO) {
+    suspend fun verifyScope()=requireBackupExportScope(
+     allProfiles,expectedProfileId,expectedProfileIds,current.value?.id,
+     app.settings.settings.first().selected,
+     app.repository.profiles.first().map{it.id}.toSet()
+    )
+    verifyScope()
+    val text=app.repository.exportBackup(if(allProfiles)null else expectedProfileId)
+    val bytes=text.toByteArray(Charsets.UTF_8)
+    try {
+     verifyScope()
+     try {
+      writeVerifiedBackupBytes(bytes,
+       {app.contentResolver.openOutputStream(uri,"wt")},
+       {app.contentResolver.openInputStream(uri)})
+     }catch(e:Exception) {
+      throw java.io.IOException(
+       "Файл JSON не удалось проверить после записи. Не полагайтесь на эту копию; выберите другое хранилище.",e)
+     }
+    }finally{bytes.fill(0)}
+   }
+   notice.value=if(allProfiles)
+    "JSON-копия всех профилей сохранена и сверена повторным чтением. Она НЕ зашифрована: храните её в защищённом месте."
+   else "JSON-копия выбранного профиля сохранена и сверена повторным чтением. Она НЕ зашифрована: храните её в защищённом месте."
+  }
+ }
  fun importBackup(uri:Uri){action{val ids=withContext(Dispatchers.IO){val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл");val bytes=input.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=stream.read(buffer);if(n<0)break;require(out.size()+n<=MAX_BACKUP_BYTES){"Файл превышает 32 МБ"};out.write(buffer,0,n)};out.toByteArray()};app.repository.importBackup(bytes.toString(Charsets.UTF_8))};notice.value="Восстановлено профилей: ${ids.size}. Они добавлены отдельно; существующие данные сохранены."}}
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}

@@ -7,7 +7,7 @@ import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Synthetic ciphertext only; never read real user files or passwords. */
+/** Synthetic backup bytes only; no real profiles or passwords. */
 class VerifiedEncryptedBackupIOTest {
  private val sample=ByteArray(8197){(it*17).toByte()}
 
@@ -47,4 +47,15 @@ class VerifiedEncryptedBackupIOTest {
    writeVerifiedEncryptedBackup(sample,{ByteArrayOutputStream()},{null})
   }.exceptionOrNull() is IOException)
  }
+ @Test fun legacyJsonReadbackAcceptsExactBytesButRejectsMutation() {
+  val json="""{"version":1,"profiles":[{"name":"Synthetic"}]}""".toByteArray()
+  val stored=ByteArrayOutputStream()
+  writeVerifiedBackupBytes(json,{stored},{ByteArrayInputStream(stored.toByteArray())})
+  assertArrayEquals(json,stored.toByteArray())
+  val corrupted=json.copyOf().also{it[2]=(it[2].toInt() xor 1).toByte()}
+  assertTrue(runCatching {
+   writeVerifiedBackupBytes(json,{ByteArrayOutputStream()},{ByteArrayInputStream(corrupted)})
+  }.exceptionOrNull() is IOException)
+ }
+
 }
