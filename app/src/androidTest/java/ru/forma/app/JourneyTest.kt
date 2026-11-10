@@ -169,6 +169,21 @@ class JourneyTest{
   composeRule.onNodeWithText("Скрыть план подходов").performScrollTo().performClick()
   composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
   composeRule.onAllNodesWithText("План:",substring=true).assertCountEquals(0)
+  // Exercise technique tabs must be reachable inside an actual Room-backed
+  // workout without ever pretending an unlicensed clip is playable.
+  click("Видео")
+  waitText("Подтверждённая демонстрация пока недоступна.")
+  composeRule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
+  click("Мышцы")
+  waitText("Работа мышц")
+  composeRule.onNodeWithText("Спереди").assertExists()
+  composeRule.onNodeWithText("Сзади").assertExists()
+  composeRule.onNodeWithContentDescription("Условная схема спереди",substring=true).assertExists()
+  composeRule.onNodeWithContentDescription("Условная схема сзади",substring=true).assertExists()
+  screenshot("workout-muscles-dark")
+  click("Инструкция")
+  waitText("Инструкция и ошибки")
+  composeRule.onNodeWithText("Подход выполнен").assertExists()
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.

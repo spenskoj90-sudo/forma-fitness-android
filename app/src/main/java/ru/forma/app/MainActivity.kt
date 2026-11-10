@@ -168,9 +168,15 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 }
 
 /** Schematic zone highlight only; not an animation of safe exercise technique. */
-@Composable fun MuscleFocusMap(muscle:Muscle,modifier:Modifier=Modifier,secondary:Set<Muscle> = emptySet()){
+@Composable fun MuscleFocusMap(
+ muscle:Muscle,modifier:Modifier=Modifier,secondary:Set<Muscle> = emptySet(),
+ backView:Boolean?=null
+){
  val green=MaterialTheme.colorScheme.primary
- Canvas(modifier.semantics{contentDescription="Условная схема: основная "+muscle.label+(if(secondary.isEmpty())"" else "; дополнительные "+secondary.joinToString{it.label})}){
+ Canvas(modifier.semantics{
+  contentDescription="Условная схема"+(when(backView){true->" сзади";false->" спереди";null->""})+
+   ": основная "+muscle.label+(if(secondary.isEmpty())"" else "; дополнительные "+secondary.joinToString{it.label})
+ }){
   val w=size.width;val h=size.height;val ink=Color(0xFFB4C4C4).copy(alpha=0.65f)
   drawCircle(ink,w*0.075f,Offset(w*0.50f,h*0.16f))
   drawLine(ink,Offset(w*0.50f,h*0.24f),Offset(w*0.50f,h*0.65f),2.dp.toPx())
@@ -180,8 +186,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   drawLine(ink,Offset(w*0.41f,h*0.65f),Offset(w*0.33f,h*0.94f),2.dp.toPx())
   drawLine(ink,Offset(w*0.59f,h*0.65f),Offset(w*0.67f,h*0.94f),2.dp.toPx())
   fun zones(group:Muscle)=when(group){
-   Muscle.BACK->listOf(0.40f to 0.42f,0.60f to 0.42f)
-   Muscle.CHEST->listOf(0.41f to 0.37f,0.59f to 0.37f)
+   Muscle.BACK->if(backView==false)emptyList() else listOf(0.40f to 0.42f,0.60f to 0.42f)
+   Muscle.CHEST->if(backView==true)emptyList() else listOf(0.41f to 0.37f,0.59f to 0.37f)
    Muscle.SHOULDERS->listOf(0.28f to 0.31f,0.72f to 0.31f)
    Muscle.ARMS->listOf(0.23f to 0.46f,0.77f to 0.46f)
    Muscle.CORE->listOf(0.50f to 0.52f)
@@ -555,11 +561,20 @@ private val editableProfileSaver=Saver<Profile,String>(
        Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."})
       }
       2->Panel("Работа мышц"){
-       MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(180.dp),secondaryMuscles(current.exercise))
-       Text("Основная группа: "+current.exercise.muscle.label)
        val secondary=secondaryMuscles(current.exercise)
+       Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
+         Text("Спереди",style=MaterialTheme.typography.labelMedium)
+         MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(166.dp),secondary,backView=false)
+        }
+        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
+         Text("Сзади",style=MaterialTheme.typography.labelMedium)
+         MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(166.dp),secondary,backView=true)
+        }
+       }
+       Text("Основная группа: "+current.exercise.muscle.label)
        if(secondary.isNotEmpty())Text("Дополнительно: "+secondary.joinToString{it.label})
-       Text("Схематичные зоны нагрузки. Это не инструкция по движению и не медицинская анатомия.",
+       Text("Схематичные зоны нагрузки спереди и сзади. Это не инструкция по движению и не медицинская анатомия.",
         style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
       }
      }
