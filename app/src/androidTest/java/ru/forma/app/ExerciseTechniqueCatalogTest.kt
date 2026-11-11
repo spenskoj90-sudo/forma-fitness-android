@@ -41,6 +41,12 @@ class ExerciseTechniqueCatalogTest {
     androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Инструкция раскрыта"))
   rule.onNodeWithText("Текстовая техника · видео пока нет").assertExists()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
+  rule.onNodeWithTag("authored-technique-card").assertExists()
+  rule.onNodeWithTag("authored-technique-frame").assertTextContains("целостность резинки", substring=true)
+  rule.onNodeWithTag("authored-technique-next").performScrollTo().performClick()
+  rule.onNodeWithTag("authored-technique-frame").assertTextContains("Потяните рукояти", substring=true)
+  rule.onNodeWithTag("authored-technique-previous").performScrollTo().performClick()
+  rule.onNodeWithTag("authored-technique-frame").assertTextContains("целостность резинки", substring=true)
   // No reviewed media exists in the packaged source allowlist. A dead play
   // button would mislead users; the truthful fallback must render immediately.
   rule.onNodeWithText("Подтверждённая демонстрация пока недоступна.").assertExists()

@@ -29,6 +29,7 @@ import ru.forma.domain.*
   if(showInstructions){
    Text(exercise.cue)
    Text("Частые ошибки: ${exercise.mistakes.ifBlank{"Пока не описаны."}}")
+   AuthoredTechniqueWalkthrough(exercise)
   }
   if(!videoCanBeOffered)Text("Подтверждённая демонстрация пока недоступна.")
   if(videoCanBeOffered && !initiallyOpen)TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){

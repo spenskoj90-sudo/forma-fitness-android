@@ -554,6 +554,7 @@ private val editableProfileSaver=Saver<Profile,String>(
        Text(current.exercise.cue)
        Text("Частые ошибки",style=MaterialTheme.typography.titleSmall)
        Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."})
+       AuthoredTechniqueWalkthrough(current.exercise)
       }
       2->Panel("Работа мышц"){
        val secondary=secondaryMuscles(current.exercise)

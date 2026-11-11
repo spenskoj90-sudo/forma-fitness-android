@@ -98,6 +98,7 @@ fun ExerciseTechniqueCatalog(profileId:String,available:Set<Equipment>){
      Text(exercise.cue)
      Text("Частые ошибки",style=MaterialTheme.typography.titleSmall)
      Text(exercise.mistakes.ifBlank{"Подробные ошибки для упражнения пока не проверены."})
+     AuthoredTechniqueWalkthrough(exercise)
      ExerciseTechnique(exercise,showInstructions=false)
      if(exercise.equipment !in available)Text(
       "Этот снаряд не выбран для текущего места тренировки. Инструкция доступна для ознакомления.",
