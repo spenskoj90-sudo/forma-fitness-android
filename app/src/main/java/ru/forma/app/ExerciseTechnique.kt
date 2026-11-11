@@ -10,15 +10,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
 
-/** Entire subtree is keyed: no frame of the old exercise's player/captions survives replacement. */
+/** Keep instructions structurally stable; isolate only verified-media player per exact variant. */
 @Composable internal fun ExerciseTechnique(
  exercise:Exercise,source:TechniqueMediaSource?=null,
  showInstructions:Boolean=true,initiallyOpen:Boolean=false
 ){
  val assets=LocalContext.current.applicationContext.assets
  val localSource=remember(assets){AssetTechniqueMediaSource(assets)}
- key(exercise.id,exercise.equipment){
-  var open by remember(initiallyOpen){mutableStateOf(initiallyOpen)}
+ var open by remember(exercise.id,exercise.equipment,initiallyOpen){mutableStateOf(initiallyOpen)}
   // The packaged allowlist is empty until every license and exercise-specific
   // technique review is accepted. Do not offer a dead video button: show the
   // honest offline state immediately, without decoding or seeking network media.
@@ -36,9 +35,12 @@ import ru.forma.domain.*
    Text(if(open)"Скрыть демонстрацию" else "Показать демонстрацию")
   }
   if(videoCanBeOffered && open){
+   // Switching exercises should not remove the whole walkthrough/preview slot tree.
+   // The actual player and captions are still disposed as one exact-variant group.
+   key(exercise.id,exercise.equipment){
    val loader=source?:localSource
    var result by remember(loader){mutableStateOf<TechniqueMediaResult?>(null)}
-   LaunchedEffect(loader){result=loader.load(exercise)}
+   LaunchedEffect(loader,exercise.id,exercise.equipment){result=loader.load(exercise)}
    when(val value=result){
     null->Text("Проверяем локальный материал…")
     TechniqueMediaResult.Unavailable->Text("Подтверждённая демонстрация пока недоступна.")
