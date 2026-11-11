@@ -169,11 +169,18 @@ class JourneyTest{
   composeRule.onNodeWithText("Скрыть план подходов").performScrollTo().performClick()
   composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
   composeRule.onAllNodesWithText("План:",substring=true).assertCountEquals(0)
-  // Exercise technique tabs must be reachable inside an actual Room-backed
-  // workout without ever pretending an unlicensed clip is playable.
-  click("Видео")
-  waitText("Подтверждённая демонстрация пока недоступна.")
+  // No reviewed exact-exercise media exists: the active Room-backed workout
+  // must not offer a dead Video tab. Original offline technique instructions
+  // remain reachable and their stages must change without touching set state.
+  composeRule.onNodeWithTag("workout-technique-tab-0").assertDoesNotExist()
   composeRule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
+  waitText("Инструкция и ошибки")
+  waitText("Пошаговая техника · авторская схема")
+  composeRule.onNodeWithText("Шаг 1 из 4").assertExists()
+  click("Далее")
+  composeRule.onNodeWithText("Шаг 2 из 4").assertExists()
+  click("Назад")
+  composeRule.onNodeWithText("Шаг 1 из 4").assertExists()
   click("Мышцы")
   waitText("Работа мышц")
   composeRule.onNodeWithText("Спереди").assertExists()
