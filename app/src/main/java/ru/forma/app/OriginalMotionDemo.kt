@@ -35,15 +35,18 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
   // Compose's infinite transition is recognized as an infinite animation by
   // its test clock. A custom never-ending Animatable loop can prevent idling.
   // Do not start any animation until the user explicitly presses Play.
-  val fraction=if(playing) {
-   val transition=rememberInfiniteTransition(label="original-technique")
-   val animated by transition.animateFloat(
-    initialValue=0f,targetValue=1f,
-    animationSpec=infiniteRepeatable(
-     animation=tween(1700,easing=LinearEasing),repeatMode=RepeatMode.Reverse),
-    label="exercise-motion")
-   animated
-  } else manualFraction
+  // Keep the transition and its child animation in a stable composition slot.
+  // Conditionally calling rememberInfiniteTransition changes the slot table
+  // when Play is tapped and crashes on current Compose runtime versions.
+  val transition=rememberInfiniteTransition(label="original-technique")
+  val animated by transition.animateFloat(
+   initialValue=manualFraction,
+   targetValue=if(playing) 1f else manualFraction,
+   animationSpec=if(playing) infiniteRepeatable(
+    animation=tween(1700,easing=LinearEasing),repeatMode=RepeatMode.Reverse
+   ) else androidx.compose.animation.core.snap(),
+   label="exercise-motion")
+  val fraction=if(playing) animated else manualFraction
   val frame=originalMotionAt(spec,fraction)
   val skeleton=MaterialTheme.colorScheme.onSurface
   val accent=MaterialTheme.colorScheme.primary
