@@ -1,5 +1,7 @@
 package ru.forma.app
 
+import kotlinx.coroutines.launch
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
