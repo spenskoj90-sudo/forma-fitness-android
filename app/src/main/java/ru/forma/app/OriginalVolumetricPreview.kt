@@ -31,6 +31,7 @@ import ru.forma.domain.originalVolumeAt
 import ru.forma.domain.originalVolumeTriangles
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -49,6 +50,8 @@ private class Original3DRenderer : GLSurfaceView.Renderer {
  private var normalAttribute=0
  private var colorAttribute=0
  private var matrixUniform=0
+ // Allocated and reused only by the GL render thread; never retain every animation frame.
+ private var vertexBuffer:FloatBuffer?=null
  private val vertexShader = """
   uniform mat4 uMvp;
   attribute vec3 aPosition;
@@ -112,9 +115,12 @@ private class Original3DRenderer : GLSurfaceView.Renderer {
   GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
   val vertices=triangles
   if(vertices.isEmpty() || program==0)return
-  val buffer=ByteBuffer.allocateDirect(vertices.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+  val buffer=vertexBuffer?.takeIf{it.capacity()>=vertices.size}
+   ?:ByteBuffer.allocateDirect(vertices.size*4).order(ByteOrder.nativeOrder())
+    .asFloatBuffer().also { vertexBuffer=it }
+  buffer.clear()
   buffer.put(vertices)
-  buffer.position(0)
+  buffer.flip()
   val projection=FloatArray(16)
   val view=FloatArray(16)
   val matrix=FloatArray(16)
