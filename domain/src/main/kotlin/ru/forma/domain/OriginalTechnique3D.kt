@@ -94,7 +94,15 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
  fun x(x: Float, y: Float, z: Float) = VolumePoint(x, y, z)
  val handMid = (leftWrist + rightWrist) * 0.5f
  when(exercise.equipment) {
-  Equipment.DUMBBELL -> listOf(leftWrist, rightWrist).forEach { wrist ->
+  Equipment.DUMBBELL -> if(exercise.id=="goblet") {
+   // One vertical goblet dumbbell is shared by both hands at chest height.
+   // Other exact-ID dumbbell exercises retain independent left/right weights.
+   val bottom=handMid+x(0f,-0.3f,0f)
+   val top=handMid+x(0f,0.3f,0f)
+   gear(bottom,top,0.13f)
+   joints += VolumeJoint(bottom,0.22f,VolumeTone.EQUIPMENT)
+   joints += VolumeJoint(top,0.22f,VolumeTone.EQUIPMENT)
+  } else listOf(leftWrist, rightWrist).forEach { wrist ->
    gear(wrist + x(0f, 0f, -0.36f), wrist + x(0f, 0f, 0.36f), 0.13f)
    joints += VolumeJoint(wrist + x(0f, 0f, -0.36f), 0.22f, VolumeTone.EQUIPMENT)
    joints += VolumeJoint(wrist + x(0f, 0f, 0.36f), 0.22f, VolumeTone.EQUIPMENT)
