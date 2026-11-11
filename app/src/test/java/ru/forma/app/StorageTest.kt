@@ -12,6 +12,24 @@ import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StorageTest {
+ @Test fun visualPreferencesToggleAtomicallyAndPreserveUnrelatedSettings():Unit=runBlocking {
+  val settings=SettingsRepository(RuntimeEnvironment.getApplication())
+  val before=settings.settings.first()
+  settings.toggleHighContrast()
+  assertEquals(!before.highContrast,settings.settings.first().highContrast)
+  settings.toggleHighContrast()
+  settings.toggleReducedMotion()
+  settings.toggleReducedMotion()
+  settings.toggleSimplifiedEffects()
+  settings.toggleSimplifiedEffects()
+  val after=settings.settings.first()
+  assertEquals(before.highContrast,after.highContrast)
+  assertEquals(before.reducedMotion,after.reducedMotion)
+  assertEquals(before.simplifiedEffects,after.simplifiedEffects)
+  assertEquals(before.selected,after.selected)
+  assertEquals(before.voice,after.voice)
+  assertEquals(before.dark,after.dark)
+ }
  @Test fun repeatedAudioTapsUseSerializedDatastoreValueAndLeaveOtherSettingsAlone():Unit=runBlocking {
   val settings=SettingsRepository(RuntimeEnvironment.getApplication())
   val initial=settings.settings.first()

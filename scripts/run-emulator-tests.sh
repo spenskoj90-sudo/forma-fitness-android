@@ -69,6 +69,9 @@ grep -F "OK (4 tests)" "verification/technique-catalog-api${api}.txt"
 # OpenGL ES on-demand volume preview must be accessible/offline on API26/30/34.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.OriginalVolumetricPreviewTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/volume-preview-api${api}.txt"
 grep -F "OK (1 test)" "verification/volume-preview-api${api}.txt"
+# Original layered glass and solid accessibility fallback across small/double-font viewports.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormaGlassUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/glass-ui-api${api}.txt"
+grep -F "OK (3 tests)" "verification/glass-ui-api${api}.txt"
 # Check real TalkBack semantics for headings, spoken controls and summary charts.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.AccessibleWorkoutUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/accessibility-api${api}.txt"
 grep -F "OK (5 tests)" "verification/accessibility-api${api}.txt"

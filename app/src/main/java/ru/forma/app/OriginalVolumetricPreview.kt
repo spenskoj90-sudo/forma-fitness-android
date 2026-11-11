@@ -161,6 +161,7 @@ private class Original3DSurface(context:Context):GLSurfaceView(context) {
 @Composable
 internal fun OriginalVolumetricPreview(exercise:Exercise) {
  val context=LocalContext.current
+ val visual=LocalFormaVisualOptions.current
  val supported=remember(context) {
   (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
    .deviceConfigurationInfo.reqGlEsVersion>=0x20000
@@ -174,7 +175,10 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
   ){Text(if(expanded)"Скрыть 3D-прототип" else "Открыть 3D-прототип")}
   if(expanded) {
    var playing by remember { mutableStateOf(false) } // never auto-play after process recreation
-   var still by rememberSaveable { mutableStateOf(false) }
+   var still by rememberSaveable { mutableStateOf(visual.reducedMotion) }
+   LaunchedEffect(visual.reducedMotion) {
+    if(visual.reducedMotion){still=true;playing=false}
+   }
    var angle by rememberSaveable { mutableFloatStateOf(25f) }
    val phase=remember { Animatable(0f) }
    val scope=rememberCoroutineScope()

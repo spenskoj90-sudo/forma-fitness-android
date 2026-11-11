@@ -32,6 +32,8 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
  val spec=remember(exercise.id, exercise.equipment) { originalMotionFor(exercise) } ?: return
  key(exercise.id,exercise.equipment) {
   var playing by rememberSaveable { mutableStateOf(false) }
+  val reducedMotion=LocalFormaVisualOptions.current.reducedMotion
+  LaunchedEffect(reducedMotion){if(reducedMotion)playing=false}
   val phase=remember { Animatable(0f) }
   val scope=rememberCoroutineScope()
   // A single infiniteRepeatable animation is cancellable by LaunchedEffect;
@@ -125,6 +127,7 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
      OutlinedButton(
       onClick={playing=!playing},
+      enabled=!reducedMotion,
       modifier=Modifier.heightIn(min=48.dp).testTag("original-motion-play")) {
       Text(if(playing)"Пауза" else "Воспроизвести схему")
      }
@@ -135,7 +138,8 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
      modifier=Modifier.fillMaxWidth().testTag("original-motion-scrubber"),
      valueRange=0f..1f
     )
-    Text("Прокрутите движение вручную или запустите плавный цикл. " +
+    Text((if(reducedMotion) "Уменьшение движения включено. Используйте ручную прокрутку. "
+      else "Прокрутите движение вручную или запустите плавный цикл. ") +
      "При боли остановитесь; точные углы и ограничения индивидуальны.",
      style=MaterialTheme.typography.bodySmall,
      color=MaterialTheme.colorScheme.onSurfaceVariant)

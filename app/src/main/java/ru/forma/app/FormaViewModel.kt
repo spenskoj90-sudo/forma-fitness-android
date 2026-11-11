@@ -290,4 +290,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}
  fun dark(v:Boolean?){action{app.settings.dark(v)}}
  fun trainingPlace(place:TrainingPlace){action{app.settings.trainingPlace(place)}}
+ fun toggleHighContrast(){action{app.settings.toggleHighContrast()}}
+ fun toggleReducedMotion(){action{app.settings.toggleReducedMotion()}}
+ fun toggleSimplifiedEffects(){action{app.settings.toggleSimplifiedEffects()}}
 }

@@ -98,7 +98,16 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  // The navigation bar must not steal the primary action's IME-area tap.
  val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
  val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
- MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
+ val themeColors=if(settings.highContrast)colors.copy(
+  onSurfaceVariant=if(dark)Color.White else Color.Black,
+  outline=if(dark)Color.White else Color.Black
+ ) else colors
+ CompositionLocalProvider(LocalFormaVisualOptions provides FormaVisualOptions(
+  highContrast=settings.highContrast,
+  reducedMotion=settings.reducedMotion,
+  simplifiedEffects=settings.simplifiedEffects
+ )) {
+ MaterialTheme(colorScheme=themeColors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Статистика","Профиль");val destinations=listOf(0,1,3,4);val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.BarChart,Icons.Outlined.Person)
   Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
@@ -128,9 +137,10 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
    }
   }
  }
+ }
 }
 @Composable fun Page(title:String,subtitle:String="",compact:Boolean=false,content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(compact)10.dp else 14.dp)){Text(title,modifier=Modifier.semantics{heading()},style=if(compact)MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,style=if(compact)MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
-@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,modifier=Modifier.semantics{heading()},style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
+@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){FormaGlassPanel(title,content)}
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
 @Composable fun NumericField(label:String,value:String,modifier:Modifier=Modifier,onChange:(String)->Unit){
@@ -638,7 +648,12 @@ private val editableProfileSaver=Saver<Profile,String>(
   }
  TextButton({runCatching{context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))}.onFailure{vm.error.value="Настройки синтеза речи недоступны на этом телефоне"}}){Text("Настроить голос Android")}
  Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
- Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
+ Panel("Оформление"){
+  Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}
+  SwitchRow("Повышенная контрастность",settings.highContrast){vm.toggleHighContrast()}
+  SwitchRow("Уменьшить движения",settings.reducedMotion){vm.toggleReducedMotion()}
+  SwitchRow("Упростить эффекты",settings.simplifiedEffects){vm.toggleSimplifiedEffects()}
+ }
  NotificationPanel()
  EncryptedBackupPanel(vm)
  BackupPanel(vm)
