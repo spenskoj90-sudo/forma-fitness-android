@@ -24,6 +24,7 @@ internal fun AuthoredTechniqueWalkthrough(exercise: Exercise) {
  val frames = remember(exercise.id, exercise.equipment) { authoredTechniqueFrames(exercise) }
  if(frames.isEmpty()) return
  key(exercise.id, exercise.equipment) {
+  OriginalMotionDemo(exercise)
   var page by rememberSaveable { mutableIntStateOf(0) }
   val current = page.coerceIn(0, frames.lastIndex)
   ElevatedCard(Modifier.fillMaxWidth().testTag("authored-technique-card")) {

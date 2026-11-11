@@ -41,6 +41,13 @@ class ExerciseTechniqueCatalogTest {
     androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Инструкция раскрыта"))
   rule.onNodeWithText("Текстовая техника · видео пока нет").assertExists()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
+  rule.onNodeWithTag("original-motion-card").assertExists()
+  rule.onNodeWithTag("original-motion-canvas").assertExists()
+  rule.onNodeWithTag("original-motion-play").performScrollTo().performClick()
+  rule.onNodeWithText("Пауза").assertExists()
+  rule.onNodeWithTag("original-motion-play").performScrollTo().performClick()
+  rule.onNodeWithText("Воспроизвести схему").assertExists()
+  rule.onNodeWithTag("original-motion-scrubber").assertExists()
   rule.onNodeWithTag("authored-technique-card").assertExists()
   rule.onNodeWithTag("authored-technique-frame").assert(
    SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.LiveRegion,
