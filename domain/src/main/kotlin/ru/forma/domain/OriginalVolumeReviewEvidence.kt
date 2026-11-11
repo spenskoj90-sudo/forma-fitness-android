@@ -70,6 +70,10 @@ private val leadsById:Map<String,List<VolumeResearchLead>> = buildMap {
 }
 fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
 
+// Revision each exact exercise when its authored rig/equipment trajectory changes.
+// Digests bind source keyposes, not final rendered images or expert acceptance.
+private val originalPoseRevisions=mapOf("goblet" to 2,"raise" to 2)
+
 /** Reproducible digest of five source-authored keyposes and exact equipment. */
 private fun digestVolume(exercise:Exercise,revision:Int):String {
  val digest=MessageDigest.getInstance("SHA-256")
@@ -94,7 +98,7 @@ private fun digestVolume(exercise:Exercise,revision:Int):String {
 fun originalVolumeReviewPacket(exercise:Exercise):VolumeReviewPacket? {
  if(originalMotionFor(exercise)==null)return null
  val leads=leadsById[exercise.id] ?: return null
- val revision=1
+ val revision=originalPoseRevisions[exercise.id] ?: 1
  return VolumeReviewPacket(
   exerciseId=exercise.id,equipment=exercise.equipment,revision=revision,
   sha256=digestVolume(exercise,revision),
