@@ -1,10 +1,9 @@
 package ru.forma.app
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -31,22 +30,18 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
  val spec=remember(exercise.id, exercise.equipment) { originalMotionFor(exercise) } ?: return
  key(exercise.id,exercise.equipment) {
   var playing by rememberSaveable { mutableStateOf(false) }
-  var manualFraction by rememberSaveable { mutableFloatStateOf(0f) }
-  // Compose's infinite transition is recognized as an infinite animation by
-  // its test clock. A custom never-ending Animatable loop can prevent idling.
-  // Do not start any animation until the user explicitly presses Play.
-  // Keep the transition and its child animation in a stable composition slot.
-  // Conditionally calling rememberInfiniteTransition changes the slot table
-  // when Play is tapped and crashes on current Compose runtime versions.
-  val transition=rememberInfiniteTransition(label="original-technique")
-  val animated by transition.animateFloat(
-   initialValue=manualFraction,
-   targetValue=if(playing) 1f else manualFraction,
-   animationSpec=if(playing) infiniteRepeatable(
-    animation=tween(1700,easing=LinearEasing),repeatMode=RepeatMode.Reverse
-   ) else androidx.compose.animation.core.snap(),
-   label="exercise-motion")
-  val fraction=if(playing) animated else manualFraction
+  val phase=remember { Animatable(0f) }
+  val scope=rememberCoroutineScope()
+  // A single infiniteRepeatable animation is cancellable by LaunchedEffect;
+  // unlike a hand-written while(true) of finite animations, it has no
+  // composition-slot insertion/removal and retains its current phase on pause.
+  LaunchedEffect(playing) {
+   if(playing) phase.animateTo(
+    targetValue=1f,
+    animationSpec=infiniteRepeatable(
+     animation=tween(1700,easing=LinearEasing),repeatMode=RepeatMode.Reverse))
+  }
+  val fraction=phase.value
   val frame=originalMotionAt(spec,fraction)
   val skeleton=MaterialTheme.colorScheme.onSurface
   val accent=MaterialTheme.colorScheme.primary
@@ -127,14 +122,14 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
     }
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
      OutlinedButton(
-      onClick={if(playing) manualFraction=fraction; playing=!playing},
+      onClick={playing=!playing},
       modifier=Modifier.heightIn(min=48.dp).testTag("original-motion-play")) {
       Text(if(playing)"Пауза" else "Воспроизвести схему")
      }
     }
     Slider(
      value=fraction.coerceIn(0f,1f),
-     onValueChange={ v -> playing=false;manualFraction=v },
+     onValueChange={ v -> playing=false;scope.launch { phase.snapTo(v) } },
      modifier=Modifier.fillMaxWidth().testTag("original-motion-scrubber"),
      valueRange=0f..1f
     )
