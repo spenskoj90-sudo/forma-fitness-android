@@ -40,7 +40,7 @@ class TechniqueMediaTest {
   val source=fixtureSource()
   assertTrue(runBlocking{source.load(exercise)} is TechniqueMediaResult.Ready)
   rule.setContent{MaterialTheme{Column(Modifier.verticalScroll(rememberScrollState())){ExerciseTechnique(exercise,source)}}}
-  rule.onNodeWithText("Показать демонстрацию").performClick()
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick()
   awaitText("SYNTHETIC — setup")
   rule.onNodeWithText("Воспроизвести демонстрацию").performScrollTo()
   awaitPlay()
@@ -54,17 +54,17 @@ class TechniqueMediaTest {
  @Test fun changingExerciseImmediatelyRemovesOldDemonstrationAndTranscript() {
   val selected=mutableStateOf(exercise);val source=fixtureSource()
   rule.setContent{MaterialTheme{Column(Modifier.verticalScroll(rememberScrollState())){ExerciseTechnique(selected.value,source)}}}
-  rule.onNodeWithText("Показать демонстрацию").performClick();awaitText("SYNTHETIC — setup")
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick();awaitText("SYNTHETIC — setup")
   rule.runOnIdle{selected.value=exercise.copy(equipment=Equipment.entries.first{it!=exercise.equipment})}
   rule.onNodeWithText("SYNTHETIC — setup").assertDoesNotExist()
-  rule.onNodeWithText("Показать демонстрацию").performClick()
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick()
   awaitText("Материал не прошёл проверку. Доступна текстовая инструкция.")
   val other=exerciseCatalog.first{it.id!=exercise.id}
   rule.runOnIdle{selected.value=other}
   rule.onNodeWithText("SYNTHETIC — setup").assertDoesNotExist()
   rule.onNodeWithContentDescription("Демонстрация техники: ${exercise.name}").assertDoesNotExist()
   rule.onNodeWithText(other.cue).assertExists()
-  rule.onNodeWithText("Показать демонстрацию").performClick()
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick()
   awaitText("Подтверждённая демонстрация пока недоступна.")
  }
  @Test fun userApkHasHonestEmptyManifestAndKeepsTechniqueAndMistakes() {
@@ -73,7 +73,7 @@ class TechniqueMediaTest {
   rule.setContent{MaterialTheme{Column(Modifier.verticalScroll(rememberScrollState())){ExerciseTechnique(exercise,source)}}}
   rule.onNodeWithText(exercise.cue).assertExists()
   rule.onNodeWithText("Частые ошибки: ${exercise.mistakes.ifBlank{"Пока не описаны."}}").assertExists()
-  rule.onNodeWithText("Показать демонстрацию").performClick()
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick()
   awaitText("Подтверждённая демонстрация пока недоступна.")
   rule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
  }
@@ -106,7 +106,7 @@ class TechniqueMediaTest {
   val source=AssetTechniqueMediaSource(openAsset={java.io.ByteArrayInputStream(if(it==TECHNIQUE_MANIFEST)manifest else garbage)},admitted=listOf(entry))
   assertEquals(TechniqueMediaResult.Unsupported,runBlocking{source.load(exercise)})
   rule.setContent{MaterialTheme{Column(Modifier.verticalScroll(rememberScrollState())){ExerciseTechnique(exercise,source)}}}
-  rule.onNodeWithText("Показать демонстрацию").performClick()
+  rule.onNodeWithText("Показать демонстрацию").performScrollTo().assertIsDisplayed().performClick()
   awaitText("Формат демонстрации не поддерживается или файл повреждён.")
   rule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
  }
