@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,9 +20,12 @@ import ru.forma.domain.exerciseCatalog
 class OriginalVolumetricPreviewTest {
  @get:Rule val rule=createComposeRule()
  @Test fun threeDimensionalSurfaceOnlyOpensOnRequestAndManualControlsRemainAccessible() {
-  rule.setContent { MaterialTheme {
-   Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){
-    OriginalVolumetricPreview(exerciseCatalog.first())
+  val options=mutableStateOf(FormaVisualOptions())
+  rule.setContent { CompositionLocalProvider(LocalFormaVisualOptions provides options.value) {
+   MaterialTheme {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){
+     OriginalVolumetricPreview(exerciseCatalog.first())
+    }
    }
   }}
   rule.onNodeWithTag("volume-preview-surface").assertDoesNotExist()
@@ -36,6 +40,15 @@ class OriginalVolumetricPreviewTest {
   rule.onNodeWithText("Воспроизвести 3D").assertExists()
   rule.onNodeWithText("Без движения").performScrollTo().performClick()
   rule.onNodeWithTag("volume-preview-play").assertIsNotEnabled()
+  // A global accessibility preference cannot be bypassed by this chip.
+  rule.runOnIdle { options.value=FormaVisualOptions(reducedMotion=true) }
+  rule.onNodeWithTag("volume-preview-play").assertIsNotEnabled()
+  rule.onNodeWithText("Без движения").assertIsNotEnabled()
+  rule.onNodeWithTag("volume-preview-scrub").assertExists()
+  // Turning off the global preference restores a user-controlled manual mode.
+  rule.runOnIdle { options.value=FormaVisualOptions() }
+  rule.onNodeWithText("Без движения").performScrollTo().performClick()
+  rule.onNodeWithTag("volume-preview-play").assertIsEnabled()
   rule.onNodeWithTag("volume-preview-toggle").performScrollTo().performClick()
   rule.onNodeWithTag("volume-preview-surface").assertDoesNotExist()
  }
