@@ -23,6 +23,20 @@ class OriginalTechniqueMotionTest {
    }
   }
  }
+ @Test fun loadedSquatsUseChestHoldAndSmithBarNotBodyweightArmTrajectory() {
+  val plain=originalMotionFor(exerciseCatalog.first { it.id=="squat" })!!
+  val goblet=originalMotionFor(exerciseCatalog.first { it.id=="goblet" })!!
+  val kettlebell=originalMotionFor(exerciseCatalog.first { it.id=="kettlebell_squat" })!!
+  val smith=originalMotionFor(exerciseCatalog.first { it.id=="smith_squat" })!!
+  assertNotEquals(plain.kind,goblet.kind)
+  assertEquals(goblet.kind,kettlebell.kind)
+  assertNotEquals(plain.kind,smith.kind)
+  for(spec in listOf(goblet,kettlebell)) {
+   val p=originalMotionAt(spec,1f)
+   assertTrue("Chest hold must remain near shoulder",kotlin.math.abs(p.joints[3].x-p.joints[1].x)<12f)
+   assertTrue(kotlin.math.abs(p.joints[3].y-p.joints[1].y)<12f)
+  }
+ }
  @Test fun rejectWrongEquipmentAndMissingCatalogIds() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalMotionFor(squat.copy(equipment=Equipment.BARBELL)))

@@ -10,7 +10,7 @@ data class MotionPose(val joints: List<MotionPoint>) {
  init { require(joints.size == 7) }
 }
 enum class MotionKind {
- SQUAT, WALL_PUSH, BIRD_DOG, PRONE_W, CALF, HINGE_ROW, FLOOR_PRESS, LATERAL_RAISE, CURL, BRIDGE, INCLINE_PUSH, DEAD_BUG, HINGE, OVERHEAD_PRESS, WALL_SLIDE, SELF_CURL, BAND_ROW, BAND_PRESS, TRICEPS_EXTENSION, KETTLEBELL_HINGE, SCAP_PULL, PLANK, STEP_UP, LAT_PULL, LEG_PRESS, SEATED_PRESS, SEATED_ROW, LEG_CURL
+ SQUAT, GOBLET_SQUAT, SMITH_SQUAT, WALL_PUSH, BIRD_DOG, PRONE_W, CALF, HINGE_ROW, FLOOR_PRESS, LATERAL_RAISE, CURL, BRIDGE, INCLINE_PUSH, DEAD_BUG, HINGE, OVERHEAD_PRESS, WALL_SLIDE, SELF_CURL, BAND_ROW, BAND_PRESS, TRICEPS_EXTENSION, KETTLEBELL_HINGE, SCAP_PULL, PLANK, STEP_UP, LAT_PULL, LEG_PRESS, SEATED_PRESS, SEATED_ROW, LEG_CURL
 }
 data class OriginalMotionSpec(
  val exerciseId: String, val equipment: Equipment, val kind: MotionKind,
@@ -22,6 +22,8 @@ private fun pose(vararg p: Int): MotionPose {
 }
 private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  MotionKind.SQUAT to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 75, 60, 77, 66, 45, 78, 75, 86, 54, 105)),
+ MotionKind.GOBLET_SQUAT to (pose(52, 22, 52, 38, 58, 49, 58, 46, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 67, 57, 65, 54, 45, 78, 75, 86, 54, 105)),
+ MotionKind.SMITH_SQUAT to (pose(52, 22, 52, 38, 46, 51, 46, 48, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 54, 60, 51, 54, 45, 78, 75, 86, 54, 105)),
  MotionKind.WALL_PUSH to (pose(71, 22, 66, 39, 84, 44, 99, 42, 54, 68, 46, 88, 38, 106) to pose(82, 30, 75, 47, 88, 49, 99, 42, 54, 70, 46, 88, 38, 106)),
  MotionKind.BIRD_DOG to (pose(76, 48, 59, 61, 59, 82, 60, 96, 36, 64, 35, 90, 22, 103) to pose(78, 44, 57, 59, 77, 51, 99, 47, 36, 64, 28, 75, 9, 66)),
  MotionKind.PRONE_W to (pose(24, 86, 42, 86, 52, 81, 59, 79, 65, 92, 78, 95, 94, 101) to pose(24, 82, 42, 80, 54, 71, 64, 72, 65, 88, 78, 95, 94, 101)),
@@ -56,7 +58,7 @@ private val motionById: Map<String, OriginalMotionSpec> = mapOf(
  "bird_dog" to OriginalMotionSpec("bird_dog", Equipment.BODYWEIGHT, MotionKind.BIRD_DOG),
  "prone_w" to OriginalMotionSpec("prone_w", Equipment.BODYWEIGHT, MotionKind.PRONE_W),
  "calf" to OriginalMotionSpec("calf", Equipment.BODYWEIGHT, MotionKind.CALF),
- "goblet" to OriginalMotionSpec("goblet", Equipment.DUMBBELL, MotionKind.SQUAT),
+ "goblet" to OriginalMotionSpec("goblet", Equipment.DUMBBELL, MotionKind.GOBLET_SQUAT),
  "db_row" to OriginalMotionSpec("db_row", Equipment.DUMBBELL, MotionKind.HINGE_ROW),
  "floor_press" to OriginalMotionSpec("floor_press", Equipment.DUMBBELL, MotionKind.FLOOR_PRESS),
  "raise" to OriginalMotionSpec("raise", Equipment.DUMBBELL, MotionKind.LATERAL_RAISE),
@@ -76,7 +78,7 @@ private val motionById: Map<String, OriginalMotionSpec> = mapOf(
  "band_row" to OriginalMotionSpec("band_row", Equipment.RESISTANCE_BAND, MotionKind.BAND_ROW),
  "band_press" to OriginalMotionSpec("band_press", Equipment.RESISTANCE_BAND, MotionKind.BAND_PRESS),
  "band_extension" to OriginalMotionSpec("band_extension", Equipment.RESISTANCE_BAND, MotionKind.TRICEPS_EXTENSION),
- "kettlebell_squat" to OriginalMotionSpec("kettlebell_squat", Equipment.KETTLEBELL, MotionKind.SQUAT),
+ "kettlebell_squat" to OriginalMotionSpec("kettlebell_squat", Equipment.KETTLEBELL, MotionKind.GOBLET_SQUAT),
  "kettlebell_deadlift" to OriginalMotionSpec("kettlebell_deadlift", Equipment.KETTLEBELL, MotionKind.KETTLEBELL_HINGE),
  "scap_pull" to OriginalMotionSpec("scap_pull", Equipment.PULL_UP_BAR, MotionKind.SCAP_PULL),
  "mat_plank" to OriginalMotionSpec("mat_plank", Equipment.MAT, MotionKind.PLANK),
@@ -87,7 +89,7 @@ private val motionById: Map<String, OriginalMotionSpec> = mapOf(
  "chest_press" to OriginalMotionSpec("chest_press", Equipment.CHEST_PRESS_MACHINE, MotionKind.SEATED_PRESS),
  "machine_row" to OriginalMotionSpec("machine_row", Equipment.SEATED_ROW_MACHINE, MotionKind.SEATED_ROW),
  "leg_curl" to OriginalMotionSpec("leg_curl", Equipment.LEG_CURL_MACHINE, MotionKind.LEG_CURL),
- "smith_squat" to OriginalMotionSpec("smith_squat", Equipment.SMITH_MACHINE, MotionKind.SQUAT),
+ "smith_squat" to OriginalMotionSpec("smith_squat", Equipment.SMITH_MACHINE, MotionKind.SMITH_SQUAT),
 )
 /** Exact exercise and equipment allowlist, never a substitute for reviewed media. */
 fun originalMotionFor(exercise: Exercise): OriginalMotionSpec? =

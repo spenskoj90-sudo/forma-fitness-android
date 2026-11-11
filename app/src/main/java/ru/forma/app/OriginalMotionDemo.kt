@@ -76,16 +76,32 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
      bone(p(0),p(1),skeleton,3.5f)
      drawCircle(color=skeleton,center=p(0),radius=6.4f*k)
      listOf(1,2,4,5).forEach { drawCircle(color=accent,center=p(it),radius=3.2f*k) }
+     // Show the relevant reference surface, not a copied exercise clip.
+     if(spec.exerciseId=="wall_push")bone(xy(104f,16f),xy(104f,107f),quiet,2f)
+     if(spec.exerciseId=="incline_push")bone(xy(98f,64f),xy(116f,64f),equipmentColor,3f)
+     if(spec.exerciseId=="chair_squat") {
+      bone(xy(23f,80f),xy(53f,80f),equipmentColor,2.6f)
+      bone(xy(25f,80f),xy(25f,107f),equipmentColor,2.4f)
+     }
      // Distinct simple apparatus. Neither machine nor load is dimensionally realistic.
      when(spec.equipment) {
       Equipment.DUMBBELL -> {
-       bone(p(3)+Offset(-9*k,0f),p(3)+Offset(9*k,0f),equipmentColor,2f)
-       drawCircle(equipmentColor,3.4f*k,p(3)+Offset(-9*k,0f))
-       drawCircle(equipmentColor,3.4f*k,p(3)+Offset(9*k,0f))
+       val grip=p(3)
+       bone(grip+Offset(-9*k,0f),grip+Offset(9*k,0f),equipmentColor,2f)
+       drawCircle(equipmentColor,3.4f*k,grip+Offset(-9*k,0f))
+       drawCircle(equipmentColor,3.4f*k,grip+Offset(9*k,0f))
       }
-      Equipment.BARBELL,Equipment.SMITH_MACHINE ->
+      Equipment.BARBELL ->
        bone(p(3)+Offset(-17*k,0f),p(3)+Offset(17*k,0f),equipmentColor,4f)
-      Equipment.KETTLEBELL -> drawCircle(equipmentColor,5.5f*k,p(3)+Offset(0f,5*k))
+      Equipment.SMITH_MACHINE -> {
+       // The guided bar belongs across the shoulder, never in the hand
+       // moving freely forward as in an unloaded air squat.
+       bone(p(1)+Offset(-17*k,0f),p(1)+Offset(17*k,0f),equipmentColor,4f)
+       bone(xy(42f,12f),xy(42f,108f),quiet,1.8f)
+       bone(xy(81f,12f),xy(81f,108f),quiet,1.8f)
+      }
+      Equipment.KETTLEBELL ->
+       drawCircle(equipmentColor,5.5f*k,p(3)+Offset(0f,5*k))
       Equipment.RESISTANCE_BAND -> {
        bone(p(3),xy(if(spec.kind==MotionKind.BAND_ROW)105f else 13f,56f),equipmentColor,1.7f)
        drawCircle(equipmentColor,2.4f*k,xy(if(spec.kind==MotionKind.BAND_ROW)105f else 13f,56f))
