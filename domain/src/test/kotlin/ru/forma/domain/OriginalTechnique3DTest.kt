@@ -45,6 +45,26 @@ class OriginalTechnique3DTest {
    if(exercise.id=="leg_press") assertTrue(scene.links.count { it.tone==VolumeTone.SUPPORT }>=5)
   }
  }
+ @Test fun gobletHasOneSharedVerticalDumbbellButBentOverRowStillHasTwo() {
+  val goblet=exerciseCatalog.first{it.id=="goblet"}
+  val row=exerciseCatalog.first{it.id=="db_row"}
+  for(t in listOf(0f,0.5f,1f)) {
+   val scene=originalVolumeAt(goblet,t)!!
+   val loads=scene.links.filter{it.tone==VolumeTone.EQUIPMENT}
+   assertEquals("Goblet must show exactly one load at phase "+t,1,loads.size)
+   val dumbbell=loads.single()
+   assertTrue("Goblet load must be vertical",abs(dumbbell.a.y-dumbbell.b.y)>0.5f)
+   assertTrue(abs(dumbbell.a.x-dumbbell.b.x)<0.0001f)
+   assertTrue(abs(dumbbell.a.z-dumbbell.b.z)<0.0001f)
+   assertEquals(2,scene.joints.count{it.tone==VolumeTone.EQUIPMENT})
+   val center=(dumbbell.a+dumbbell.b)*0.5f
+   assertTrue("Goblet weight should remain near chest",
+    (center-scene.joints[1].position).length()<3f)
+   val rowScene=originalVolumeAt(row,t)!!
+   assertEquals("Catalog row uses two dumbbells, not a one-arm bench variation",
+    2,rowScene.links.count{it.tone==VolumeTone.EQUIPMENT})
+  }
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
