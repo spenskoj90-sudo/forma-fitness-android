@@ -42,6 +42,9 @@ class ExerciseTechniqueCatalogTest {
   rule.onNodeWithText("Текстовая техника · видео пока нет").assertExists()
   rule.onNodeWithText("Ненадёжная точка крепления",substring=true).assertExists()
   rule.onNodeWithTag("authored-technique-card").assertExists()
+  rule.onNodeWithTag("authored-technique-frame").assert(
+   SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.LiveRegion,
+    androidx.compose.ui.semantics.LiveRegionMode.Polite))
   rule.onNodeWithTag("authored-technique-frame").assertTextContains("целостность резинки", substring=true)
   rule.onNodeWithTag("authored-technique-next").performScrollTo().performClick()
   rule.onNodeWithTag("authored-technique-frame").assertTextContains("Потяните рукояти", substring=true)
@@ -95,17 +98,18 @@ class ExerciseTechniqueCatalogTest {
     val selected=remember{mutableIntStateOf(1)}
     MaterialTheme {
      Column(Modifier.width(260.dp).verticalScroll(rememberScrollState())){
-      WorkoutTechniqueTabs(selected.intValue){selected.intValue=it}
+      WorkoutTechniqueTabs(selected.intValue,{selected.intValue=it},hasReviewedVideo=false)
      }
     }
    }
   }
-  for(index in 0..2){
+  rule.onNodeWithTag("workout-technique-tab-0").assertDoesNotExist()
+  for(index in 1..2){
    rule.onNodeWithTag("workout-technique-tab-$index")
     .performScrollTo().assertIsDisplayed()
   }
-  rule.onNodeWithTag("workout-technique-tab-0").performScrollTo().performClick()
-  rule.onNodeWithTag("workout-technique-tab-0").assertIsSelected()
+  rule.onNodeWithTag("workout-technique-tab-1").performScrollTo().performClick()
+  rule.onNodeWithTag("workout-technique-tab-1").assertIsSelected()
   rule.onNodeWithTag("workout-technique-tab-2").performScrollTo().performClick()
   rule.onNodeWithTag("workout-technique-tab-2").assertIsSelected()
  }

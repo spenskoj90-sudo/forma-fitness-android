@@ -6,6 +6,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.Exercise
 import ru.forma.domain.authoredTechniqueFrames
@@ -30,7 +33,8 @@ internal fun AuthoredTechniqueWalkthrough(exercise: Exercise) {
      style=MaterialTheme.typography.bodySmall, color=MaterialTheme.colorScheme.onSurfaceVariant)
     Text("Шаг ${current+1} из ${frames.size}", style=MaterialTheme.typography.labelMedium)
     Text(frames[current].title, style=MaterialTheme.typography.titleSmall)
-    Text(frames[current].instruction, modifier=Modifier.testTag("authored-technique-frame"))
+    Text(frames[current].instruction, modifier=Modifier.testTag("authored-technique-frame")
+      .semantics { liveRegion=LiveRegionMode.Polite })
     FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),
       verticalArrangement=Arrangement.spacedBy(4.dp)) {
      OutlinedButton(onClick={page=(current-1).coerceAtLeast(0)},

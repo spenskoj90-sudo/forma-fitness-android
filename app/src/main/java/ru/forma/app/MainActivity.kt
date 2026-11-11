@@ -453,7 +453,7 @@ private val editableProfileSaver=Saver<Profile,String>(
    key(item.exercise.id,item.exercise.equipment){
     var techniqueOpen by remember{mutableStateOf(false)}
     TextButton({techniqueOpen=!techniqueOpen},Modifier.fillMaxWidth().heightIn(min=48.dp)){
-     Text(if(techniqueOpen)"Скрыть технику: ${item.exercise.name}" else "Техника и видео: ${item.exercise.name}")
+     Text(if(techniqueOpen)"Скрыть технику: ${item.exercise.name}" else "Техника: ${item.exercise.name}")
     }
     if(techniqueOpen)ExerciseTechnique(item.exercise)
    }
@@ -547,8 +547,15 @@ private val editableProfileSaver=Saver<Profile,String>(
      }
      var techniqueTab by rememberSaveable(s.id,s.exerciseIndex){mutableIntStateOf(1)}
      // Set completion stays above nonessential media; video never autoplays.
-     WorkoutTechniqueTabs(techniqueTab){techniqueTab=it}
-     when(techniqueTab){
+     // Until a reviewed exact-ID/equipment media entry is admitted, do not
+     // display a dead Video tab. An older restored selection also falls back
+     // without opening a stale player or changing Room-owned workout state.
+     val hasReviewedVideo=techniqueMediaCatalog.any{
+      it.exerciseId==current.exercise.id && it.equipment==current.exercise.equipment
+     }
+     val visibleTechniqueTab=if(!hasReviewedVideo && techniqueTab==0) 1 else techniqueTab
+     WorkoutTechniqueTabs(visibleTechniqueTab,{techniqueTab=it},hasReviewedVideo)
+     when(visibleTechniqueTab){
       0->Panel("Демонстрация техники"){ExerciseTechnique(current.exercise,showInstructions=false,initiallyOpen=true)}
       1->Panel("Инструкция и ошибки"){
        Text(current.exercise.cue)

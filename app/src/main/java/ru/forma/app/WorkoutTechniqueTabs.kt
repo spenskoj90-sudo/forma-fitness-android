@@ -15,13 +15,14 @@ import androidx.compose.ui.unit.dp
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun WorkoutTechniqueTabs(selectedIndex:Int,onSelect:(Int)->Unit){
+internal fun WorkoutTechniqueTabs(selectedIndex:Int,onSelect:(Int)->Unit,hasReviewedVideo:Boolean=true){
  FlowRow(
   modifier=Modifier.fillMaxWidth(),
   horizontalArrangement=Arrangement.spacedBy(6.dp),
   verticalArrangement=Arrangement.spacedBy(6.dp)
  ){
-  listOf("Видео","Инструкция","Мышцы").forEachIndexed{index,title->
+  (if(hasReviewedVideo) listOf(0 to "Видео",1 to "Инструкция",2 to "Мышцы")
+   else listOf(1 to "Инструкция",2 to "Мышцы")).forEach{(index,title)->
    FilterChip(
     selected=selectedIndex==index,
     onClick={onSelect(index)},
