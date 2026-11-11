@@ -65,6 +65,26 @@ class OriginalTechnique3DTest {
     2,rowScene.links.count{it.tone==VolumeTone.EQUIPMENT})
   }
  }
+ @Test fun lateralRaiseAbductsBothArmsIn3DDepthWithTransverseDumbbells() {
+  val raise=exerciseCatalog.first{it.id=="raise"}
+  val down=originalVolumeAt(raise,0f)!!
+  val up=originalVolumeAt(raise,1f)!!
+  val leftDown=down.links[3].b
+  val rightDown=down.links[5].b
+  val leftUp=up.links[3].b
+  val rightUp=up.links[5].b
+  assertTrue("Left arm must move laterally, not only in 2D",leftUp.z-leftDown.z>1.3f)
+  assertTrue("Right arm must move laterally, not only in 2D",rightDown.z-rightUp.z>1.3f)
+  assertTrue("Bilateral abduction must remain mirrored",abs(leftUp.z+rightUp.z)<0.01f)
+  assertTrue("Left raised wrist must remain near its shoulder level",
+   abs(leftUp.y-up.links[2].a.y)<0.3f)
+  assertTrue("Right raised wrist must remain near its shoulder level",
+   abs(rightUp.y-up.links[4].a.y)<0.3f)
+  val dumbbells=up.links.filter{it.tone==VolumeTone.EQUIPMENT}
+  assertEquals(2,dumbbells.size)
+  assertTrue("Both dumbbells must be transverse to lateral arms",
+   dumbbells.all{abs(it.b.x-it.a.x)>0.7f && abs(it.b.z-it.a.z)<0.001f})
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
