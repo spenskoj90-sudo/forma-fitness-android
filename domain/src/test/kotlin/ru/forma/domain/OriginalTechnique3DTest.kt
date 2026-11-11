@@ -85,6 +85,25 @@ class OriginalTechnique3DTest {
   assertTrue("Both dumbbells must be transverse to lateral arms",
    dumbbells.all{abs(it.b.x-it.a.x)>0.7f && abs(it.b.z-it.a.z)<0.001f})
  }
+ @Test fun latPulldownBarFollowsBothHandsThroughThePull() {
+  val exercise=exerciseCatalog.first{it.id=="lat_pulldown"}
+  val start=originalVolumeAt(exercise,0f)!!
+  val end=originalVolumeAt(exercise,1f)!!
+  for(scene in listOf(start,end)) {
+   val bar=scene.links.filter{it.tone==VolumeTone.EQUIPMENT}.single()
+   val leftHand=scene.links[3].b
+   val rightHand=scene.links[5].b
+   val center=(bar.a+bar.b)*0.5f
+   val hands=(leftHand+rightHand)*0.5f
+   assertTrue("Pulldown bar must remain held at hand height",abs(center.y-hands.y)<0.001f)
+   assertTrue("Pulldown bar must remain at the hand position",abs(center.x-hands.x)<0.001f)
+   assertTrue("Pulldown bar must span both hands",bar.b.z-bar.a.z>1.9f)
+  }
+  val startBar=start.links.first{it.tone==VolumeTone.EQUIPMENT}
+  val endBar=end.links.first{it.tone==VolumeTone.EQUIPMENT}
+  assertTrue("Pulldown bar must descend with the hands, not stay on the top rail",
+   startBar.a.y-endBar.a.y>2f)
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
