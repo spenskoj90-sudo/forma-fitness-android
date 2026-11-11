@@ -196,8 +196,9 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
     if(lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
     onDispose {lifecycle.lifecycle.removeObserver(observer);view.onPause()}
    }
-   LaunchedEffect(playing,still){
-    if(playing && !still) {
+   val motionDisabled=still || visual.reducedMotion
+   LaunchedEffect(playing,motionDisabled){
+    if(playing && !motionDisabled) {
      phase.animateTo(1f,animationSpec=infiniteRepeatable(
       animation=tween(2200,easing=LinearEasing),repeatMode=RepeatMode.Reverse))
     }
@@ -219,11 +220,13 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
        .semantics { contentDescription="Объёмная модель движения: " + exercise.name + ". Прототип, техника не подтверждена." }
      )
      Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-      OutlinedButton(onClick={playing=!playing},enabled=!still,
+      OutlinedButton(onClick={playing=!playing},enabled=!motionDisabled,
        modifier=Modifier.heightIn(min=48.dp).testTag("volume-preview-play")){
        Text(if(playing)"Пауза 3D" else "Воспроизвести 3D")
       }
-      FilterChip(selected=still,onClick={still=!still;playing=false},
+      FilterChip(selected=motionDisabled,
+       onClick={if(!visual.reducedMotion){still=!still;playing=false}},
+       enabled=!visual.reducedMotion,
        label={Text("Без движения")},modifier=Modifier.heightIn(min=48.dp))
      }
      Text("Фаза движения",style=MaterialTheme.typography.labelMedium)
