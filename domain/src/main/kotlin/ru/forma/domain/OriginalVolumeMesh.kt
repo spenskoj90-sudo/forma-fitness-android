@@ -57,8 +57,10 @@ fun originalVolumeTriangles(scene: OriginalVolumeScene): VolumeTriangles {
    val b0=circle(link.a,b)
    val a1=circle(link.b,a)
    val b1=circle(link.b,b)
-   triangle(a0,a1,b0,rgb)
-   triangle(b0,a1,b1,rgb)
+   // The outward face normal must point away from the cylinder axis.
+   // Reversed winding would shade every tube as if its skin faced inward.
+   triangle(a0,b0,a1,rgb)
+   triangle(b0,b1,a1,rgb)
    triangle(link.a,b0,a0,rgb)
    triangle(link.b,a1,b1,rgb)
   }
@@ -80,8 +82,9 @@ fun originalVolumeTriangles(scene: OriginalVolumeScene): VolumeTriangles {
    val b=surface(lat+1,lon)
    val c=surface(lat,lon+1)
    val d=surface(lat+1,lon+1)
-   triangle(a,b,c,rgb)
-   triangle(c,b,d,rgb)
+   // Latitude/longitude order otherwise yields inward sphere normals.
+   triangle(a,c,b,rgb)
+   triangle(c,d,b,rgb)
   }
  }
  return VolumeTriangles(data.copyOf(used))
