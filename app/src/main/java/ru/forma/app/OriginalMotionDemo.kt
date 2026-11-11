@@ -1,7 +1,10 @@
 package ru.forma.app
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -15,7 +18,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import ru.forma.domain.*
 import kotlin.math.min
 
@@ -28,16 +30,21 @@ import kotlin.math.min
 internal fun OriginalMotionDemo(exercise: Exercise) {
  val spec=remember(exercise.id, exercise.equipment) { originalMotionFor(exercise) } ?: return
  key(exercise.id,exercise.equipment) {
-  val phase=remember { Animatable(0f) }
   var playing by rememberSaveable { mutableStateOf(false) }
-  val scope=rememberCoroutineScope()
-  LaunchedEffect(playing) {
-   if (playing) while (true) {
-    phase.animateTo(1f,animationSpec=tween(1700,easing=LinearEasing))
-    phase.animateTo(0f,animationSpec=tween(1700,easing=LinearEasing))
-   }
-  }
-  val frame=originalMotionAt(spec,phase.value)
+  var manualFraction by rememberSaveable { mutableFloatStateOf(0f) }
+  // Compose's infinite transition is recognized as an infinite animation by
+  // its test clock. A custom never-ending Animatable loop can prevent idling.
+  // Do not start any animation until the user explicitly presses Play.
+  val fraction=if(playing) {
+   val transition=rememberInfiniteTransition(label="original-technique")
+   val animated by transition.animateFloat(
+    initialValue=0f,targetValue=1f,
+    animationSpec=infiniteRepeatable(
+     animation=tween(1700,easing=LinearEasing),repeatMode=RepeatMode.Reverse),
+    label="exercise-motion")
+   animated
+  } else manualFraction
+  val frame=originalMotionAt(spec,fraction)
   val skeleton=MaterialTheme.colorScheme.onSurface
   val accent=MaterialTheme.colorScheme.primary
   val equipmentColor=MaterialTheme.colorScheme.tertiary
@@ -117,14 +124,14 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
     }
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
      OutlinedButton(
-      onClick={playing=!playing},
+      onClick={if(playing) manualFraction=fraction; playing=!playing},
       modifier=Modifier.heightIn(min=48.dp).testTag("original-motion-play")) {
       Text(if(playing)"Пауза" else "Воспроизвести схему")
      }
     }
     Slider(
-     value=phase.value.coerceIn(0f,1f),
-     onValueChange={ v -> playing=false;scope.launch { phase.snapTo(v) } },
+     value=fraction.coerceIn(0f,1f),
+     onValueChange={ v -> playing=false;manualFraction=v },
      modifier=Modifier.fillMaxWidth().testTag("original-motion-scrubber"),
      valueRange=0f..1f
     )
