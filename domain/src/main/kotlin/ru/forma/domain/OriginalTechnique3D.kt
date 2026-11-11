@@ -58,10 +58,23 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
  val hip = p(primary[4], 0f)
  val leftShoulder = p(primary[1], 0.48f)
  val rightShoulder = p(alternate[1], -0.48f)
- val leftElbow = p(primary[2], 0.67f)
- val rightElbow = p(alternate[2], -0.67f)
- val leftWrist = p(primary[3], 0.67f)
- val rightWrist = p(alternate[3], -0.67f)
+ // The exact lateral-raise variant must abduct outwards in actual Z depth.
+ // A side-view-only motion would merely swing both arms forward, so use
+ // a hand-authored bilateral depth path while keeping the catalog torso.
+ fun lateralPoint(shoulder:VolumePoint,side:Float,wrist:Boolean):VolumePoint {
+  val rest=if(wrist)0.92f else 0.72f
+  val extended=if(wrist)2.60f else 1.55f
+  val drop=if(wrist)2.35f else 1.18f
+  val forward=if(wrist)0.14f else 0.08f
+  val elbowBend=if(wrist)0.12f else 0.08f
+  return VolumePoint(shoulder.x+forward,
+   shoulder.y-drop*(1f-eased)-elbowBend*eased,
+   side*(rest+(extended-rest)*eased))
+ }
+ val leftElbow = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,false) else p(primary[2], 0.67f)
+ val rightElbow = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,false) else p(alternate[2], -0.67f)
+ val leftWrist = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,true) else p(primary[3], 0.67f)
+ val rightWrist = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,true) else p(alternate[3], -0.67f)
  val leftHip = p(primary[4], 0.31f)
  val rightHip = p(alternate[4], -0.31f)
  val leftKnee = p(primary[5], 0.39f)
@@ -103,9 +116,11 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    joints += VolumeJoint(bottom,0.22f,VolumeTone.EQUIPMENT)
    joints += VolumeJoint(top,0.22f,VolumeTone.EQUIPMENT)
   } else listOf(leftWrist, rightWrist).forEach { wrist ->
-   gear(wrist + x(0f, 0f, -0.36f), wrist + x(0f, 0f, 0.36f), 0.13f)
-   joints += VolumeJoint(wrist + x(0f, 0f, -0.36f), 0.22f, VolumeTone.EQUIPMENT)
-   joints += VolumeJoint(wrist + x(0f, 0f, 0.36f), 0.22f, VolumeTone.EQUIPMENT)
+   // Side-raised arms extend along Z; the dumbbell shaft crosses them in X.
+   val halfBar=if(exercise.id=="raise") x(0.36f,0f,0f) else x(0f,0f,0.36f)
+   gear(wrist-halfBar, wrist+halfBar, 0.13f)
+   joints += VolumeJoint(wrist-halfBar, 0.22f, VolumeTone.EQUIPMENT)
+   joints += VolumeJoint(wrist+halfBar, 0.22f, VolumeTone.EQUIPMENT)
   }
   Equipment.BARBELL -> {
    gear(handMid + x(0f,0f,-1.75f),handMid + x(0f,0f,1.75f),0.095f)
