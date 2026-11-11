@@ -155,8 +155,11 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    support(x(4.4f,0f,-1.5f),x(4.4f,10.7f,-1.5f))
    support(x(4.4f,0f,1.5f),x(4.4f,10.7f,1.5f))
    support(x(4.4f,9.8f,-1.5f),x(4.4f,9.8f,1.5f))
-   if(exercise.equipment == Equipment.LAT_PULLDOWN)
-    gear(x(-0.6f,9.7f,-1.1f),x(-0.6f,9.7f,1.1f))
+   if(exercise.equipment == Equipment.LAT_PULLDOWN) {
+    // The cable bar follows the two hands throughout the pulldown; a fixed
+    // bar above the athlete would misleadingly show the hands detaching.
+    gear(handMid+x(0f,0f,-1.05f),handMid+x(0f,0f,1.05f))
+   }
    if(exercise.equipment == Equipment.LEG_PRESS_MACHINE) {
     val foot = (leftAnkle + rightAnkle) * 0.5f
     support(foot + x(0.55f,-0.7f,-1.0f),foot + x(0.55f,0.7f,-1.0f),0.23f)
