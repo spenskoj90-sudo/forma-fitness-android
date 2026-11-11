@@ -284,6 +284,9 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  }
  fun importBackup(uri:Uri){action{val ids=withContext(Dispatchers.IO){val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл");val bytes=input.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=stream.read(buffer);if(n<0)break;require(out.size()+n<=MAX_BACKUP_BYTES){"Файл превышает 32 МБ"};out.write(buffer,0,n)};out.toByteArray()};app.repository.importBackup(bytes.toString(Charsets.UTF_8))};notice.value="Восстановлено профилей: ${ids.size}. Они добавлены отдельно; существующие данные сохранены."}}
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
+ fun toggleVoice(){action{app.settings.toggleVoice()}}
+ fun toggleSound(){action{app.settings.toggleSound()}}
+ fun toggleMetronome(){action{app.settings.toggleMetronome()}}
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}
  fun dark(v:Boolean?){action{app.settings.dark(v)}}
  fun trainingPlace(place:TrainingPlace){action{app.settings.trainingPlace(place)}}

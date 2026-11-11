@@ -132,6 +132,11 @@ class SettingsRepository(private val context:Context) {
  val settings=context.store.data.map{Preferences(it[selected].orEmpty(),it[voice]?:true,it[sound]?:true,it[metronome]?:false,when(it[theme]){"dark"->true;"light"->false;"system"->null;else->true},(it[volume]?:65).coerceIn(0,100),(it[bpm]?:60).coerceIn(40,180),(it[rate]?:1f).coerceIn(0.7f,1.3f),TrainingPlace.entries.firstOrNull{place->place.name==it[placeKey]}?:TrainingPlace.HOME)}
  suspend fun select(id:String){context.store.edit{it[selected]=id}}
  suspend fun audio(v:Boolean,s:Boolean,m:Boolean){context.store.edit{it[voice]=v;it[sound]=s;it[metronome]=m}}
+ // A user can tap twice before Compose receives a new DataStore snapshot.
+ // Toggle inside the serialized edit, never from a potentially stale UI value.
+ suspend fun toggleVoice(){context.store.edit{it[voice]=!(it[voice]?:true)}}
+ suspend fun toggleSound(){context.store.edit{it[sound]=!(it[sound]?:true)}}
+ suspend fun toggleMetronome(){context.store.edit{it[metronome]=!(it[metronome]?:false)}}
  suspend fun coach(v:Int,b:Int,r:Float){require(v in 0..100 && b in 40..180 && r.isFinite() && r in 0.7f..1.3f);context.store.edit{it[volume]=v;it[bpm]=b;it[rate]=r}}
  suspend fun dark(v:Boolean?){context.store.edit{it[theme]=when(v){true->"dark";false->"light";null->"system"}}}
  suspend fun trainingPlace(place:TrainingPlace){context.store.edit{it[placeKey]=place.name}}

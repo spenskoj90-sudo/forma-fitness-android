@@ -623,9 +623,9 @@ private val editableProfileSaver=Saver<Profile,String>(
  val coach by vm.coachStatus.collectAsState()
  val context=LocalContext.current
  Panel("Сопровождение"){
-  SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)}
-  SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)}
-  SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)}
+  SwitchRow("Голос Android",settings.voice){vm.toggleVoice()}
+  SwitchRow("Звуковые сигналы",settings.sound){vm.toggleSound()}
+  SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.toggleMetronome()}
   Text(coach)
   CoachSettingSlider("Громкость подсказок",settings.volume.toFloat(),"${settings.volume}%",0f..100f){
    vm.coach(it.toInt(),settings.bpm,settings.speechRate)

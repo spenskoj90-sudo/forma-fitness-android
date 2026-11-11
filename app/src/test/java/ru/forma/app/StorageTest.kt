@@ -7,10 +7,30 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StorageTest {
+ @Test fun repeatedAudioTapsUseSerializedDatastoreValueAndLeaveOtherSettingsAlone():Unit=runBlocking {
+  val settings=SettingsRepository(RuntimeEnvironment.getApplication())
+  val initial=settings.settings.first()
+  settings.toggleVoice()
+  assertEquals(!initial.voice,settings.settings.first().voice)
+  settings.toggleVoice()
+  assertEquals(initial.voice,settings.settings.first().voice)
+  settings.toggleSound()
+  settings.toggleSound()
+  settings.toggleMetronome()
+  settings.toggleMetronome()
+  val after=settings.settings.first()
+  assertEquals(initial.voice,after.voice)
+  assertEquals(initial.sound,after.sound)
+  assertEquals(initial.metronome,after.metronome)
+  assertEquals(initial.selected,after.selected)
+  assertEquals(initial.dark,after.dark)
+ }
+
  @Test fun legacyV1DatabasePreservesHistoryMeasurementsAndPausedWorkout():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication()
   val name="forma-legacy-v1-compatibility.db"
