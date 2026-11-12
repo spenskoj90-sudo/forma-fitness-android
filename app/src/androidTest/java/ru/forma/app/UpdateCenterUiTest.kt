@@ -22,19 +22,20 @@ class UpdateCenterUiTest {
  @get:Rule val rule=createComposeRule()
 
  private class FakeGateway:FormaUpdateGateway {
-  val checkResult=CompletableDeferred<FormaRelease?>()
-  val downloadResult=CompletableDeferred<File>()
+  var checkResult=CompletableDeferred<FormaRelease?>()
+  var downloadResult=CompletableDeferred<File>()
   var installationRequests=0
+  var allowSyntheticHandoff=false
   override fun installedVersion()="Test only (code 1)"
   override suspend fun check():FormaRelease?=checkResult.await()
   override suspend fun downloadAndVerify(release:FormaRelease):File=downloadResult.await()
   override suspend fun requestSystemInstallation(apk:File,release:FormaRelease) {
    installationRequests++
-   error("Synthetic fixture must not launch an installer")
+   require(allowSyntheticHandoff) { "Synthetic fixture must not launch an installer" }
   }
  }
 
- @Test fun signedOfferLoadingDownloadFailureAndRetryAreAccessible() {
+ @Test fun signedOfferLoadingFailureRetrySyntheticHandoffAndRecheckAreAccessible() {
   val gateway=FakeGateway()
   val next=FormaRelease(
    applicationId="ru.forma.fitness",versionCode=3L,versionName="Test 3",
@@ -72,5 +73,32 @@ class UpdateCenterUiTest {
    .performScrollTo().assertIsEnabled()
   rule.onNodeWithText("Проверить обновления").assertIsEnabled()
   assertEquals(0,gateway.installationRequests)
+
+  // The retry succeeds, but the fixture never reads an APK or starts Android.
+  rule.runOnIdle {
+   gateway.downloadResult=CompletableDeferred()
+   gateway.allowSyntheticHandoff=true
+  }
+  rule.onNodeWithText("Скачать и установить через Android")
+   .performScrollTo().assertIsDisplayed().performClick()
+  rule.onNodeWithText("Загружаем APK…").assertExists()
+  rule.runOnIdle {gateway.downloadResult.complete(File("synthetic-never-opened.apk"))}
+  rule.waitUntil(timeoutMillis=10000) {
+   rule.onAllNodesWithText("Подтвердите установку в Android.",substring=true)
+    .fetchSemanticsNodes().isNotEmpty()
+  }
+  assertEquals("Only one synthetic system handoff is permitted",1,gateway.installationRequests)
+  rule.onNodeWithText("Проверить обновления").assertIsEnabled()
+
+  // A fresh check must immediately hide the old release, then report no update.
+  rule.runOnIdle {gateway.checkResult=CompletableDeferred()}
+  rule.onNodeWithText("Проверить обновления").performScrollTo().assertIsDisplayed().performClick()
+  rule.onNodeWithText("Скачать и установить через Android").assertDoesNotExist()
+  rule.runOnIdle {gateway.checkResult.complete(null)}
+  rule.waitUntil(timeoutMillis=10000) {
+   rule.onAllNodesWithText("У вас актуальная версия.").fetchSemanticsNodes().isNotEmpty()
+  }
+  rule.onNodeWithText("Скачать и установить через Android").assertDoesNotExist()
+  assertEquals(1,gateway.installationRequests)
  }
 }
