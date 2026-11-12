@@ -243,6 +243,31 @@ class OriginalTechnique3DTest {
     legDeltas[0]*legDeltas[1]<0f)
   }
  }
+ @Test fun smithGuideRailsRemainFixedAsBarSlidesWithShoulderAndHands() {
+  val exercise=exerciseCatalog.first{it.id=="smith_squat"}
+  val scenes=listOf(0f,0.5f,1f).map{originalVolumeAt(exercise,it)!!}
+  val rails=scenes.first().links.filter{it.tone==VolumeTone.SUPPORT}
+  assertEquals("Smith rig must have two fixed guide rails",2,rails.size)
+  for(scene in scenes) {
+   assertEquals("Smith machine frame must remain stationary",rails,
+    scene.links.filter{it.tone==VolumeTone.SUPPORT})
+   val bar=scene.links.filter{it.tone==VolumeTone.EQUIPMENT}.single()
+   val shoulder=scene.joints[1].position
+   assertEquals("Bar must travel only on fixed guide X",rails.first().a.x,bar.a.x,0.001f)
+   assertEquals(bar.a.x,bar.b.x,0.001f)
+   assertEquals(shoulder.x,bar.a.x,0.001f)
+   assertEquals("Bar must follow the shoulder vertically",shoulder.y,bar.a.y,0.001f)
+   assertEquals(bar.a.y,bar.b.y,0.001f)
+   for(wrist in listOf(scene.links[3].b,scene.links[5].b)) {
+    assertEquals("Hand must not detach from guided bar X",bar.a.x,wrist.x,0.001f)
+    assertEquals("Hand must not detach from bar height",bar.a.y,wrist.y,0.001f)
+    assertTrue("Hand must grip inside bar span",wrist.z in bar.a.z..bar.b.z)
+   }
+  }
+  val top=scenes.first().links.first{it.tone==VolumeTone.EQUIPMENT}
+  val bottom=scenes.last().links.first{it.tone==VolumeTone.EQUIPMENT}
+  assertTrue("Smith guided bar must descend in the squat",top.a.y-bottom.a.y>0.9f)
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
