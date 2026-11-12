@@ -201,8 +201,25 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
      support(x(handMid.x,0f,z),x(handMid.x,handMid.y,z))
    }
    "chair_squat" -> {
-    support(x(-2.1f,2.4f,-1f),x(-2.1f,2.4f,1f))
-    support(x(-2.1f,0f,-1f),x(-2.1f,2.4f,-1f))
+    // This exact catalog variant ends with a gentle seat touch. The old
+    // single rear rail was too far from the lowered hip to show contact.
+    // Keep the chair stationary across all motion phases and show a full
+    // seat outline with a center beam, plus four supporting legs.
+    val rear=-2.6f
+    val front=-0.85f
+    val halfWidth=1.05f
+    val seatHeight=2.4f
+    for(z in listOf(-halfWidth,halfWidth)) {
+     support(x(rear,seatHeight,z),x(front,seatHeight,z),0.13f)
+     support(x(rear,0f,z),x(rear,seatHeight,z))
+     support(x(front,0f,z),x(front,seatHeight,z))
+    }
+    for(px in listOf(rear,front))
+     support(x(px,seatHeight,-halfWidth),x(px,seatHeight,halfWidth),0.13f)
+    // A visible load-bearing rail meets the lowered pelvis, not the
+    // standing pelvis; the schematic does not prescribe squat depth.
+    support(x(-1.45f,seatHeight,-halfWidth),
+     x(-1.45f,seatHeight,halfWidth),0.13f)
    }
    else -> Unit
   }
