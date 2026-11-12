@@ -146,9 +146,20 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    support(x(handMid.x,handMid.y,-1.8f),x(handMid.x,handMid.y,1.8f),0.17f)
   }
   Equipment.BENCH -> {
-   support(x(-2.3f,2.0f,0f),x(2.3f,2.0f,0f),0.3f)
-   support(x(-2.0f,0f,0f),x(-2.0f,2f,0f))
-   support(x(2.0f,0f,0f),x(2.0f,2f,0f))
+   // Low stationary platform: both alternating raised feet in the authored
+   // bench_step path must land within its top surface, not past a thin rail.
+   // A wireframe perimeter makes the full depth and footing legible.
+   val front=-2.6f
+   val back=3.2f
+   val halfWidth=1.15f
+   val height=2.0f
+   for(z in listOf(-halfWidth,halfWidth)) {
+    support(x(front,height,z),x(back,height,z),0.14f)
+    support(x(front,0f,z),x(front,height,z))
+    support(x(back,0f,z),x(back,height,z))
+   }
+   for(px in listOf(front,back))
+    support(x(px,height,-halfWidth),x(px,height,halfWidth),0.14f)
   }
   Equipment.MAT -> {
    support(x(-4.6f,0f,-1.8f),x(4.6f,0f,-1.8f),0.06f)
