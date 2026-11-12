@@ -16,7 +16,8 @@ class OriginalVolumeEvidenceTest {
    assertEquals(exercise.equipment,packet.equipment)
    assertEquals(VolumeEvidenceStage.SOURCE_ONLY,packet.stage)
    assertEquals("Unexpected unversioned source change for " + exercise.id,
-    if(exercise.id in setOf("goblet","raise","lat_pulldown")) 2 else 1,packet.revision)
+    if(exercise.id in setOf("goblet","raise","lat_pulldown",
+     "scap_pull","wall_push","incline_push")) 2 else 1,packet.revision)
    assertEquals(64,packet.sha256.length)
    assertTrue(hashes.add(packet.sha256))
    assertTrue(packet.researchLeads.isNotEmpty())
