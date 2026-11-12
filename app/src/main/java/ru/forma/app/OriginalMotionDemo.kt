@@ -70,6 +70,10 @@ internal fun OriginalMotionDemo(exercise: Exercise) {
       drawLine(color=color,start=a,end=b,strokeWidth=width*k,cap=StrokeCap.Round)
      }
      bone(xy(8f,109f),xy(113f,109f),quiet,0.8f)
+     // This exact variant is performed with the back to a fixed wall.
+     // Draw the wall behind the body/arms, not on top of the active joints.
+     if(spec.exerciseId=="wall_slide")
+      bone(xy(49f,12f),xy(49f,109f),quiet,2f)
      // Rear arm/leg are intentionally faint; this is a side-view schematic.
      val rear=quiet.copy(alpha=0.6f)
      bone(p(1)+Offset(-3*k,2*k),p(2)+Offset(-3*k,2*k),rear,3f)
