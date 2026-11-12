@@ -23,7 +23,9 @@ private fun pose(vararg p: Int): MotionPose {
 private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  MotionKind.SQUAT to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 75, 60, 77, 66, 45, 78, 75, 86, 54, 105)),
  MotionKind.GOBLET_SQUAT to (pose(52, 22, 52, 38, 58, 49, 58, 46, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 67, 57, 65, 54, 45, 78, 75, 86, 54, 105)),
- MotionKind.SMITH_SQUAT to (pose(52, 22, 52, 38, 46, 51, 46, 48, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 54, 60, 51, 54, 45, 78, 75, 86, 54, 105)),
+ // Vertical guided-Smith *schematic*: shoulder and grip stay on the
+ // fixed rail X, while torso/hips lower; other squat variants are unchanged.
+ MotionKind.SMITH_SQUAT to (pose(52, 22, 52, 38, 46, 51, 52, 38, 52, 69, 52, 86, 52, 105) to pose(65, 37, 52, 50, 54, 60, 52, 50, 45, 78, 75, 86, 54, 105)),
  MotionKind.WALL_PUSH to (pose(71, 22, 66, 39, 84, 44, 99, 42, 54, 68, 46, 88, 38, 106) to pose(82, 30, 75, 47, 88, 49, 99, 42, 54, 70, 46, 88, 38, 106)),
  MotionKind.BIRD_DOG to (pose(76, 48, 59, 61, 59, 82, 60, 96, 36, 64, 35, 90, 22, 103) to pose(78, 44, 57, 59, 77, 51, 99, 47, 36, 64, 28, 75, 9, 66)),
  MotionKind.PRONE_W to (pose(24, 86, 42, 86, 52, 81, 59, 79, 65, 92, 78, 95, 94, 101) to pose(24, 82, 42, 80, 54, 71, 64, 72, 65, 88, 78, 95, 94, 101)),
