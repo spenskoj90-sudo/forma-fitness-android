@@ -186,6 +186,15 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
     gear(leftAnkle+x(0f,-0.1f,-0.2f),rightAnkle+x(0f,-0.1f,0.2f),0.25f)
   }
   Equipment.BODYWEIGHT -> when(exercise.id) {
+   "wall_slide" -> {
+    // Exact catalog cue: back to the wall, not the facing-wall rehab variant.
+    // Both authored elbow/wrist X coordinates stay in this stationary plane.
+    val wallX=(49f-60f)*0.092f
+    for(z in listOf(-1.6f,1.6f))
+     support(x(wallX,0f,z),x(wallX,10.7f,z))
+    for(y in listOf(0f,10.7f))
+     support(x(wallX,y,-1.6f),x(wallX,y,1.6f))
+   }
    "wall_push" -> {
     // An authored wireframe wall: its plane passes through the two fixed
     // hands rather than leaving a visible gap to the wrists.
