@@ -67,7 +67,7 @@ for _ in $(seq 1 30); do
   if curl --noproxy 127.0.0.1 --fail --silent --max-time 2 \
     "http://127.0.0.1:$port/health" >/dev/null; then
     if [[ "$mode" == serve ]]; then
-      if ! ss -H -lptn "sport = :$port" | grep -F "pid=$server_pid," >/dev/null; then
+      if ! python3 "$script_dir/local_socket.py" "$server_pid" "$port"; then
         echo 'LOCAL_MODEL_PORT_NOT_OWNED' >&2
         exit 1
       fi

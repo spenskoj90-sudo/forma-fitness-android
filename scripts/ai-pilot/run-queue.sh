@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 revision="${1:?exact checkout SHA required}"
 output="${2:?checkpoint directory required}"
@@ -29,7 +30,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 prepare_kotlin() {
-  local hash artifact jar
+  local hash artifact jar remaining deadline=$((SECONDS + 90))
   if [[ -z "${PILOT_KOTLIN_CACHE:-}" ]]; then
     export PILOT_KOTLIN_CACHE="$scratch/kotlin"
     mkdir -p "$PILOT_KOTLIN_CACHE" || return 1
@@ -37,8 +38,10 @@ prepare_kotlin() {
   while read -r hash artifact; do
     jar="$PILOT_KOTLIN_CACHE/${artifact##*/}"
     if [[ "$PILOT_KOTLIN_CACHE" == "$scratch/kotlin" ]]; then
+      remaining=$((deadline - SECONDS))
+      (( remaining > 0 )) || return 1
       curl --proto '=https' --proto-redir '=https' --fail --silent --show-error \
-        --max-time 90 --output "$jar" "https://repo.maven.apache.org/maven2/$artifact" || return 1
+        --connect-timeout 10 --max-time "$remaining" --output "$jar" "https://repo.maven.apache.org/maven2/$artifact" || return 1
     fi
     printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status || return 1
   done < "$script_dir/kotlin.lock"
@@ -49,18 +52,26 @@ if [[ "$package" == backup-replay ]] && ! prepare_kotlin; then
   echo 'KOTLIN_DEPENDENCIES_UNAVAILABLE' >&2
 fi
 
-primary_port="${PILOT_PRIMARY_PORT:-18787}"
-reserve_port="${PILOT_RESERVE_PORT:-18788}"
+read -r free_primary free_reserve < <(python3 - <<'PYPORT'
+import socket
+with socket.socket() as first, socket.socket() as second:
+    first.bind(("127.0.0.1", 0))
+    second.bind(("127.0.0.1", 0))
+    print(first.getsockname()[1], second.getsockname()[1])
+PYPORT
+)
+primary_port="${PILOT_PRIMARY_PORT:-$free_primary}"
+reserve_port="${PILOT_RESERVE_PORT:-$free_reserve}"
 for port in "$primary_port" "$reserve_port"; do
   [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && (( port <= 65535 ))
 done
 [[ "$primary_port" != "$reserve_port" ]]
 
 PILOT_PORT="$primary_port" bash "$script_dir/run-local.sh" "$revision" \
-  "$scratch/primary.ready" qwen3-1.7b serve &
+  "$scratch/primary.ready" qwen3-1.7b serve 9>&- &
 primary_pid=$!
 PILOT_PORT="$reserve_port" bash "$script_dir/run-local.sh" "$revision" \
-  "$scratch/reserve.ready" qwen2.5-coder-3b serve &
+  "$scratch/reserve.ready" qwen2.5-coder-3b serve 9>&- &
 reserve_pid=$!
 for _ in $(seq 1 130); do
   if { [[ -f "$scratch/primary.ready" ]] || ! kill -0 "$primary_pid" 2>/dev/null; } &&

@@ -1,7 +1,10 @@
+import os
 from pathlib import Path
+import socket
 import tempfile
 import unittest
 
+from local_socket import owns_listener
 from queue_run import WorkQueue, Task, CheckFailure
 from run import MODELS, PilotFailure
 
@@ -118,6 +121,11 @@ class WorkQueueTest(unittest.TestCase):
             self.assertEqual(proposed, ["independent"])
             self.assertEqual(queue.records["blocked"]["status"], "FAIL")
             self.assertEqual(queue.records["blocked"]["checks"], "NOT_RUN")
+            resumed_tasks = [Task("blocked", (), lambda value: value), tasks[1]]
+            resumed = WorkQueue(Path(tmp), "a" * 40, resumed_tasks, propose, lambda *_: True)
+            resumed.run()
+            self.assertEqual(resumed.records["blocked"]["status"], "PASS")
+            self.assertEqual(proposed, ["independent", "blocked"])
 
     def test_non_ascii_response_cannot_poison_checkpoint(self):
         proposed = iter(["\ud800", "valid"])
@@ -127,3 +135,12 @@ class WorkQueueTest(unittest.TestCase):
             queue.run()
             self.assertEqual(queue.records["one"]["history"][0]["result"], "INVALID_RESPONSE")
             self.assertEqual(queue.records["one"]["status"], "PASS")
+
+    def test_requires_the_owned_loopback_listener(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            self.assertTrue(owns_listener(os.getpid(), port))
+            self.assertFalse(owns_listener(0, port))
+        self.assertFalse(owns_listener(os.getpid(), port))

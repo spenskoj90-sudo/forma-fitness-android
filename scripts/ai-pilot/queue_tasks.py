@@ -1,6 +1,7 @@
 """Reviewed task definitions. Model output cannot select files or commands."""
 
 import ast
+from contextlib import suppress
 import difflib
 import os
 from pathlib import Path
@@ -93,9 +94,12 @@ def backup_task(repo, revision, failure):
                 try:
                     output, _ = verifier.communicate(timeout=100)
                 except subprocess.TimeoutExpired:
-                    os.killpg(verifier.pid, signal.SIGKILL)
-                    verifier.communicate()
                     raise failure("compiler", "Kotlin verification timed out.") from None
+                finally:
+                    if verifier.poll() is None:
+                        with suppress(ProcessLookupError):
+                            os.killpg(verifier.pid, signal.SIGKILL)
+                        verifier.communicate()
             if verifier.returncode:
                 output = output.replace(str(root), ".")
                 lines = [line for line in output.splitlines() if "error:" in line]

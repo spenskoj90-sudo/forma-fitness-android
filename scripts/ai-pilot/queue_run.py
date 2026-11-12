@@ -8,11 +8,13 @@ import http.client
 import json
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 
+from local_socket import owns_listener
 from run import MODELS, NoRedirect, PilotFailure, write_atomic
 from queue_tasks import make_tasks
 
@@ -71,6 +73,10 @@ class WorkQueue:
                         raise ValueError
                     if sha256((self.root / f"{name}.patch").read_text()) != record["patch_sha256"]:
                         raise ValueError
+            for task in self.tasks:
+                record = saved["records"][task.name]
+                if record.get("preflight") and not task.blocker:
+                    saved["records"][task.name] = self.records[task.name]
             self.records = saved["records"]
         except (ValueError, KeyError, TypeError, AttributeError, OSError, RecursionError):
             raise PilotFailure("CHECKPOINT_MISMATCH") from None
@@ -82,7 +88,7 @@ class WorkQueue:
     def attempt(self, task):
         record = self.records[task.name]
         if task.blocker:
-            record.update(status="FAIL", feedback=task.blocker)
+            record.update(status="FAIL", feedback=task.blocker, preflight=True)
             record.pop("candidate", None)
             self.save()
             return
@@ -143,8 +149,7 @@ class WorkQueue:
 
 
 def complete(port, pid, model, system, prompt, schema, max_tokens):
-    listeners = subprocess.check_output(["ss", "-H", "-lptn", f"sport = :{port}"], text=True)
-    if not pid or f"pid={pid}," not in listeners:
+    if not owns_listener(pid, port):
         raise PilotFailure("PROVIDER_UNREACHABLE")
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/v1/chat/completions",
@@ -230,7 +235,12 @@ def main():
         return int(any(record["status"] != "PASS" for record in queue.records.values()))
 
 
+def terminate(_signal, _frame):
+    raise SystemExit(143)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, terminate)
     try:
         sys.exit(main())
     except PilotFailure as error:
