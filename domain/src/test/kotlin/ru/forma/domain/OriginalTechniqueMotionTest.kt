@@ -37,6 +37,20 @@ class OriginalTechniqueMotionTest {
    assertTrue(kotlin.math.abs(p.joints[3].y-p.joints[1].y)<12f)
   }
  }
+ @Test fun smithBarAndGripRemainOnVerticalGuideAsSquatDescends() {
+  val exercise=exerciseCatalog.first{it.id=="smith_squat"}
+  val spec=originalMotionFor(exercise)!!
+  val poses=listOf(0f,0.5f,1f).map{originalMotionAt(spec,it)}
+  val guideX=poses.first().joints[1].x
+  for(pose in poses) {
+   assertEquals("Smith shoulder must stay on the guided X",guideX,pose.joints[1].x,0.001f)
+   assertEquals("Smith wrist grip must stay on guide X",guideX,pose.joints[3].x,0.001f)
+   assertEquals("Grip must meet the bar at shoulder height",
+    pose.joints[1].y,pose.joints[3].y,0.001f)
+  }
+  assertTrue("Smith bar must descend rather than slide forward",
+   poses.last().joints[1].y-poses.first().joints[1].y>10f)
+ }
  @Test fun backToWallSlideSketchKeepsBothForearmsAtTheWallWhileRaisingHands() {
   val slide=originalMotionFor(exerciseCatalog.first{it.id=="wall_slide"})!!
   val poses=listOf(0f,0.5f,1f).map{originalMotionAt(slide,it)}
