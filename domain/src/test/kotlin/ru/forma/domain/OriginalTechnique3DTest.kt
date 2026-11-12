@@ -133,6 +133,32 @@ class OriginalTechnique3DTest {
    }
   }
  }
+ @Test fun benchStepRaisedFeetStayAboveStationaryPlatformAtBothEndpoints() {
+  val exercise=exerciseCatalog.first{it.id=="bench_step"}
+  val scenes=listOf(0f,0.5f,1f).map{originalVolumeAt(exercise,it)!!}
+  val firstSupport=scenes.first().links.filter{it.tone==VolumeTone.SUPPORT}
+  assertEquals("Platform must have four top edges and four legs",8,firstSupport.size)
+  for(scene in scenes) {
+   val supports=scene.links.filter{it.tone==VolumeTone.SUPPORT}
+   assertEquals("Platform cannot follow the moving feet",firstSupport,supports)
+   val top=supports.filter{abs(it.a.y-2f)<0.001f && abs(it.b.y-2f)<0.001f}
+   assertEquals("Platform needs a closed top perimeter",4,top.size)
+   val corners=top.flatMap{listOf(it.a,it.b)}
+   val minX=corners.minOf{it.x}
+   val maxX=corners.maxOf{it.x}
+   val minZ=corners.minOf{it.z}
+   val maxZ=corners.maxOf{it.z}
+   assertTrue("Platform must be a surface, not a zero-width rail",maxZ-minZ>2f)
+   assertTrue("Platform must extend along the stepping direction",maxX-minX>5f)
+   if(scene.phase==0f || scene.phase==1f) {
+    val feet=listOf(scene.links[7].b,scene.links[9].b)
+    val raised=feet.maxBy{it.y}
+    assertTrue("Raised foot must be close to platform height",abs(raised.y-2f)<0.35f)
+    assertTrue("Raised foot must remain within platform X bounds",raised.x in minX..maxX)
+    assertTrue("Raised foot must remain within platform Z bounds",raised.z in minZ..maxZ)
+   }
+  }
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
