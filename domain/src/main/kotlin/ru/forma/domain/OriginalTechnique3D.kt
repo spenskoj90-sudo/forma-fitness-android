@@ -75,12 +75,17 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
  val rightElbow = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,false) else p(alternate[2], -0.67f)
  val leftWrist = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,true) else p(primary[3], 0.67f)
  val rightWrist = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,true) else p(alternate[3], -0.67f)
- val leftHip = p(primary[4], 0.31f)
- val rightHip = p(alternate[4], -0.31f)
- val leftKnee = p(primary[5], 0.39f)
- val rightKnee = p(alternate[5], -0.39f)
- val leftAnkle = p(primary[6], 0.39f)
- val rightAnkle = p(alternate[6], -0.39f)
+ // Bird-dog and dead-bug require contralateral reach, not same-side
+ // arm+leg extension. Only these exact-ID leg phase sources are crossed.
+ val contralateral = exercise.id == "bird_dog" || exercise.id == "dead_bug"
+ val leftLegPose = if(contralateral) alternate else primary
+ val rightLegPose = if(contralateral) primary else alternate
+ val leftHip = p(leftLegPose[4], 0.31f)
+ val rightHip = p(rightLegPose[4], -0.31f)
+ val leftKnee = p(leftLegPose[5], 0.39f)
+ val rightKnee = p(rightLegPose[5], -0.39f)
+ val leftAnkle = p(leftLegPose[6], 0.39f)
+ val rightAnkle = p(rightLegPose[6], -0.39f)
  val body = mutableListOf(
   link(head, shoulder, 0.18f),
   link(shoulder, hip, 0.39f),
