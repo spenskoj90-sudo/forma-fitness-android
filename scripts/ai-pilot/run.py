@@ -105,9 +105,9 @@ def propose(port, model):
     if model == MODELS[1]:
         del body["tools"], body["tool_choice"]
         body["messages"][0]["content"] = (
-            "Write a Python return expression using only n, min and max. "
-            "For n=-3, return 0. For n=4, return 4. For n=12, return 9. "
-            "Clamp any integer n into [0, 9]. Output the expression in JSON."
+            "Fix this Python function: def bounded(n): return max(0, n). "
+            "Preserve the lower bound and add an upper bound of 9. Output a JSON object "
+            "whose expression value is only the Python return expression. Do not include the keyword return."
         )
         body["response_format"] = {"type": "json_schema", "json_schema": {
             "name": "edit_bounds", "strict": True, "schema": TOOL["function"]["parameters"],
