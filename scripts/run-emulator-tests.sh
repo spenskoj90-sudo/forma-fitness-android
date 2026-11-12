@@ -72,6 +72,10 @@ grep -F "OK (1 test)" "verification/volume-preview-api${api}.txt"
 # Original layered glass and solid accessibility fallback across small/double-font viewports.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormaGlassUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/glass-ui-api${api}.txt"
 grep -F "OK (3 tests)" "verification/glass-ui-api${api}.txt"
+# Verify signed-update offer/check/loading and network-error UX with an injected
+# synthetic gateway: no external feed, APK, permanent key or installer launch.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.UpdateCenterUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/update-center-api${api}.txt"
+grep -F "OK (1 test)" "verification/update-center-api${api}.txt"
 # Check real TalkBack semantics for headings, spoken controls and summary charts.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.AccessibleWorkoutUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/accessibility-api${api}.txt"
 grep -F "OK (5 tests)" "verification/accessibility-api${api}.txt"
