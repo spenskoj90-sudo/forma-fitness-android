@@ -5,9 +5,11 @@ import difflib
 import os
 from pathlib import Path
 import re
-import shutil
+import io
+import signal
 import subprocess
 import tempfile
+import tarfile
 
 from run import valid_expression
 
@@ -44,8 +46,11 @@ def kotlin_expression(candidate, failure):
     return candidate.strip()
 
 
-def backup_task(repo, failure):
-    before = (repo / BACKUP).read_text()
+def backup_task(repo, revision, failure):
+    try:
+        before = subprocess.check_output(["git", "show", f"{revision}:{BACKUP}"], cwd=repo, text=True)
+    except subprocess.CalledProcessError:
+        raise failure("base", "Backup source is unavailable at the exact revision.") from None
     if before.count(ORIGINAL) != 1:
         raise failure("base", "The original PR #15 defect is no longer present on this revision.")
 
@@ -68,21 +73,31 @@ def backup_task(repo, failure):
         after = before.replace(original_line.lstrip(), replacement)
         with tempfile.TemporaryDirectory(prefix="forma-backup-replay-") as tmp:
             root = Path(tmp)
-            shutil.copytree(repo / "domain/src", root / "domain/src")
+            archive = subprocess.check_output(
+                ["git", "archive", revision, "domain/src", "scripts/ai-pilot/BackupReplayTest.kt"],
+                cwd=repo,
+            )
+            with tarfile.open(fileobj=io.BytesIO(archive)) as snapshot:
+                snapshot.extractall(root, filter="data")
             (root / BACKUP).write_text(after)
-            shutil.copyfile(repo / "scripts/ai-pilot/BackupReplayTest.kt",
-                            root / "domain/src/test/kotlin/BackupReplayTest.kt")
-            try:
-                result = subprocess.run(
-                    ["bash", str(repo / "scripts/ai-pilot/verify-domain.sh"), str(root)],
-                    capture_output=True, text=True, timeout=100, check=False,
-                    env={key: os.environ[key] for key in ("PATH", "JAVA_HOME", "PILOT_KOTLIN_CACHE")
-                         if key in os.environ},
-                )
-            except subprocess.TimeoutExpired:
-                raise failure("compiler", "Kotlin verification timed out.") from None
-            if result.returncode:
-                output = (result.stderr + "\n" + result.stdout).replace(str(root), ".")
+            (root / "scripts/ai-pilot/BackupReplayTest.kt").rename(
+                root / "domain/src/test/kotlin/BackupReplayTest.kt"
+            )
+            with subprocess.Popen(
+                ["bash", str(repo / "scripts/ai-pilot/verify-domain.sh"), str(root)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                start_new_session=True,
+                env={key: os.environ[key] for key in ("PATH", "JAVA_HOME", "PILOT_KOTLIN_CACHE")
+                     if key in os.environ},
+            ) as verifier:
+                try:
+                    output, _ = verifier.communicate(timeout=100)
+                except subprocess.TimeoutExpired:
+                    os.killpg(verifier.pid, signal.SIGKILL)
+                    verifier.communicate()
+                    raise failure("compiler", "Kotlin verification timed out.") from None
+            if verifier.returncode:
+                output = output.replace(str(root), ".")
                 lines = [line for line in output.splitlines() if "error:" in line]
                 if lines:
                     raise failure("compile", "\n".join(lines)[:1400])
@@ -126,12 +141,17 @@ def synthetic_task(low, high, path, failure):
                     "Return only the expression using n, min, max and integer constants.")
 
 
-def make_tasks(repo, package, task, failure):
+def make_tasks(repo, revision, package, task, failure):
     verify, brief = synthetic_task(0, 9, "bounds.py", failure)
     follow, follow_brief = synthetic_task(2, 7, "followup_bounds.py", failure)
     tasks = []
     if package == "backup-replay":
-        backup, backup_brief = backup_task(repo, failure)
-        tasks.append(task("backup-pr15", (), backup, backup_brief))
+        try:
+            if not os.environ.get("PILOT_KOTLIN_CACHE"):
+                raise failure("compiler", "Kotlin dependencies unavailable.")
+            backup, backup_brief = backup_task(repo, revision, failure)
+            tasks.append(task("backup-pr15", (), backup, backup_brief))
+        except failure as error:
+            tasks.append(task("backup-pr15", (), None, blocker=str(error)))
     return tasks + [task("clamp", (), verify, brief),
                     task("clamp-followup", ("clamp",), follow, follow_brief)]

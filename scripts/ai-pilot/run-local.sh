@@ -54,8 +54,12 @@ fetch 'https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b121
   '368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55' "$downloads/llama.tgz" llama.tgz
 fetch "$model_file" "$model_hash" "$downloads/model.gguf" "$model.gguf"
 tar -xzf "$downloads/llama.tgz" -C "$downloads"
+context=16384
+if [[ "$mode" == serve ]]; then
+  context=4096
+fi
 "$downloads/llama-b12110/llama-server" -m "$downloads/model.gguf" --host 127.0.0.1 \
-  --port "$port" --alias "$model" --jinja --reasoning-budget 0 -c 16384 -t 4 -np 1 \
+  --port "$port" --alias "$model" --jinja --reasoning-budget 0 -c "$context" -t 4 -np 1 \
   >"$downloads/llama.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 30); do
@@ -63,7 +67,11 @@ for _ in $(seq 1 30); do
   if curl --noproxy 127.0.0.1 --fail --silent --max-time 2 \
     "http://127.0.0.1:$port/health" >/dev/null; then
     if [[ "$mode" == serve ]]; then
-      touch -- "$output"
+      if ! ss -H -lptn "sport = :$port" | grep -F "pid=$server_pid," >/dev/null; then
+        echo 'LOCAL_MODEL_PORT_NOT_OWNED' >&2
+        exit 1
+      fi
+      printf '%s\n' "$server_pid" > "$output"
       wait "$server_pid"
       exit
     fi

@@ -24,6 +24,13 @@ class BackupReplayTest {
         val backup = Backup(profiles = listOf(profile.copy(history = listOf(completed))))
         assertEquals(backup, decodeBackup(encodeBackup(backup)))
 
+        val equalPrescriptions = completed.copy(
+            day = day.copy(exercises = listOf(Prescription(first, 1, 10), Prescription(first, 1, 10))),
+            sets = listOf(firstSet, firstSet)
+        )
+        val repeated = Backup(profiles = listOf(profile.copy(history = listOf(equalPrescriptions))))
+        assertEquals(repeated, decodeBackup(encodeBackup(repeated)))
+
         val wrongSets = completed.copy(sets = listOf(firstSet, firstSet, firstSet, firstSet))
         val malformed = Backup(profiles = listOf(profile.copy(history = listOf(wrongSets))))
         assertThrows(IllegalArgumentException::class.java) {

@@ -30,11 +30,12 @@ class WorkQueueTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             first = WorkQueue(root, "a" * 40, tasks, propose, review)
-            first.run(steps=3)
-            self.assertEqual(first.records["blocked"]["status"], "FAIL")
+            first.run(steps=1)
+            self.assertEqual(first.records["blocked"]["status"], "NOT_RUN")
             self.assertEqual(first.records["independent"]["status"], "NOT_RUN")
             second = WorkQueue(root, "a" * 40, tasks, propose, review)
             second.run()
+            self.assertEqual(second.records["blocked"]["status"], "FAIL")
             self.assertEqual(second.records["dependent"]["status"], "NOT_RUN")
             self.assertEqual(second.records["independent"]["status"], "PASS")
             self.assertEqual(second.records["after"]["status"], "PASS")
@@ -101,3 +102,28 @@ class WorkQueueTest(unittest.TestCase):
                                 lambda *_: self.fail("proposal already saved"), lambda *_: True)
             resumed.run()
             self.assertEqual(resumed.records["one"]["status"], "PASS")
+
+    def test_failed_preflight_skips_model_and_runs_independent_task(self):
+        tasks = [Task("blocked", (), None, blocker="Kotlin unavailable"),
+                 Task("independent", (), lambda value: value)]
+        proposed = []
+
+        def propose(task, *_):
+            proposed.append(task.name)
+            return "patch"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            queue = WorkQueue(Path(tmp), "a" * 40, tasks, propose, lambda *_: True)
+            queue.run()
+            self.assertEqual(proposed, ["independent"])
+            self.assertEqual(queue.records["blocked"]["status"], "FAIL")
+            self.assertEqual(queue.records["blocked"]["checks"], "NOT_RUN")
+
+    def test_non_ascii_response_cannot_poison_checkpoint(self):
+        proposed = iter(["\ud800", "valid"])
+        with tempfile.TemporaryDirectory() as tmp:
+            queue = WorkQueue(Path(tmp), "a" * 40, [Task("one", (), lambda value: value)],
+                              lambda *_: next(proposed), lambda *_: True)
+            queue.run()
+            self.assertEqual(queue.records["one"]["history"][0]["result"], "INVALID_RESPONSE")
+            self.assertEqual(queue.records["one"]["status"], "PASS")

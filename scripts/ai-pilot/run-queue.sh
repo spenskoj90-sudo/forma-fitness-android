@@ -7,6 +7,10 @@ package="${3:?reviewed package required}"
 case "$package" in smoke|backup-replay) ;; *) exit 2 ;; esac
 shift 3
 [[ "$revision" == "$(git -C "$script_dir" rev-parse HEAD)" ]]
+git -C "$script_dir" diff --quiet "$revision" -- .
+mkdir -p "$output"
+exec 9>"$output/.bootstrap"
+flock -n 9 || { echo 'WRITER_BUSY' >&2; exit 1; }
 
 scratch="$(mktemp -d)"
 primary_pid=
@@ -24,15 +28,25 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if [[ "$package" == backup-replay && -z "${PILOT_KOTLIN_CACHE:-}" ]]; then
-  export PILOT_KOTLIN_CACHE="$scratch/kotlin"
-  mkdir -p "$PILOT_KOTLIN_CACHE"
+prepare_kotlin() {
+  local hash artifact jar
+  if [[ -z "${PILOT_KOTLIN_CACHE:-}" ]]; then
+    export PILOT_KOTLIN_CACHE="$scratch/kotlin"
+    mkdir -p "$PILOT_KOTLIN_CACHE" || return 1
+  fi
   while read -r hash artifact; do
     jar="$PILOT_KOTLIN_CACHE/${artifact##*/}"
-    curl --proto '=https' --proto-redir '=https' --fail --silent --show-error \
-      --max-time 90 --output "$jar" "https://repo.maven.apache.org/maven2/$artifact"
-    printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status
+    if [[ "$PILOT_KOTLIN_CACHE" == "$scratch/kotlin" ]]; then
+      curl --proto '=https' --proto-redir '=https' --fail --silent --show-error \
+        --max-time 90 --output "$jar" "https://repo.maven.apache.org/maven2/$artifact" || return 1
+    fi
+    printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status || return 1
   done < "$script_dir/kotlin.lock"
+}
+
+if [[ "$package" == backup-replay ]] && ! prepare_kotlin; then
+  unset PILOT_KOTLIN_CACHE
+  echo 'KOTLIN_DEPENDENCIES_UNAVAILABLE' >&2
 fi
 
 primary_port="${PILOT_PRIMARY_PORT:-18787}"
@@ -57,5 +71,10 @@ for _ in $(seq 1 130); do
 done
 
 # An unavailable server is handled by the queue as a provider failure.
+primary_server=0
+reserve_server=0
+if [[ -f "$scratch/primary.ready" ]]; then read -r primary_server < "$scratch/primary.ready"; fi
+if [[ -f "$scratch/reserve.ready" ]]; then read -r reserve_server < "$scratch/reserve.ready"; fi
 python3 "$script_dir/queue_run.py" --revision "$revision" --output "$output" \
-  --package "$package" --primary-port "$primary_port" --reserve-port "$reserve_port" "$@"
+  --package "$package" --primary-port "$primary_port" --reserve-port "$reserve_port" \
+  --primary-pid "$primary_server" --reserve-pid "$reserve_server" "$@"
