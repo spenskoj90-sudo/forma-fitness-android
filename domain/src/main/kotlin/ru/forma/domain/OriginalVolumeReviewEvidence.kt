@@ -72,7 +72,8 @@ fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
 
 // Revision each exact exercise when its authored rig/equipment trajectory changes.
 // Digests bind source keyposes, not final rendered images or expert acceptance.
-private val originalPoseRevisions=mapOf("goblet" to 2,"raise" to 2,"lat_pulldown" to 2)
+private val originalPoseRevisions=mapOf("goblet" to 2,"raise" to 2,"lat_pulldown" to 2,
+ "scap_pull" to 2,"wall_push" to 2,"incline_push" to 2)
 
 /** Reproducible digest of five source-authored keyposes and exact equipment. */
 private fun digestVolume(exercise:Exercise,revision:Int):String {
