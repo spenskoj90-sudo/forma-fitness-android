@@ -189,6 +189,28 @@ class OriginalTechnique3DTest {
   assertTrue("The standing pelvis must clear the chair",
    distanceToBeam(highHip)>highHip.radius+beam.radius+0.3f)
  }
+ @Test fun wallSlideHandsRemainAtFixedPosteriorWallAcrossEntireMotion() {
+  val exercise=exerciseCatalog.first{it.id=="wall_slide"}
+  val scenes=listOf(0f,0.5f,1f).map{originalVolumeAt(exercise,it)!!}
+  val wall=scenes.first().links.filter{it.tone==VolumeTone.SUPPORT}
+  assertEquals("Need two wall posts and two frame crossbars",4,wall.size)
+  val wallX=(49f-60f)*0.092f
+  for(scene in scenes) {
+   assertEquals("Wall must not follow the arms",wall,
+    scene.links.filter{it.tone==VolumeTone.SUPPORT})
+   for(i in listOf(2,3,4,5)) {
+    val contact=scene.links[i].b
+    assertTrue("Elbow/wrist must stay in stationary wall plane",
+     abs(contact.x-wallX)<0.001f)
+    assertTrue("Hands must remain within wall width",
+     contact.z in -1.6f..1.6f)
+   }
+   assertTrue("Wall must be behind torso with a small contact gap",
+    scene.joints[1].position.x-wallX in 0f..0.5f)
+  }
+  assertTrue("Hands must rise on the wall instead of swinging forward",
+   scenes.last().links[3].b.y-scenes.first().links[3].b.y>2f)
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
