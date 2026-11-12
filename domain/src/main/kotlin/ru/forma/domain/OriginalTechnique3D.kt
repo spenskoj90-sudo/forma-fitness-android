@@ -136,8 +136,12 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    gear(handMid,handMid+x(0f,-0.32f,0f),0.10f)
   }
   Equipment.SMITH_MACHINE -> {
-   gear(shoulder+x(0f,0f,-1.7f), shoulder+x(0f,0f,1.7f),0.12f)
-   for(z in listOf(-1.7f,1.7f))support(x(shoulder.x,0f,z),x(shoulder.x,11f,z),0.13f)
+   // This authored scene depicts a VERTICAL Smith guide, not every angled
+   // machine variant. Its frame and bar X must never follow the athlete.
+   val railX=p(originalMotionAt(spec,0f).joints[1],0f).x
+   gear(x(railX,shoulder.y,-1.7f),x(railX,shoulder.y,1.7f),0.12f)
+   for(z in listOf(-1.7f,1.7f))
+    support(x(railX,0f,z),x(railX,11f,z),0.13f)
   }
   Equipment.RESISTANCE_BAND -> {
    val anchorX = if(spec.kind == MotionKind.BAND_ROW) 4.1f else -4.1f
