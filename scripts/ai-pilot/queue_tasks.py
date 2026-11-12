@@ -14,8 +14,8 @@ from run import valid_expression
 BACKUP = "domain/src/main/kotlin/ru/forma/domain/Backup.kt"
 ORIGINAL = "w.status!=Phase.DONE || w.day.cardio!=null || w.sets.size==w.day.exercises.sumOf{it.sets}"
 KOTLIN_WORDS = set(
-    "exercises sets sumOf it groupBy groupingBy mapValues eachCount exercise id "
-    "value values key prescriptions xs pair entry count size".split()
+    "prescriptions sets sumOf it groupBy groupingBy mapValues eachCount exercise id "
+    "value values key prescription xs pair entry count size list group grouped".split()
 )
 KOTLIN_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9]*|[0-9]{1,3}|==|!=|&&|\|\||->|[.(){}:,<>+!_]")
 
@@ -29,8 +29,9 @@ def kotlin_expression(candidate, failure):
     tokens = KOTLIN_TOKEN.findall(candidate)
     if "".join(tokens) != re.sub(r"[ \t]", "", candidate):
         raise failure("policy", "Use one line and only the listed Kotlin collection expressions.")
-    if any(token[0].isalpha() and token not in KOTLIN_WORDS for token in tokens):
-        raise failure("policy", "An identifier is outside the listed Kotlin vocabulary.")
+    unknown = sorted({token for token in tokens if token[0].isalpha() and token not in KOTLIN_WORDS})
+    if unknown:
+        raise failure("policy", f"Identifiers outside the listed Kotlin vocabulary: {', '.join(unknown)}.")
     stack = []
     for token in tokens:
         if token in {"(", "{"}:
@@ -58,7 +59,7 @@ def backup_task(repo, failure):
         expression = kotlin_expression(candidate, failure)
         replacement = (
             "if (w.status == Phase.DONE && w.day.cardio == null) {\n"
-            "    val exercises = w.day.exercises\n"
+            "    val prescriptions = w.day.exercises\n"
             f"    val plannedSets: Map<String, Int> = ({expression})\n"
             "    val loggedSets = w.sets.groupingBy { it.exerciseId }.eachCount()\n"
             f"    require(loggedSets == plannedSets){message}\n"
@@ -93,10 +94,10 @@ def backup_task(repo, failure):
 
     brief = (
         "Implement the Kotlin initializer of val plannedSets: Map<String, Int>. "
-        "You have exercises: List<Prescription>. Each Prescription has exercise.id (String) "
+        "The only input variable is prescriptions: List<Prescription>. Each Prescription has exercise.id (String) "
         "and sets (Int). Return a map from exercise ID to the sum of sets over all matching "
         "prescriptions. Two entries with the same ID and sets 2 and 3 must yield 5, not 2 or 3. "
-        "Use exercises.groupBy to get lists by exercise ID, then transform the map values. "
+        "Use prescriptions.groupBy to get lists by exercise ID, then transform the map values. "
         "Kotlin mapValues passes a Map.Entry; its value property is the list for that ID. "
         "Return only one Kotlin expression, with no variable declarations. "
         f"Allowed identifiers: {', '.join(sorted(KOTLIN_WORDS))}."
