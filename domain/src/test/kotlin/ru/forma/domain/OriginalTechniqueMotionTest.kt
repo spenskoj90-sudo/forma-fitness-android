@@ -37,6 +37,21 @@ class OriginalTechniqueMotionTest {
    assertTrue(kotlin.math.abs(p.joints[3].y-p.joints[1].y)<12f)
   }
  }
+ @Test fun backToWallSlideSketchKeepsBothForearmsAtTheWallWhileRaisingHands() {
+  val slide=originalMotionFor(exerciseCatalog.first{it.id=="wall_slide"})!!
+  val poses=listOf(0f,0.5f,1f).map{originalMotionAt(slide,it)}
+  for(pose in poses) {
+   // X=49 is the hand/forearm wall plane in the authored side view.
+   assertEquals(49f,pose.joints[2].x,0.001f)
+   assertEquals(49f,pose.joints[3].x,0.001f)
+   assertTrue("Back-facing wall must stay behind the torso",
+    pose.joints[3].x<pose.joints[1].x)
+   assertEquals("Torso must not drift toward the wall",53f,pose.joints[4].x,0.001f)
+  }
+  assertTrue("Hands must move upward along the same wall, not swing forward",
+   poses.first().joints[3].y-poses.last().joints[3].y>20f)
+  assertEquals(poses.first().joints[3].x,poses.last().joints[3].x)
+ }
  @Test fun rejectWrongEquipmentAndMissingCatalogIds() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalMotionFor(squat.copy(equipment=Equipment.BARBELL)))
