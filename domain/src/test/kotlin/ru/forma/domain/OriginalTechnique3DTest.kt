@@ -211,6 +211,38 @@ class OriginalTechnique3DTest {
   assertTrue("Hands must rise on the wall instead of swinging forward",
    scenes.last().links[3].b.y-scenes.first().links[3].b.y>2f)
  }
+ @Test fun birdDogAndDeadBugReachWithOppositeArmAndLegAndAlternateSides() {
+  for(id in listOf("bird_dog","dead_bug")) {
+   val exercise=exerciseCatalog.first{it.id==id}
+   val armDeltas=mutableListOf<Float>()
+   val legDeltas=mutableListOf<Float>()
+   for(t in listOf(0f,1f)) {
+    val scene=originalVolumeAt(exercise,t)!!
+    val leftHand=scene.links[3].b
+    val rightHand=scene.links[5].b
+    val leftFoot=scene.links[7].b
+    val rightFoot=scene.links[9].b
+    // Bird-dog reach is upward; supine dead-bug arm reaches along X
+    // while its opposite leg lowers, so use direction-specific measures.
+    val armDelta=if(id=="bird_dog") leftHand.y-rightHand.y
+                 else leftHand.x-rightHand.x
+    val legDelta=if(id=="bird_dog") leftFoot.y-rightFoot.y
+                 else rightFoot.y-leftFoot.y
+    assertTrue("Arms must show distinguishable alternating reach for "+id,
+     abs(armDelta)>2f)
+    assertTrue("Legs must show distinguishable alternating reach for "+id,
+     abs(legDelta)>2f)
+    assertTrue("Extended arm and leg must be on opposite sides for "+id,
+     armDelta*legDelta<0f)
+    armDeltas+=armDelta
+    legDeltas+=legDelta
+   }
+   assertTrue("The extended arm side must alternate for "+id,
+    armDeltas[0]*armDeltas[1]<0f)
+   assertTrue("The extended leg side must alternate for "+id,
+    legDeltas[0]*legDeltas[1]<0f)
+  }
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
