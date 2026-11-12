@@ -50,7 +50,7 @@ class OriginalTechniqueMotionTest {
   }
   assertTrue("Hands must move upward along the same wall, not swing forward",
    poses.first().joints[3].y-poses.last().joints[3].y>20f)
-  assertEquals(poses.first().joints[3].x,poses.last().joints[3].x)
+  assertEquals(poses.first().joints[3].x,poses.last().joints[3].x,0.001f)
  }
  @Test fun rejectWrongEquipmentAndMissingCatalogIds() {
   val squat=exerciseCatalog.first { it.id=="squat" }
