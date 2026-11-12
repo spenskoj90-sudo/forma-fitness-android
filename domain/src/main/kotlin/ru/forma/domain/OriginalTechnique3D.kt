@@ -140,7 +140,11 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    gear(leftWrist,anchor,0.035f)
    gear(rightWrist,anchor,0.035f)
   }
-  Equipment.PULL_UP_BAR -> support(x(-2f,10.4f,-1.8f),x(-2f,10.4f,1.8f),0.17f)
+  Equipment.PULL_UP_BAR -> {
+   // The catalog's scapular pull keeps the hands on a stationary bar.
+   // Align the crossbar with both wrist contacts, not above/behind them.
+   support(x(handMid.x,handMid.y,-1.8f),x(handMid.x,handMid.y,1.8f),0.17f)
+  }
   Equipment.BENCH -> {
    support(x(-2.3f,2.0f,0f),x(2.3f,2.0f,0f),0.3f)
    support(x(-2.0f,0f,0f),x(-2.0f,2f,0f))
@@ -171,10 +175,19 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
     gear(leftAnkle+x(0f,-0.1f,-0.2f),rightAnkle+x(0f,-0.1f,0.2f),0.25f)
   }
   Equipment.BODYWEIGHT -> when(exercise.id) {
-   "wall_push" -> support(x(4.2f,0f,-2f),x(4.2f,10.7f,-2f))
+   "wall_push" -> {
+    // An authored wireframe wall: its plane passes through the two fixed
+    // hands rather than leaving a visible gap to the wrists.
+    for(z in listOf(-1.8f,1.8f))
+     support(x(handMid.x,0f,z),x(handMid.x,10.7f,z))
+    support(x(handMid.x,handMid.y,-1.8f),x(handMid.x,handMid.y,1.8f))
+   }
    "incline_push" -> {
-    support(x(2.8f,5f,-1f),x(2.8f,5f,1f))
-    support(x(2.8f,0f,-1f),x(2.8f,5f,-1f))
+    // A fixed-height hand support at the original incline-push wrist
+    // coordinates. The posts make the schematic surface spatially legible.
+    support(x(handMid.x,handMid.y,-1.35f),x(handMid.x,handMid.y,1.35f))
+    for(z in listOf(-1.35f,1.35f))
+     support(x(handMid.x,0f,z),x(handMid.x,handMid.y,z))
    }
    "chair_squat" -> {
     support(x(-2.1f,2.4f,-1f),x(-2.1f,2.4f,1f))
