@@ -16,8 +16,9 @@ flock -n 9 || { echo 'WRITER_BUSY' >&2; exit 1; }
 scratch="$(mktemp -d)"
 primary_pid=
 reserve_pid=
+queue_pid=
 cleanup() {
-  for pid in "$primary_pid" "$reserve_pid"; do
+  for pid in "$queue_pid" "$primary_pid" "$reserve_pid"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -88,4 +89,9 @@ if [[ -f "$scratch/primary.ready" ]]; then read -r primary_server < "$scratch/pr
 if [[ -f "$scratch/reserve.ready" ]]; then read -r reserve_server < "$scratch/reserve.ready"; fi
 python3 "$script_dir/queue_run.py" --revision "$revision" --output "$output" \
   --package "$package" --primary-port "$primary_port" --reserve-port "$reserve_port" \
-  --primary-pid "$primary_server" --reserve-pid "$reserve_server" "$@"
+  --primary-pid "$primary_server" --reserve-pid "$reserve_server" "$@" &
+queue_pid=$!
+result=0
+wait "$queue_pid" || result=$?
+queue_pid=
+exit "$result"
