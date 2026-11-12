@@ -58,10 +58,11 @@ jobs:
         run: |
           [[ "$RESUME_RUN" =~ ^[0-9]{1,20}$ ]]
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN")"
-          jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" '
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ai-development-pilot.yml" --jq .id)"
+          jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" --arg id "$workflow_id" '
             .head_sha == $sha and .head_repository.full_name == $repo and
             .head_branch == "main" and .event == "workflow_dispatch" and
-            .status == "completed" and .path == ".github/workflows/ai-development-pilot.yml"
+            .status == "completed" and (.workflow_id | tostring) == $id
           ' <<< "$run" >/dev/null
           attempt="$(jq -er '.run_attempt' <<< "$run")"
           download="$(mktemp -d)"

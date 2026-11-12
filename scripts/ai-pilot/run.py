@@ -70,7 +70,10 @@ def validated_source(expression):
         raise PilotFailure("INVALID_EDIT") from None
     if not valid_expression(node.body):
         raise PilotFailure("INVALID_EDIT")
-    return f"def bounded(n):\n    return {ast.unparse(node.body)}\n"
+    normalized = ast.unparse(node.body)
+    if len(normalized) > 80:
+        raise PilotFailure("INVALID_EDIT")
+    return f"def bounded(n):\n    return {normalized}\n"
 
 
 def verify_source(source):

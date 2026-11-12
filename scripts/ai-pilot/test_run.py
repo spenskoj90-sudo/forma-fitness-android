@@ -61,6 +61,16 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(self.execute("b" * 40), 1)
         self.assertEqual(self.checkpoint(), previous)
 
+    def test_canonicalization_cannot_persist_an_oversize_expression(self):
+        compact = "max(0," * 9 + "min(n,9)" + ")" * 9
+        self.assertLessEqual(len(compact), 80)
+        with mock.patch.object(run, "propose", return_value=compact):
+            self.assertEqual(self.execute(), 1)
+        self.assertEqual(self.checkpoint()["error"], "INVALID_EDIT")
+        self.assertNotIn("expression", self.checkpoint())
+        with mock.patch.object(run, "propose", return_value="min(9, max(0, n))"):
+            self.assertEqual(self.execute(), 0)
+
     def test_disallowed_edit_is_never_executed_or_persisted(self):
         with mock.patch.object(run, "propose", return_value='__import__("os").system("id")'):
             self.assertEqual(self.execute(), 1)
