@@ -159,6 +159,36 @@ class OriginalTechnique3DTest {
    }
   }
  }
+ @Test fun chairSquatSeatStaysFixedAndMeetsOnlyLoweredPelvis() {
+  val exercise=exerciseCatalog.first{it.id=="chair_squat"}
+  val scenes=listOf(0f,0.5f,1f).map{originalVolumeAt(exercise,it)!!}
+  val fixed=scenes.first().links.filter{it.tone==VolumeTone.SUPPORT}
+  assertEquals("Chair needs four legs, perimeter and a contact beam",9,fixed.size)
+  for(scene in scenes) {
+   val supports=scene.links.filter{it.tone==VolumeTone.SUPPORT}
+   assertEquals("Chair must not track the athlete",fixed,supports)
+   val top=supports.filter{abs(it.a.y-2.4f)<0.001f && abs(it.b.y-2.4f)<0.001f}
+   assertEquals("Seat needs a complete perimeter and contact beam",5,top.size)
+   val legs=supports.filter{abs(it.b.y-it.a.y)>2.3f}
+   assertEquals("Seat must have four fixed legs",4,legs.size)
+  }
+  val beam=fixed.single{
+   abs(it.a.x+1.45f)<0.001f && abs(it.b.x+1.45f)<0.001f &&
+    abs(it.b.z-it.a.z)>2f && abs(it.a.y-it.b.y)<0.001f
+  }
+  val highHip=scenes.first().joints[2]
+  val lowHip=scenes.last().joints[2]
+  fun distanceToBeam(hip:VolumeJoint):Float {
+   assertTrue("Pelvis must stay over the seat width",
+    hip.position.z in beam.a.z..beam.b.z)
+   return (hip.position-VolumePoint(beam.a.x,beam.a.y,hip.position.z)).length()
+  }
+  assertTrue("Schematic squat must descend",lowHip.position.y<highHip.position.y)
+  assertTrue("Lowered pelvis must meet the physical seat beam",
+   distanceToBeam(lowHip)<=lowHip.radius+beam.radius)
+  assertTrue("The standing pelvis must clear the chair",
+   distanceToBeam(highHip)>highHip.radius+beam.radius+0.3f)
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
