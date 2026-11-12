@@ -104,6 +104,35 @@ class OriginalTechnique3DTest {
   assertTrue("Pulldown bar must descend with the hands, not stay on the top rail",
    startBar.a.y-endBar.a.y>2f)
  }
+ @Test fun authoredWallInclineAndPullupSupportsActuallyMeetTheHands() {
+  for(id in listOf("scap_pull","wall_push","incline_push")) {
+   val exercise=exerciseCatalog.first{it.id==id}
+   var stationaryCrossbar:VolumeLink?=null
+   for(t in listOf(0f,0.5f,1f)) {
+    val scene=originalVolumeAt(exercise,t)!!
+    val leftHand=scene.links[3].b
+    val rightHand=scene.links[5].b
+    val handMid=(leftHand+rightHand)*0.5f
+    val supports=scene.links.filter{it.tone==VolumeTone.SUPPORT}
+    assertEquals("Wrong supporting structure for "+id,
+     if(id=="scap_pull") 1 else 3,supports.size)
+    val crossbars=supports.filter{
+     abs(it.a.y-it.b.y)<0.001f && abs(it.b.z-it.a.z)>2.5f
+    }
+    assertEquals("Missing wrist-height support for "+id,1,crossbars.size)
+    val crossbar=crossbars.single()
+    assertTrue("Support must meet hands in X for "+id,abs(crossbar.a.x-handMid.x)<0.001f)
+    assertTrue("Support must meet hands in Y for "+id,abs(crossbar.a.y-handMid.y)<0.001f)
+    assertTrue("Left grip outside support for "+id,
+     leftHand.z in crossbar.a.z..crossbar.b.z)
+    assertTrue("Right grip outside support for "+id,
+     rightHand.z in crossbar.a.z..crossbar.b.z)
+    if(stationaryCrossbar==null) stationaryCrossbar=crossbar
+    else assertEquals("The physical support must remain fixed for "+id,
+     stationaryCrossbar,crossbar)
+   }
+  }
+ }
  @Test fun rejectImpostorEquipmentAndNonfinitePhaseButClampFiniteScrubbing() {
   val squat=exerciseCatalog.first { it.id=="squat" }
   assertNull(originalVolumeAt(squat.copy(equipment=Equipment.BARBELL),0.5f))
