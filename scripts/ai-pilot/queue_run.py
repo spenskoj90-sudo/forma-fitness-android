@@ -205,6 +205,7 @@ def main():
     parser.add_argument("--reserve-pid", type=int, default=0)
     parser.add_argument("--steps", type=int, default=16, choices=range(1, 17))
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument("--validate-resumable", action="store_true")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
@@ -237,6 +238,9 @@ def main():
             raise PilotFailure("WRITER_BUSY") from None
         queue = WorkQueue(args.output, args.revision, make_tasks(repo, args.revision, args.package, Task, CheckFailure),
                           propose, review)
+        if args.validate_resumable:
+            return int(not queue.checkpoint.is_file() or any(
+                record["status"] == "FAIL" for record in queue.records.values()))
         queue.run(args.steps)
         for name, record in queue.records.items():
             print(f"{name}: {record['status']} (checks {record['checks']}, review {record['review']})")
