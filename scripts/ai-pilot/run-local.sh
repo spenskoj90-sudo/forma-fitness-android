@@ -6,6 +6,8 @@ revision="${1:?exact Git SHA required}"
 output="${2:?output directory required}"
 port="${PILOT_PORT:-18787}"
 model="${3:-qwen3-1.7b}"
+mode="${4:-pilot}"
+[[ "$mode" == pilot || "$mode" == serve ]]
 case "$model" in
   qwen3-1.7b)
     model_file='https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf'
@@ -20,7 +22,7 @@ case "$model" in
     exit 2
     ;;
 esac
-if [[ -f "$output/checkpoint.json" ]] && python3 -c 'import json,sys; sys.exit("expression" not in json.load(open(sys.argv[1])))' "$output/checkpoint.json"; then
+if [[ "$mode" == pilot && -f "$output/checkpoint.json" ]] && python3 -c 'import json,sys; sys.exit("expression" not in json.load(open(sys.argv[1])))' "$output/checkpoint.json"; then
   exec python3 "$script_dir/run.py" --revision "$revision" --output "$output"
 fi
 
@@ -38,24 +40,41 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 fetch() {
-  local url="$1" hash="$2" target="$3"
-  curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
-    --max-time 180 --output "$target" "$url"
+  local url="$1" hash="$2" target="$3" cache_name="$4"
+  if [[ -n "${PILOT_ASSET_CACHE:-}" && -f "$PILOT_ASSET_CACHE/$cache_name" ]]; then
+    ln -s -- "$(realpath "$PILOT_ASSET_CACHE/$cache_name")" "$target"
+  else
+    curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+      --max-time 180 --output "$target" "$url"
+  fi
   printf '%s  %s\n' "$hash" "$target" | sha256sum --check --status
 }
 
 fetch 'https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz' \
-  '368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55' "$downloads/llama.tgz"
-fetch "$model_file" "$model_hash" "$downloads/model.gguf"
+  '368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55' "$downloads/llama.tgz" llama.tgz
+fetch "$model_file" "$model_hash" "$downloads/model.gguf" "$model.gguf"
 tar -xzf "$downloads/llama.tgz" -C "$downloads"
+context=16384
+if [[ "$mode" == serve ]]; then
+  context=4096
+fi
 "$downloads/llama-b12110/llama-server" -m "$downloads/model.gguf" --host 127.0.0.1 \
-  --port "$port" --alias "$model" --jinja --reasoning-budget 0 -c 16384 -t 4 -np 1 \
+  --port "$port" --alias "$model" --jinja --reasoning-budget 0 -c "$context" -t 4 -np 1 \
   >"$downloads/llama.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 30); do
   kill -0 "$server_pid"
   if curl --noproxy 127.0.0.1 --fail --silent --max-time 2 \
     "http://127.0.0.1:$port/health" >/dev/null; then
+    if [[ "$mode" == serve ]]; then
+      if ! python3 "$script_dir/local_socket.py" "$server_pid" "$port"; then
+        echo 'LOCAL_MODEL_PORT_NOT_OWNED' >&2
+        exit 1
+      fi
+      printf '%s\n' "$server_pid" > "$output"
+      wait "$server_pid"
+      exit
+    fi
     python3 "$script_dir/run.py" --revision "$revision" --output "$output" --port "$port" \
       --model "$model"
     exit

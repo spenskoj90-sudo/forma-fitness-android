@@ -1,0 +1,117 @@
+name: FORMA AI work queue
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Reviewed work package
+        type: choice
+        options: [smoke, backup-replay]
+        default: backup-replay
+        required: true
+      expected_sha:
+        description: Exact commit SHA of main
+        type: string
+        required: true
+      batch:
+        description: Run the whole package or save a checkpoint after one attempt
+        type: choice
+        options: [all, one-attempt]
+        default: all
+        required: true
+      resume_run:
+        description: Optional completed queue run ID on the same commit
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-ai-work-queue
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      PACKAGE: ${{ inputs.package }}
+      BATCH: ${{ inputs.batch }}
+    steps:
+      - name: Check reviewed entrypoint
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          case "$PACKAGE" in smoke|backup-replay) ;; *) exit 2 ;; esac
+          case "$BATCH" in all|one-attempt) ;; *) exit 2 ;; esac
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Restore exact-revision evidence
+        if: inputs.resume_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME_RUN: ${{ inputs.resume_run }}
+        run: |
+          [[ "$RESUME_RUN" =~ ^[0-9]{1,20}$ ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN")"
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ai-work-queue.yml" --jq .id)"
+          jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" --arg id "$workflow_id" '
+            .head_sha == $sha and .head_repository.full_name == $repo and
+            .head_branch == "main" and .event == "workflow_dispatch" and
+            .status == "completed" and (.workflow_id | tostring) == $id
+          ' <<< "$run" >/dev/null
+          attempt="$(jq -er '.run_attempt' <<< "$run")"
+          EVIDENCE="$RUNNER_TEMP/forma-ai-queue"
+          download="$(mktemp -d)"
+          gh run download "$RESUME_RUN" -R "$GITHUB_REPOSITORY" \
+            -n "forma-ai-queue-$RESUME_RUN-$attempt" -D "$download"
+          test -f "$download/queue.json"
+          for name in queue.json backup-pr15.patch clamp.patch clamp-followup.patch; do
+            file="$download/$name"
+            if [[ -e "$file" ]]; then
+              test -f "$file" && test ! -L "$file"
+              test "$(wc -c < "$file")" -le 32768
+              install -D -m 600 "$file" "$EVIDENCE/$name"
+            fi
+          done
+      - name: Run the reviewed queue
+        run: |
+          args=()
+          if [[ "$BATCH" == one-attempt ]]; then args=(--steps 1 --allow-incomplete); fi
+          bash scripts/ai-pilot/run-queue.sh "$EXPECTED_SHA" "$RUNNER_TEMP/forma-ai-queue" "$PACKAGE" "${args[@]}"
+      - name: Show task outcomes
+        if: always()
+        run: |
+          EVIDENCE="$RUNNER_TEMP/forma-ai-queue"
+          if [[ -f "$EVIDENCE/queue.json" ]]; then
+            {
+              echo '## FORMA AI work queue'
+              echo '| Task | Outcome | Checks | Review | Next action |'
+              echo '| --- | --- | --- | --- | --- |'
+              jq -r '.records as $records | .identity.plan as $plan |
+                $records | to_entries[] |
+                . as $task |
+                (if .value.status == "PASS" then "Review patch"
+                 elif .value.status == "FAIL" then "Inspect attempts"
+                 elif any($plan[$task.key][]; $records[.].status != "PASS") then "Wait for dependency"
+                 else "Resume from checkpoint" end) as $next |
+                "| \(.key) | \(.value.status) | \(.value.checks) | \(.value.review) | \($next) |"' \
+                "$EVIDENCE/queue.json"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Save queue evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: forma-ai-queue-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/forma-ai-queue/queue.json
+            ${{ runner.temp }}/forma-ai-queue/*.patch
+          retention-days: 7
+          if-no-files-found: ignore
