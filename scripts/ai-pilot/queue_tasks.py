@@ -22,7 +22,7 @@ KOTLIN_WORDS = set(
     "prescriptions sets sumOf it groupBy groupingBy mapValues eachCount exercise id "
     "value values key prescription xs pair entry count size list group grouped".split()
 )
-KOTLIN_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9]*|[0-9]{1,3}|==|!=|&&|\|\||->|\?:|[.(){}:,<>+!_]")
+KOTLIN_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9]*|[0-9]{1,3}L?|==|!=|&&|\|\||->|\?:|[.(){}:,<>+!_]")
 
 
 def patch(before, after, path):
@@ -134,13 +134,14 @@ def workout_date_task(repo, revision, failure):
         raise failure("base", "The original workout finish timestamp is no longer present.")
 
     words = {"s", "now", "startedMs", "sets", "timeMs", "it", "maxOf", "maxOfOrNull",
-             "map", "maxOrNull"}
+             "map", "maxOrNull", "listOf"}
     brief = (
         "Return one Kotlin Long expression to use as Workout.finishedMs. The values are now: Long, "
         "s.startedMs: Long, and s.sets: List<SetResult>, where each SetResult has timeMs: Long. "
         "Return the greatest of now, s.startedMs, and every logged set time. The list can be empty. "
         "Call collection methods on s.sets, and use it.timeMs only inside the selector. "
         "For an unrelated list, widgets.maxOfOrNull { it.height } ?: defaultHeight yields a non-null value. "
+        "If the set list is empty, use s.startedMs as the fallback. "
         "Use the top-level maxOf to compare the individual Long values. "
         f"Allowed identifiers: {', '.join(sorted(words))}."
     )
