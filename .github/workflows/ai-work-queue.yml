@@ -88,13 +88,25 @@ jobs:
           download="$(mktemp -d)"
           gh run download "$RESUME_RUN" -R "$GITHUB_REPOSITORY" \
             -n "forma-ai-queue-$RESUME_RUN-$attempt" -D "$download"
-          test -f "$download/queue.json"
           for name in queue.json backup-pr15.patch clamp.patch clamp-followup.patch; do
             file="$download/$name"
             if [[ -e "$file" ]]; then
-              test -f "$file" && test ! -L "$file"
-              test "$(wc -c < "$file")" -le 32768
-              install -D -m 600 "$file" "$EVIDENCE/$name"
+              if [[ ! -f "$file" || -L "$file" ]] || [[ "$(wc -c < "$file")" -gt 32768 ]]; then
+                echo 'Invalid checkpoint file.' >&2
+                if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then exit 0; fi
+                exit 1
+              fi
+            fi
+          done
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]] && ! python3 scripts/ai-pilot/queue_run.py \
+            --revision "$EXPECTED_SHA" --output "$download" --package "$PACKAGE" --validate-resumable; then
+            echo 'Starting fresh after invalid or terminally failed scheduled evidence.'
+            exit 0
+          fi
+          test -f "$download/queue.json"
+          for name in queue.json backup-pr15.patch clamp.patch clamp-followup.patch; do
+            if [[ -f "$download/$name" ]]; then
+              install -D -m 600 "$download/$name" "$EVIDENCE/$name"
             fi
           done
       - name: Run the reviewed queue
