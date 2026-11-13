@@ -133,12 +133,15 @@ def workout_date_task(repo, revision, failure):
     if before.count(WORKOUT_DATE) != 1:
         raise failure("base", "The original workout finish timestamp is no longer present.")
 
-    words = {"s", "now", "startedMs", "sets", "timeMs", "it", "maxOf", "maxOfOrNull"}
+    words = {"s", "now", "startedMs", "sets", "timeMs", "it", "maxOf", "maxOfOrNull",
+             "map", "maxOrNull"}
     brief = (
         "Return one Kotlin Long expression to use as Workout.finishedMs. The values are now: Long, "
         "s.startedMs: Long, and s.sets: List<SetResult>, where each SetResult has timeMs: Long. "
         "Return the greatest of now, s.startedMs, and every logged set time. The list can be empty. "
-        "Kotlin maxOfOrNull with a selector returns null for an empty list. "
+        "Call collection methods on s.sets, and use it.timeMs only inside the selector. "
+        "For an unrelated list, widgets.maxOfOrNull { it.height } ?: defaultHeight yields a non-null value. "
+        "Use the top-level maxOf to compare the individual Long values. "
         f"Allowed identifiers: {', '.join(sorted(words))}."
     )
 
