@@ -117,6 +117,10 @@ class WorkQueue:
             record.pop("candidate", None)
             history.append({"model": model, "reviewer": reviewer, "result": "PASS"})
         except (CheckFailure, PilotFailure) as error:
+            if stage == "review" and isinstance(error, PilotFailure) and str(error).startswith("PROVIDER_"):
+                record.update(review="NOT_RUN", feedback="Reviewer unavailable. Resume when both models are available.")
+                self.save()
+                return False
             if stage != "proposal":
                 record[stage] = "FAIL"
             diagnostic = str(error)[:1200]
@@ -135,17 +139,20 @@ class WorkQueue:
             if len(history) >= 4:
                 record["status"] = "FAIL"
         self.save()
+        return True
 
     def run(self, steps=16):
         self.save()
+        deferred = set()
         for _ in range(steps):
             ready = (task for task in self.tasks
-                     if self.records[task.name]["status"] == "NOT_RUN"
+                     if task.name not in deferred and self.records[task.name]["status"] == "NOT_RUN"
                      and all(self.records[dep]["status"] == "PASS" for dep in task.dependencies))
             task = min(ready, key=lambda item: len(self.records[item.name]["history"]), default=None)
             if task is None:
                 break
-            self.attempt(task)
+            if self.attempt(task) is False:
+                deferred.add(task.name)
 
 
 def complete(port, pid, model, system, prompt, schema, max_tokens):
@@ -197,6 +204,7 @@ def main():
     parser.add_argument("--primary-pid", type=int, default=0)
     parser.add_argument("--reserve-pid", type=int, default=0)
     parser.add_argument("--steps", type=int, default=16, choices=range(1, 17))
+    parser.add_argument("--allow-incomplete", action="store_true")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
@@ -232,7 +240,8 @@ def main():
         queue.run(args.steps)
         for name, record in queue.records.items():
             print(f"{name}: {record['status']} (checks {record['checks']}, review {record['review']})")
-        return int(any(record["status"] != "PASS" for record in queue.records.values()))
+        accepted = {"PASS", "NOT_RUN"} if args.allow_incomplete else {"PASS"}
+        return int(any(record["status"] not in accepted for record in queue.records.values()))
 
 
 def terminate(_signal, _frame):

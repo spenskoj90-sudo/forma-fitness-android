@@ -69,6 +69,33 @@ class WorkQueueTest(unittest.TestCase):
             self.assertEqual(queue.records["one"]["status"], "PASS")
             self.assertIn("review:", proposals[1])
 
+    def test_unavailable_reviewer_preserves_candidate_and_allows_other_work(self):
+        proposed = []
+
+        def propose(task, *_):
+            proposed.append(task.name)
+            return task.name
+
+        def review(_, __, patch):
+            if patch == "deferred":
+                raise PilotFailure("PROVIDER_UNREACHABLE")
+            return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks = [Task(name, (), lambda value: value) for name in ("deferred", "other")]
+            first = WorkQueue(root, "a" * 40, tasks, propose, review)
+            first.run()
+            self.assertEqual(first.records["deferred"]["checks"], "PASS")
+            self.assertEqual(first.records["deferred"]["review"], "NOT_RUN")
+            self.assertEqual(first.records["deferred"]["status"], "NOT_RUN")
+            self.assertEqual(first.records["other"]["status"], "PASS")
+            self.assertFalse((root / "deferred.patch").exists())
+            resumed = WorkQueue(root, "a" * 40, tasks, propose, lambda *_: True)
+            resumed.run()
+            self.assertEqual(resumed.records["deferred"]["status"], "PASS")
+            self.assertEqual(proposed, ["deferred", "other"])
+
     def test_attempts_bound_provider_failures(self):
         models = []
 
