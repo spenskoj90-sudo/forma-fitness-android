@@ -109,10 +109,11 @@ jobs:
               install -D -m 600 "$download/$name" "$EVIDENCE/$name"
             fi
           done
+          echo "Restored checkpoint from run $RESUME_RUN."
       - name: Run the reviewed queue
         run: |
           evidence="$RUNNER_TEMP/forma-ai-queue"
-          if [[ "$GITHUB_EVENT_NAME" == schedule && -f "$evidence/queue.json" ]] &&
+          if [[ -f "$evidence/queue.json" ]] &&
             jq -e --arg sha "$EXPECTED_SHA" '
               .identity.base_sha == $sha and (.records | length > 0 and
                 all(.[]; .status == "PASS" and .checks == "PASS" and .review == "PASS"))
