@@ -17,8 +17,9 @@ scratch="$(mktemp -d)"
 primary_pid=
 reserve_pid=
 queue_pid=
+kotlin_pids=()
 cleanup() {
-  for pid in "$queue_pid" "$primary_pid" "$reserve_pid"; do
+  for pid in "$queue_pid" "$primary_pid" "$reserve_pid" "${kotlin_pids[@]}"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -30,8 +31,21 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+fetch_kotlin_jar() {
+  local hash="$1" artifact="$2" jar="$3" mirror
+  for mirror in https://maven-central.storage-download.googleapis.com/maven2 https://repo.maven.apache.org/maven2 https://repo1.maven.org/maven2; do
+    if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+      --connect-timeout 5 --max-time 24 --output "$jar" "$mirror/$artifact" &&
+      printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status; then
+      return 0
+    fi
+    echo "KOTLIN_ARTIFACT_REJECTED: ${artifact##*/} via $mirror" >&2
+  done
+  return 1
+}
+
 prepare_kotlin() {
-  local hash artifact jar remaining deadline=$((SECONDS + 90))
+  local hash artifact jar pid result=0
   if [[ -z "${PILOT_KOTLIN_CACHE:-}" ]]; then
     export PILOT_KOTLIN_CACHE="$scratch/kotlin"
     mkdir -p "$PILOT_KOTLIN_CACHE" || return 1
@@ -39,13 +53,18 @@ prepare_kotlin() {
   while read -r hash artifact; do
     jar="$PILOT_KOTLIN_CACHE/${artifact##*/}"
     if [[ "$PILOT_KOTLIN_CACHE" == "$scratch/kotlin" ]]; then
-      remaining=$((deadline - SECONDS))
-      (( remaining > 0 )) || return 1
-      curl --proto '=https' --proto-redir '=https' --fail --silent --show-error \
-        --connect-timeout 10 --max-time "$remaining" --output "$jar" "https://repo.maven.apache.org/maven2/$artifact" || return 1
+      fetch_kotlin_jar "$hash" "$artifact" "$jar" 9>&- &
+      kotlin_pids+=("$!")
+    elif ! printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status; then
+      echo "KOTLIN_CACHE_ARTIFACT_REJECTED: ${artifact##*/}" >&2
+      return 1
     fi
-    printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status || return 1
   done < "$script_dir/kotlin.lock"
+  for pid in "${kotlin_pids[@]}"; do
+    wait "$pid" || result=1
+  done
+  kotlin_pids=()
+  return "$result"
 }
 
 if [[ "$package" == backup-replay ]] && ! prepare_kotlin; then
