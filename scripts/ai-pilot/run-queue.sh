@@ -31,7 +31,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 prepare_kotlin() {
-  local hash artifact jar remaining deadline=$((SECONDS + 90))
+  local hash artifact jar remaining mirror verified deadline=$((SECONDS + 90))
   if [[ -z "${PILOT_KOTLIN_CACHE:-}" ]]; then
     export PILOT_KOTLIN_CACHE="$scratch/kotlin"
     mkdir -p "$PILOT_KOTLIN_CACHE" || return 1
@@ -39,12 +39,23 @@ prepare_kotlin() {
   while read -r hash artifact; do
     jar="$PILOT_KOTLIN_CACHE/${artifact##*/}"
     if [[ "$PILOT_KOTLIN_CACHE" == "$scratch/kotlin" ]]; then
-      remaining=$((deadline - SECONDS))
-      (( remaining > 0 )) || return 1
-      curl --proto '=https' --proto-redir '=https' --fail --silent --show-error \
-        --connect-timeout 10 --max-time "$remaining" --output "$jar" "https://repo.maven.apache.org/maven2/$artifact" || return 1
+      verified=false
+      for mirror in https://repo.maven.apache.org/maven2 https://repo1.maven.org/maven2 https://maven-central.storage-download.googleapis.com/maven2; do
+        remaining=$((deadline - SECONDS))
+        (( remaining > 0 )) || break
+        if curl --proto '=https' --proto-redir '=https' --fail --location --silent --show-error \
+          --connect-timeout 5 --max-time "$remaining" --output "$jar" "$mirror/$artifact" &&
+          printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status; then
+          verified=true
+          break
+        fi
+        echo "KOTLIN_ARTIFACT_REJECTED: ${artifact##*/} via $mirror" >&2
+      done
+      [[ "$verified" == true ]] || return 1
+    elif ! printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status; then
+      echo "KOTLIN_CACHE_ARTIFACT_REJECTED: ${artifact##*/}" >&2
+      return 1
     fi
-    printf '%s  %s\n' "$hash" "$jar" | sha256sum --check --status || return 1
   done < "$script_dir/kotlin.lock"
 }
 
