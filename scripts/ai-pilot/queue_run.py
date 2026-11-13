@@ -198,7 +198,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--package", choices=("smoke", "backup-replay"), required=True)
+    parser.add_argument("--package", choices=("smoke", "backup-replay", "workout-date"), required=True)
     parser.add_argument("--primary-port", type=int, default=18787)
     parser.add_argument("--reserve-port", type=int, default=18788)
     parser.add_argument("--primary-pid", type=int, default=0)
