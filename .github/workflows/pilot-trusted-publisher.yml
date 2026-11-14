@@ -10,6 +10,8 @@ on:
       - 'scripts/ai-pilot/trusted_github.py'
       - 'scripts/ai-pilot/trusted_publish.py'
       - 'scripts/ai-pilot/test_trusted_publisher.py'
+      - 'scripts/ai-pilot/verify_dispatch.py'
+      - 'scripts/ai-pilot/test_dispatch.py'
 
 # Never expose a writable token to the Qwen/llama.cpp queue or test job.
 permissions: {}
@@ -27,7 +29,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Validate publisher contracts and crash/retry guards
-        run: python3 -m unittest discover -s scripts/ai-pilot -p test_trusted_publisher.py -v
+        run: |
+          python3 -m unittest discover -s scripts/ai-pilot -p test_trusted_publisher.py -v
+          python3 -m unittest discover -s scripts/ai-pilot -p test_dispatch.py -v
 
   inspect:
     if: >-
