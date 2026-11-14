@@ -86,6 +86,7 @@ class FakeAPI:
         self.commits = {BASE: {"tree": {"sha": "1" * 40}, "parents": []}}
         self.counter = 0
         self.draft_post_count = 0
+        self.dispatch_events = []
 
     def main_sha(self):
         return self.base
@@ -157,6 +158,9 @@ class FakeAPI:
                 raise TrustError("ref already exists")
             self.refs[branch] = body["sha"]
             return {"object": {"sha": body["sha"]}}
+        if path == "/dispatches":
+            self.dispatch_events.append(body)
+            return {}
         if path == "/pulls":
             self.draft_post_count += 1
             commit = self.refs[body["head"]]
@@ -285,6 +289,10 @@ class TrustedPublisherTests(unittest.TestCase):
         result = publish(api, manifest, patch)
         self.assertEqual(result["status"], "DRAFT_CREATED_OR_REUSED")
         self.assertEqual(api.draft_post_count, 1)
+        self.assertEqual(len(api.dispatch_events), 1)
+        self.assertEqual(api.dispatch_events[0]["event_type"], "pilot-draft-ci")
+        self.assertEqual(api.dispatch_events[0]["client_payload"]["head_sha"],
+                         result["head_sha"])
         self.assertEqual(len(api.prs), 1)
         self.assertTrue(api.prs[0]["draft"])
         self.assertEqual(api.commits[result["head_sha"]]["parents"], [{"sha": BASE}])
@@ -306,6 +314,7 @@ class TrustedPublisherTests(unittest.TestCase):
         self.assertEqual(repeated["head_sha"], original["head_sha"])
         self.assertEqual(repeated["checkpoint_sha"], original["checkpoint_sha"])
         self.assertEqual(api.draft_post_count, 1)
+        self.assertEqual(len(api.dispatch_events), 1)
 
     def test_interruption_after_persisted_patch_can_resume(self):
         api = FakeAPI()
@@ -382,6 +391,17 @@ class TrustedPublisherTests(unittest.TestCase):
             apply_as_data(api, {**manifest, "target_path": ".github/workflows/release.yml"}, patch)
         with self.assertRaises(TrustError):
             apply_as_data(api, manifest, patch.replace(b"Workout", b"OtherBad"))
+
+    def test_successful_ci_dispatch_is_not_repeated_after_restart(self):
+        api = FakeAPI()
+        manifest, patch = verified_candidate(api, 12345, 1, BASE)
+        first = publish(api, manifest, patch)
+        second = publish(api, manifest, patch)
+        self.assertEqual(first["checkpoint_sha"], second["checkpoint_sha"])
+        self.assertEqual(len(api.dispatch_events), 1)
+        self.assertEqual(api.draft_post_count, 1)
+        self.assertEqual(checkpoint(api, manifest, patch)[1]["checks"]
+                         ["ci_dispatch"], "REQUESTED")
 
     def test_manifest_hash_differs_after_changing_attempt(self):
         api = FakeAPI()
