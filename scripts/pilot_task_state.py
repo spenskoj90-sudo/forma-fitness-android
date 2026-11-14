@@ -132,7 +132,7 @@ class GitLedger:
                 raise StateError("invalid patch size")
             pb = git("--git-dir", self.bare, "hash-object", "-w", "--stdin", input=patch).decode().strip()
             entries.append(f"100644 blob {pb}\tpatch.diff\n")
-        tree = git("--git-dir", self.bare, "mktree", input="".join(entries).encode()).decode().strip()
+        tree = git("--git-dir", self.bare, "mktree", input="".join(sorted(entries, key=lambda x: x.split("\\t", 1)[1])).encode()).decode().strip()
         args = ["-c", "user.name=PILOT-SIM", "-c", "user.email=pilot-sim@example.invalid",
                 "--git-dir", self.bare, "commit-tree", tree]
         if expected:
@@ -155,9 +155,11 @@ def claim(ledger, task_id, base, owner, now, prs):
         raise StateError("invalid exact base or writer identifier")
     if type(now) is not int or now < 0:
         raise StateError("invalid clock")
+    old, state, patch = ledger.read(task_id)
+    if state is not None and state["status"] == "PUBLISHED":
+        return old, state
     if occupied(task_id, prs):
         raise StateError("TASK_OCCUPIED_BY_PR")
-    old, state, patch = ledger.read(task_id)
     if state is None:
         next_state = {
             "schema": 1, "task_id": task_id, "package": TASKS[task_id]["package"],
@@ -199,6 +201,10 @@ def verify(ledger, task_id, owner, source_repo, base):
     old, state, patch = ledger.read(task_id)
     if state is None or state["base_sha"] != base or state["writer"] != owner or state["status"] != "PATCH_SAVED":
         raise StateError("wrong stage or stale checkout")
+    try:
+        validate_patch(patch, TASKS[task_id]["path"])
+    except ProposalError as e:
+        raise StateError("INVALID_SAVED_PATCH: " + str(e)) from None
     if git("-C", source_repo, "rev-parse", "HEAD").decode().strip() != base:
         raise StateError("STALE_BASE_REQUIRES_REVALIDATION")
     with tempfile.TemporaryDirectory(prefix="pilot-patch-check-") as scratch:
