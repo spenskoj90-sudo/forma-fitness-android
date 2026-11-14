@@ -62,6 +62,14 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(AssetError):
             self.check(self.entry)
 
+    def test_reject_symlinked_parent_directory(self):
+        source_dir = self.model.parent
+        target_dir = self.repo / 'moved-original-models'
+        source_dir.rename(target_dir)
+        source_dir.symlink_to(target_dir, target_is_directory=True)
+        with self.assertRaisesRegex(AssetError, 'symlink'):
+            self.check(self.entry)
+
     def test_no_external_urls_in_glb(self):
         bad = glb({'asset': {'version': '2.0'}, 'images': [{'uri': 'https://example.com/a.png'}]})
         with self.assertRaisesRegex(AssetError, 'external'):
