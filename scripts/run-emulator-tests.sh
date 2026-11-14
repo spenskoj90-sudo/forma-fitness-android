@@ -57,3 +57,48 @@ grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
 # These are real Compose UI tests, not just Kotlin compilation.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormDraftRestorationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/draft-restoration-api${api}.txt"
 grep -F "OK (3 tests)" "verification/draft-restoration-api${api}.txt"
+# Verify on-device AES-GCM/PBKDF2, ciphertext readback and additive Room restore on API26/30/34.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.EncryptedBackupInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/encrypted-backup-api${api}.txt"
+grep -F "OK (2 tests)" "verification/encrypted-backup-api${api}.txt"
+# Verify actual Compose set/history labels for single/pair dumbbells and bands.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecordedLoadUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/load-units-api${api}.txt"
+grep -F "OK (2 tests)" "verification/load-units-api${api}.txt"
+# Offline technique-search/expand accessibility, with no network or exercise video dependency.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.ExerciseTechniqueCatalogTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-catalog-api${api}.txt"
+grep -F "OK (4 tests)" "verification/technique-catalog-api${api}.txt"
+# OpenGL ES on-demand volume preview must be accessible/offline on API26/30/34.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.OriginalVolumetricPreviewTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/volume-preview-api${api}.txt"
+grep -F "OK (1 test)" "verification/volume-preview-api${api}.txt"
+# Original layered glass and solid accessibility fallback across small/double-font viewports.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormaGlassUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/glass-ui-api${api}.txt"
+grep -F "OK (3 tests)" "verification/glass-ui-api${api}.txt"
+# Verify signed-update offer/check/loading and network-error UX with an injected
+# synthetic gateway: no external feed, APK, permanent key or installer launch.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.UpdateCenterUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/update-center-api${api}.txt"
+grep -F "OK (1 test)" "verification/update-center-api${api}.txt"
+# Check real TalkBack semantics for headings, spoken controls and summary charts.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.AccessibleWorkoutUiTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/accessibility-api${api}.txt"
+grep -F "OK (5 tests)" "verification/accessibility-api${api}.txt"
+# Check home shortcuts and workout hero at 2x system font.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.HomeResponsiveTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/home-responsive-api${api}.txt"
+grep -F "OK (3 tests)" "verification/home-responsive-api${api}.txt"
+# Active local profile identity is read intact by TalkBack on a 320dp 2x-font layout.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.ProfileHeaderAccessibilityTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/profile-header-api${api}.txt"
+grep -F "OK (2 tests)" "verification/profile-header-api${api}.txt"
+# Preview and cancel a synthetic per-profile report before any external share.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.ProgressShareConsentTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/report-consent-api${api}.txt"
+grep -F "OK (2 tests)" "verification/report-consent-api${api}.txt"
+# Verify cancel/back protection and 2x narrow-profile form Save touch on real Android.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.ProfileEditExitTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/profile-edit-exit-api${api}.txt"
+grep -F "OK (3 tests)" "verification/profile-edit-exit-api${api}.txt"
+# Large offline measurement journal: paging, stable editing identity, no dropped records.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.BodyHistoryPaginationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/body-history-api${api}.txt"
+grep -F "OK (2 tests)" "verification/body-history-api${api}.txt"
+# Exercise a populated on-disk Room v1->v2 upgrade on each Android API.
+# This test uses a dedicated disposable database; never real owner records.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"
+grep -F "OK (1 test)" "verification/room-migration-api${api}.txt"
+
+# Synthetic test-only MP4 exercises actual decoder, lifecycle and honest offline fallback.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.TechniqueMediaTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-media-api${api}.txt"
+grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"

@@ -1,5 +1,9 @@
 package ru.forma.app
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -14,6 +18,7 @@ import kotlinx.serialization.json.Json
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.forma.domain.*
@@ -49,7 +54,8 @@ fun chartSummary(samples:List<ChartSample>,label:String,unit:String):String{
   val min=ordered.minOf{it.value}
   val max=ordered.maxOf{it.value}
   val span=(max-min).coerceAtLeast(1.0)
-  Column(Modifier.fillMaxWidth().semantics {
+  Column(Modifier.fillMaxWidth().clearAndSetSemantics {
+   // One complete dated spoken summary, rather than duplicate axis labels.
    contentDescription=summary
   }) {
    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
@@ -91,6 +97,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
 @Composable fun BodyScreen(p:Profile,vm:FormaViewModel)=BodyScreen(p){values,id,dateMs,draftId,done->
  vm.measurement(values,id,dateMs,draftId,done)
 }
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun BodyScreen(
  p:Profile,
  onMeasurement:(Map<String,Double>,String?,Long,String,()->Unit)->Unit
@@ -105,10 +112,15 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
  var draftDateMs by rememberSaveable(p.id){mutableLongStateOf(System.currentTimeMillis())}
  val submittingDraftId=draftId
  var selected by rememberSaveable(p.id){mutableStateOf("weight")}
+ var shownMeasurements by rememberSaveable(p.id){mutableIntStateOf(10)}
+ val measurementEditorRequester=remember{BringIntoViewRequester()}
+ LaunchedEffect(editingId){if(editingId!=null)measurementEditorRequester.bringIntoView()}
+ val orderedMeasurements=remember(p.measurements){p.measurements.sortedWith(compareByDescending<Measurement>{it.dateMs}.thenByDescending{it.id})}
  val editing=p.measurements.firstOrNull{it.id==editingId}
  val missingEditedRecord=editingId!=null&&editing==null
  Page("Моё тело","Замеры в одинаковых условиях помогают видеть изменения."){
   Panel("Манекен · параметры тела"){BodyMannequin(p)}
+  Box(Modifier.fillMaxWidth().bringIntoViewRequester(measurementEditorRequester)){
   Panel(if(editingId==null)"Новый замер" else "Исправить замер"){
    if(missingEditedRecord)Text("Исходная запись больше недоступна. Отмените исправление, чтобы не создать случайный дубликат.")
    measurementLabels.forEach{(key,label)->
@@ -128,6 +140,7 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
     draftDateMs=System.currentTimeMillis()
    }){Text("Отменить исправление")}
   }
+  }
   Panel("Динамика"){
    measurementLabels.forEach{(key,label)->TextButton({selected=key}){
     Text(if(selected==key)"✓ $label" else label)
@@ -140,13 +153,25 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
    HistoryChart(samples,measurementLabels[selected].orEmpty(),unit)
    if(samples.isNotEmpty())Text("Первый: ${samples.first().value} $unit · последний: ${samples.last().value} $unit")
   }
-  p.measurements.sortedByDescending{it.dateMs}.forEach{m->
-   Panel(dateLabel(m.dateMs)){
-    m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")}
-    TextButton({
-     editingId=m.id
-     values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}
-    }){Text("Исправить запись")}
+  Panel("История замеров"){
+   if(orderedMeasurements.isEmpty())Text("Сохранённых замеров пока нет.")
+   else {
+    Text("Показано ${minOf(shownMeasurements,orderedMeasurements.size)} из ${orderedMeasurements.size} замеров. Все записи хранятся локально и не удаляются при сворачивании списка.",
+     style=MaterialTheme.typography.bodySmall)
+    orderedMeasurements.take(shownMeasurements).forEach{m->
+     Panel(dateLabel(m.dateMs)){
+      m.values.forEach{(key,value)->Text("${measurementLabels[key]}: $value")}
+      TextButton({
+       editingId=m.id
+       values=measurementLabels.keys.associateWith{m.values[it]?.toString().orEmpty()}
+      },modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Исправить запись")}
+     }
+    }
+    if(shownMeasurements<orderedMeasurements.size)OutlinedButton({
+     shownMeasurements=(shownMeasurements+10).coerceAtMost(orderedMeasurements.size)
+    },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("body-measurements-more")){
+     Text("Показать ещё замеры")
+    }
    }
   }
  }
@@ -154,6 +179,9 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
 @Composable fun ProgressScreen(p:Profile){
  var visibleCount by rememberSaveable(p.id){mutableIntStateOf(10)}
  var chartsExpanded by rememberSaveable(p.id){mutableStateOf(false)}
+ // Transient in-memory preview: no Bundle/DataStore/Room persistence or cross-profile carryover.
+ var reportPreview by remember(p.id){mutableStateOf<String?>(null)}
+ var reportError by remember(p.id){mutableStateOf<String?>(null)}
  val visibleHistory=remember(p.history,visibleCount){recentWorkoutHistory(p.history,visibleCount)}
  val now=System.currentTimeMillis();val month=Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();Page("Прогресс","Только сохранённые результаты этого профиля."){
  val context=LocalContext.current
@@ -171,8 +199,8 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   Text(dateLabel(w.finishedMs))
   Text("${if(w.status==Phase.DONE)"Завершено"else"Остановлено"} · ${w.sets.size} подходов")
   w.sets.forEach{s->
-   val recordedEquipment=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise?.equipment
-   Text("${exerciseCatalog.firstOrNull{it.id==s.exerciseId}?.name?:s.exerciseId}: ${recordedSetLoadDisplay(s,recordedEquipment)} × ${s.reps} · сложность ${s.effort}")
+   val recordedExercise=w.day.exercises.firstOrNull{it.exercise.id==s.exerciseId}?.exercise
+   Text("${recordedExercise?.name?:s.exerciseId}: ${recordedExerciseLoadDisplay(s,recordedExercise)} × ${s.reps} · сложность ${s.effort}")
   }
  }}
  if(p.history.size>10){
@@ -180,17 +208,41 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   if(visibleHistory.size<p.history.size)OutlinedButton({visibleCount=(visibleCount+10).coerceAtMost(p.history.size)},Modifier.fillMaxWidth().heightIn(min=52.dp)){Text("Показать ещё тренировки")}
  }
  Panel("Еженедельный отчёт"){
-  Text("Сводка составляется только на телефоне для текущего профиля. Отправка — исключительно по вашему выбору.")
+  Text("Отчёт содержит имя профиля, цель и результаты тренировок. Перед передачей в другое приложение его можно просмотреть и отменить.")
   Action("Поделиться отчётом",{
-   val send=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,weeklyReport(p,now))}
-   context.startActivity(Intent.createChooser(send,"Отчёт FORMA"))
+   reportError=null
+   reportPreview=weeklyReport(p,now)
   })
+  if(reportError!=null)Text(reportError!!,color=MaterialTheme.colorScheme.error)
  }
- listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByGear=recordedLoadVolumeByEquipment(records);Text("Записанный объём: кг × повторения; значения разных снарядов не суммируются.")
- if(loadByGear.isEmpty())Text("Подходы без записанного дополнительного веса.")
- else loadByGear.forEach{(gear,total)->
-  Text("${gear.label}: ${"%.1f".format(total)} кг·повт (${recordedLoadUnit(gear)})")
- };Text("Кардио: ${records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.day.durationSec}/60} минут")}}
+ // The preview must match the bytes sent; switching profile resets this state.
+ val preview=reportPreview
+ if(preview!=null)AlertDialog(
+  onDismissRequest={reportPreview=null},
+  title={Text("Поделиться недельным отчётом?")},
+  text={
+   Column(Modifier.heightIn(max=320.dp).verticalScroll(rememberScrollState()),
+    verticalArrangement=Arrangement.spacedBy(10.dp)){
+    Text("Ниже именно те данные, которые будут переданы. Проверьте получателя в системном меню. Ничего не отправляется без вашего подтверждения.")
+    Text(preview,style=MaterialTheme.typography.bodySmall)
+   }
+  },
+  confirmButton={TextButton(onClick={
+   reportPreview=null
+   val intent=Intent(Intent.ACTION_SEND).apply{
+    type="text/plain"
+    putExtra(Intent.EXTRA_TEXT,preview)
+   }
+   runCatching{context.startActivity(Intent.createChooser(intent,"Отчёт FORMA"))}
+    .onFailure{reportError="На устройстве не удалось открыть выбор приложения для отправки. Отчёт остаётся локальным."}
+  }){Text("Открыть выбор приложения")}},
+  dismissButton={TextButton(onClick={reportPreview=null}){Text("Отмена")}}
+ )
+ listOf("Неделя" to weekStart(now),"Месяц" to month,"Всё время" to 0L).forEach{(label,start)->val records=p.history.filter{it.finishedMs>=start};val sets=records.flatMap{it.sets};Panel(label){Text("Завершено: ${records.count{it.status==Phase.DONE}} · остановлено: ${records.count{it.status==Phase.STOPPED}}");Text("Подходы: ${sets.size} · повторения: ${sets.sumOf{it.reps}}");val loadByExercise=recordedLoadVolumeByExercise(records);Text("Объём по упражнениям: кг × повторения. Для пары гантелей указан вес одной, без удвоения. Разные упражнения и тренажёры не суммируются.")
+ if(loadByExercise.isEmpty())Text("Подходы без записанного дополнительного веса.")
+ else loadByExercise.forEach{entry->
+  Text("${entry.exercise.name}: ${"%.1f".format(entry.kgRepetitions)} кг·повт (${recordedExerciseLoadUnit(entry.exercise)})")
+ };Text("Активное время тренировок с кардио: ${recordedCardioSessionActiveSeconds(records)/60} мин (включая разминку и другие этапы таких занятий)")}}
 
  if(p.history.any{it.sets.isNotEmpty()}){
   OutlinedButton({chartsExpanded=!chartsExpanded},Modifier.fillMaxWidth().heightIn(min=52.dp)){
@@ -199,22 +251,28 @@ internal val measurementDraftSaver=Saver<Map<String,String>,String>(
   if(chartsExpanded){
  p.history.flatMap{it.sets}.groupBy{it.exerciseId}.forEach{(id,sets)->Panel(exerciseCatalog.firstOrNull{it.id==id}?.name?:id){val savedEquipment=p.history.asSequence().flatMap{it.day.exercises.asSequence()}
   .firstOrNull{it.exercise.id==id}?.exercise?.equipment
- if(savedEquipment==Equipment.BODYWEIGHT){
-  Text("Собственный вес · максимум: ${sets.maxOf{it.reps}} повторений")
+ if(savedEquipment!=null&&!recordsExternalKilograms(savedEquipment)){
+  Text("${if(savedEquipment==Equipment.RESISTANCE_BAND)"Резинка (сопротивление без кг)" else "Собственный вес"} · максимум: ${sets.maxOf{it.reps}} повторений")
   HistoryChart(sets.map{ChartSample(it.timeMs,it.reps.toDouble())},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,"повторений")
  }else{
-  Text("Максимум: ${sets.maxOf{it.weight}} ${savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
-  HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,savedEquipment?.let(::recordedLoadUnit)?:"кг (единица не определена)")
+  Text("Максимум: ${sets.maxOf{it.weight}} ${p.history.asSequence().flatMap{it.day.exercises.asSequence()}.firstOrNull{it.exercise.id==id}?.exercise?.let(::recordedExerciseLoadUnit)?:"кг (единица не определена)"} · ${sets.maxOf{it.reps}} повторений")
+  HistoryChart(sets.map{ChartSample(it.timeMs,it.weight)},exerciseCatalog.firstOrNull{it.id==id}?.name?:id,p.history.asSequence().flatMap{it.day.exercises.asSequence()}.firstOrNull{it.exercise.id==id}?.exercise?.let(::recordedExerciseLoadUnit)?:"кг (единица не определена)")
  }}}
   }
  }
 }}
 
 /** Local-only export: no automatic server upload of personal fitness data. */
+/** Recorded time of sessions that include cardio; also includes other stages of mixed days. */
+internal fun recordedCardioSessionActiveSeconds(records:List<Workout>):Long =
+ records.asSequence().filter{it.day.cardio!=null &&
+  (it.status==Phase.DONE||it.status==Phase.STOPPED)}
+  .sumOf{it.activeSeconds.coerceAtLeast(0).toLong()}
+
 fun weeklyReport(p:Profile,now:Long=System.currentTimeMillis()):String{
  val records=p.history.filter{it.finishedMs>=weekStart(now)&&it.finishedMs<=now}
  val sets=records.flatMap{it.sets}
- val cardio=records.filter{it.day.cardio!=null&&it.status==Phase.DONE}.sumOf{it.activeSeconds}/60
+ val cardio=recordedCardioSessionActiveSeconds(records)
  return buildString{
   appendLine("FORMA · недельный отчёт")
   appendLine("Профиль: "+p.name)
@@ -222,7 +280,7 @@ fun weeklyReport(p:Profile,now:Long=System.currentTimeMillis()):String{
   appendLine("Завершено: "+records.count{it.status==Phase.DONE})
   appendLine("Остановлено: "+records.count{it.status==Phase.STOPPED})
   appendLine("Подходы: "+sets.size+"; повторения: "+sets.sumOf{it.reps})
-  appendLine("Кардио: "+cardio+" минут активного времени")
+  appendLine("Активное время тренировок с кардио: ${cardio/60} мин ${cardio%60} сек (включая другие этапы таких занятий)")
   appendLine("Цель: "+p.primary.label)
   append("Сводка локальная; не является медицинским заключением.")
  }

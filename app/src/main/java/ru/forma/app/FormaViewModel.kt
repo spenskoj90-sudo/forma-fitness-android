@@ -32,12 +32,25 @@ internal fun canRenderProfileUi(
   ?:profiles.profiles.firstOrNull()
  return current?.id==expected?.id
 }
+// Non-identifying in-memory gesture diagnostics for IME/Save regressions.
+enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
+internal data class SaveTouchEvidence(val presses:Int=0,val releases:Int=0,val cancels:Int=0)
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  // No names/IDs: identify whether the user Save touch reached the VM on API26.
  internal val profileSaveRequests=MutableStateFlow(0)
+ internal val profileSaveTouchEvidence=MutableStateFlow(SaveTouchEvidence())
+ internal fun noteProfileSaveTouch(stage:SaveTouchStage){
+  profileSaveTouchEvidence.update{old->when(stage){
+   SaveTouchStage.PRESS->old.copy(presses=old.presses+1)
+   SaveTouchStage.RELEASE->old.copy(releases=old.releases+1)
+   SaveTouchStage.CANCEL->old.copy(cancels=old.cancels+1)
+  }}
+ }
+ // Non-identifying witness for an initial workout-start touch reaching this VM.
+ internal val workoutStartRequests=MutableStateFlow(0)
  // A profile save is one durable operation: do not enqueue overlapping taps.
  internal val profileSaveInProgress=MutableStateFlow(false)
  val coachStatus=app.coachStatus
@@ -78,7 +91,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }finally{profileSaveInProgress.value=false}
   }
  }
- fun start(day:TrainingDay){val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
+ fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  private suspend fun startServiceOrPause(id:String,session:String){
   val epoch=app.audioFocusEpoch.snapshot()
@@ -156,10 +169,128 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    onSaved()
   }
  }
- fun exportBackup(uri:Uri,allProfiles:Boolean=false){val id:String?=if(allProfiles)null else (current.value?.id?:return);action{withContext(Dispatchers.IO){val text=app.repository.exportBackup(id);val output=app.contentResolver.openOutputStream(uri,"wt")?:error("Не удалось открыть файл");output.use{it.write(text.toByteArray(Charsets.UTF_8))}};notice.value=if(allProfiles)"Копия всех локальных профилей сохранена. Она содержит персональные данные других пользователей — храните её в защищённом месте." else "Копия текущего профиля сохранена. Храните её в защищённом месте: она содержит историю и замеры."}}
+ // Passwords stay transient and are cleared after the IO operation completes.
+ // No permanent encryption key, remote upload or password persistence.
+ internal val encryptedBackupBusy=MutableStateFlow(false)
+ fun exportEncryptedBackup(
+  uri:Uri,password:CharArray,allProfiles:Boolean=false,expectedProfileId:String?=null,
+  expectedProfileIds:Set<String>?=null
+ ){
+  if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
+  val selected=if(allProfiles)null else expectedProfileId
+  if ((!allProfiles && (selected.isNullOrBlank() || current.value?.id!=selected)) ||
+   (allProfiles && expectedProfileIds.isNullOrEmpty())) {
+   password.fill('\u0000');encryptedBackupBusy.value=false
+   error.value="Состав или выбор профилей изменился. Повторите создание копии."
+   return
+  }
+  action{
+   try{
+    withContext(Dispatchers.IO){
+     suspend fun verifyScope()=requireBackupExportScope(
+      allProfiles,expectedProfileId,expectedProfileIds,current.value?.id,
+      app.settings.settings.first().selected,
+      app.repository.profiles.first().map{it.id}.toSet()
+     )
+     verifyScope()
+     val plaintext=app.repository.exportBackup(selected)
+     val contents=encryptPortableBackup(plaintext,password)
+     try{
+      // SAF selection may outlive a profile switch or creation/deletion.
+      // Reject stale scope before writing any encrypted personal records.
+      verifyScope()
+      // A SAF provider may close the write successfully yet persist only part
+      // of the ciphertext. Do not announce a usable copy without readback.
+      try{
+       writeVerifiedEncryptedBackup(contents,
+        {app.contentResolver.openOutputStream(uri,"wt")},
+        {app.contentResolver.openInputStream(uri)})
+      }catch(e:Exception){
+       throw java.io.IOException(
+        "Защищённую копию не удалось проверить после записи. Не полагайтесь на этот файл; выберите другое хранилище.",e
+       )
+      }
+     }finally{contents.fill(0)}
+    }
+    notice.value=if(allProfiles)
+     "Защищённая копия всех профилей сохранена и сверена повторным чтением. Пароль храните отдельно."
+    else "Защищённая копия профиля сохранена и сверена повторным чтением. Пароль храните отдельно."
+   }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
+  }
+ }
+ fun importEncryptedBackup(uri:Uri,password:CharArray){
+  if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
+  action{
+   try{
+    val ids=withContext(Dispatchers.IO){
+     val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл")
+     val bytes=input.use{stream->
+      val out=java.io.ByteArrayOutputStream()
+      val buffer=ByteArray(8192)
+      while(true){
+       val n=stream.read(buffer)
+       if(n<0)break
+       require(out.size()+n<=MAX_BACKUP_BYTES+128){"Файл защищённой копии слишком большой"}
+       out.write(buffer,0,n)
+      }
+      out.toByteArray()
+     }
+     try{
+      val plaintext=decryptPortableBackup(bytes,password)
+      app.repository.importBackup(plaintext)
+     }finally{bytes.fill(0)}
+    }
+    notice.value="Восстановлено профилей: " + ids.size + ". Существующие данные не заменены."
+   }finally{password.fill('\u0000');encryptedBackupBusy.value=false}
+  }
+ }
+ fun exportBackup(
+  uri:Uri,allProfiles:Boolean=false,expectedProfileId:String?=null,
+  expectedProfileIds:Set<String>?=null
+ ){
+  // A stale SAF result cannot silently select a different person's profile.
+  if ((!allProfiles && (expectedProfileId.isNullOrBlank() ||
+   current.value?.id!=expectedProfileId)) ||
+   (allProfiles && expectedProfileIds.isNullOrEmpty())) {
+   error.value="Выбранный профиль изменился. Повторите экспорт."
+   return
+  }
+  action {
+   withContext(Dispatchers.IO) {
+    suspend fun verifyScope()=requireBackupExportScope(
+     allProfiles,expectedProfileId,expectedProfileIds,current.value?.id,
+     app.settings.settings.first().selected,
+     app.repository.profiles.first().map{it.id}.toSet()
+    )
+    verifyScope()
+    val text=app.repository.exportBackup(if(allProfiles)null else expectedProfileId)
+    val bytes=text.toByteArray(Charsets.UTF_8)
+    try {
+     verifyScope()
+     try {
+      writeVerifiedBackupBytes(bytes,
+       {app.contentResolver.openOutputStream(uri,"wt")},
+       {app.contentResolver.openInputStream(uri)})
+     }catch(e:Exception) {
+      throw java.io.IOException(
+       "Файл JSON не удалось проверить после записи. Не полагайтесь на эту копию; выберите другое хранилище.",e)
+     }
+    }finally{bytes.fill(0)}
+   }
+   notice.value=if(allProfiles)
+    "JSON-копия всех профилей сохранена и сверена повторным чтением. Она НЕ зашифрована: храните её в защищённом месте."
+   else "JSON-копия выбранного профиля сохранена и сверена повторным чтением. Она НЕ зашифрована: храните её в защищённом месте."
+  }
+ }
  fun importBackup(uri:Uri){action{val ids=withContext(Dispatchers.IO){val input=app.contentResolver.openInputStream(uri)?:error("Не удалось открыть файл");val bytes=input.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=stream.read(buffer);if(n<0)break;require(out.size()+n<=MAX_BACKUP_BYTES){"Файл превышает 32 МБ"};out.write(buffer,0,n)};out.toByteArray()};app.repository.importBackup(bytes.toString(Charsets.UTF_8))};notice.value="Восстановлено профилей: ${ids.size}. Они добавлены отдельно; существующие данные сохранены."}}
  fun audio(v:Boolean,s:Boolean,m:Boolean){action{app.settings.audio(v,s,m)}}
+ fun toggleVoice(){action{app.settings.toggleVoice()}}
+ fun toggleSound(){action{app.settings.toggleSound()}}
+ fun toggleMetronome(){action{app.settings.toggleMetronome()}}
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}
  fun dark(v:Boolean?){action{app.settings.dark(v)}}
  fun trainingPlace(place:TrainingPlace){action{app.settings.trainingPlace(place)}}
+ fun toggleHighContrast(){action{app.settings.toggleHighContrast()}}
+ fun toggleReducedMotion(){action{app.settings.toggleReducedMotion()}}
+ fun toggleSimplifiedEffects(){action{app.settings.toggleSimplifiedEffects()}}
 }

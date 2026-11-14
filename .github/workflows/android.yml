@@ -130,7 +130,20 @@ jobs:
             verification/screenshots-api${{ matrix.api }}/
             verification/journey-api${{ matrix.api }}.txt
             verification/recovery-api${{ matrix.api }}.txt
+            verification/technique-media-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
+            verification/room-migration-api${{ matrix.api }}.txt
+            verification/encrypted-backup-api${{ matrix.api }}.txt
+            verification/load-units-api${{ matrix.api }}.txt
+            verification/technique-catalog-api${{ matrix.api }}.txt
+            verification/volume-preview-api${{ matrix.api }}.txt
+            verification/glass-ui-api${{ matrix.api }}.txt
+            verification/accessibility-api${{ matrix.api }}.txt
+            verification/home-responsive-api${{ matrix.api }}.txt
+            verification/profile-header-api${{ matrix.api }}.txt
+            verification/report-consent-api${{ matrix.api }}.txt
+            verification/profile-edit-exit-api${{ matrix.api }}.txt
+            verification/body-history-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

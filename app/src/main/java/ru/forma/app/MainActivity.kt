@@ -4,15 +4,19 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import android.content.Intent
 import androidx.compose.ui.graphics.Brush
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.collect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
@@ -36,10 +41,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -48,6 +58,27 @@ class MainActivity:ComponentActivity(){
  private val vm:FormaViewModel by viewModels()
 
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{FormaRoot(vm)}}
+}
+/** Keep the complete selected identity available to TalkBack even when visually elided.
+ * The weighted name never pushes the brand outside a small 2x-font viewport.
+ */
+@Composable internal fun FormaBrandAndProfileHeader(profileName:String?) {
+ Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+  Text("FORM",style=MaterialTheme.typography.headlineMedium,
+   fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.onSurface)
+  Text("A",style=MaterialTheme.typography.headlineMedium,
+   fontWeight=FontWeight.Black,color=MaterialTheme.colorScheme.primary)
+  if(profileName!=null)Text(
+   profileName,
+   modifier=Modifier.weight(1f).padding(start=12.dp)
+    .testTag("active-profile-header")
+    .semantics { contentDescription="Активный профиль: $profileName" },
+   maxLines=2,
+   overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+   color=MaterialTheme.colorScheme.onSurfaceVariant,
+   style=MaterialTheme.typography.labelMedium
+  )
+ }
 }
 val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
 @Composable fun FormaRoot(vm:FormaViewModel){
@@ -64,10 +95,21 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  LaunchedEffect(creating,editing,p?.id){if(!creating&&!editing&&p!=null){keyboardFocus.clearFocus(force=true);rootKeyboard?.hide()}}
  val restoredScreens=rememberSaveableStateHolder()
  val dark=settings.dark?:isSystemInDarkTheme()
+ // The navigation bar must not steal the primary action's IME-area tap.
+ val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
  val colors=if(dark)darkColorScheme(primary=Color(0xFF3BF276),onPrimary=Color(0xFF02140C),secondary=Color(0xFF79DCA6),onSecondary=Color(0xFF061F15),secondaryContainer=Color(0xFF143A29),onSecondaryContainer=Color(0xFFD9FBE5),background=Color(0xFF050C10),surface=Color(0xFF101B21),surfaceVariant=Color(0xFF17252B),onSurface=Color(0xFFF5F8F8),onSurfaceVariant=Color(0xFFAEBCC2),outline=Color(0xFF64767B))else lightColorScheme(primary=Color(0xFF086D35),onPrimary=Color.White,secondary=Color(0xFF23764A),onSecondary=Color.White,secondaryContainer=Color(0xFFDCF4E5),onSecondaryContainer=Color(0xFF12492C),background=Color(0xFFF3F7F4),surface=Color.White,surfaceVariant=Color(0xFFE5EEE8),onSurface=Color(0xFF10221A),onSurfaceVariant=Color(0xFF41574B))
- MaterialTheme(colorScheme=colors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
+ val themeColors=if(settings.highContrast)colors.copy(
+  onSurfaceVariant=if(dark)Color.White else Color.Black,
+  outline=if(dark)Color.White else Color.Black
+ ) else colors
+ CompositionLocalProvider(LocalFormaVisualOptions provides FormaVisualOptions(
+  highContrast=settings.highContrast,
+  reducedMotion=settings.reducedMotion,
+  simplifiedEffects=settings.simplifiedEffects
+ )) {
+ MaterialTheme(colorScheme=themeColors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Статистика","Профиль");val destinations=listOf(0,1,3,4);val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.BarChart,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
     Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
      if(p?.active!=null){
@@ -76,8 +118,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
       val exerciseCount=active.day.exercises.size
       Text(if(exerciseCount>0)"${(active.exerciseIndex+1).coerceAtMost(exerciseCount)}/$exerciseCount" else active.day.cardio?.label.orEmpty(),style=MaterialTheme.typography.titleMedium,color=colors.onSurfaceVariant)
      }else{
-      Row(verticalAlignment=Alignment.CenterVertically){Text("FORM",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.onSurface);Text("A",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,color=colors.primary)}
-      p?.let{Text(it.name.take(22),Modifier.padding(start=14.dp),color=colors.onSurfaceVariant,maxLines=1,style=MaterialTheme.typography.labelMedium)}
+      FormaBrandAndProfileHeader(p?.name)
      }
     }
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
@@ -88,7 +129,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
      !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
       Text(if(profilesSnapshot.status==LocalLoadStatus.FAILED||settingsSnapshot.status==LocalLoadStatus.FAILED)
        "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
-     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving)
+     creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving,{vm.noteProfileSaveTouch(it)})
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
      else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
@@ -96,9 +137,10 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
    }
   }
  }
+ }
 }
-@Composable fun Page(title:String,subtitle:String="",compact:Boolean=false,content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(compact)10.dp else 14.dp)){Text(title,style=if(compact)MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,style=if(compact)MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
-@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text(title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold);content()}}}
+@Composable fun Page(title:String,subtitle:String="",compact:Boolean=false,content:@Composable ColumnScope.()->Unit){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(if(compact)10.dp else 14.dp)){Text(title,modifier=Modifier.semantics{heading()},style=if(compact)MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold);if(subtitle.isNotBlank())Text(subtitle,style=if(compact)MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);content();Spacer(Modifier.height(24.dp))}}
+@Composable fun Panel(title:String,content:@Composable ColumnScope.()->Unit){FormaGlassPanel(title,content)}
 @Composable fun Action(label:String,onClick:()->Unit,enabled:Boolean=true){Button(onClick,Modifier.fillMaxWidth().heightIn(min=52.dp),enabled=enabled){Text(label)}}
 fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFinite()}
 @Composable fun NumericField(label:String,value:String,modifier:Modifier=Modifier,onChange:(String)->Unit){
@@ -136,9 +178,15 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
 }
 
 /** Schematic zone highlight only; not an animation of safe exercise technique. */
-@Composable fun MuscleFocusMap(muscle:Muscle,modifier:Modifier=Modifier,secondary:Set<Muscle> = emptySet()){
+@Composable fun MuscleFocusMap(
+ muscle:Muscle,modifier:Modifier=Modifier,secondary:Set<Muscle> = emptySet(),
+ backView:Boolean?=null
+){
  val green=MaterialTheme.colorScheme.primary
- Canvas(modifier.semantics{contentDescription="Условная схема: основная "+muscle.label+(if(secondary.isEmpty())"" else "; дополнительные "+secondary.joinToString{it.label})}){
+ Canvas(modifier.semantics{
+  contentDescription="Условная схема"+(when(backView){true->" сзади";false->" спереди";null->""})+
+   ": основная "+muscle.label+(if(secondary.isEmpty())"" else "; дополнительные "+secondary.joinToString{it.label})
+ }){
   val w=size.width;val h=size.height;val ink=Color(0xFFB4C4C4).copy(alpha=0.65f)
   drawCircle(ink,w*0.075f,Offset(w*0.50f,h*0.16f))
   drawLine(ink,Offset(w*0.50f,h*0.24f),Offset(w*0.50f,h*0.65f),2.dp.toPx())
@@ -148,8 +196,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
   drawLine(ink,Offset(w*0.41f,h*0.65f),Offset(w*0.33f,h*0.94f),2.dp.toPx())
   drawLine(ink,Offset(w*0.59f,h*0.65f),Offset(w*0.67f,h*0.94f),2.dp.toPx())
   fun zones(group:Muscle)=when(group){
-   Muscle.BACK->listOf(0.40f to 0.42f,0.60f to 0.42f)
-   Muscle.CHEST->listOf(0.41f to 0.37f,0.59f to 0.37f)
+   Muscle.BACK->if(backView==false)emptyList() else listOf(0.40f to 0.42f,0.60f to 0.42f)
+   Muscle.CHEST->if(backView==true)emptyList() else listOf(0.41f to 0.37f,0.59f to 0.37f)
    Muscle.SHOULDERS->listOf(0.28f to 0.31f,0.72f to 0.31f)
    Muscle.ARMS->listOf(0.23f to 0.46f,0.77f to 0.46f)
    Muscle.CORE->listOf(0.50f to 0.52f)
@@ -162,14 +210,105 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  }
 }
 
-@Composable fun FormaShortcut(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,tint:Color,onClick:()->Unit,modifier:Modifier=Modifier){
- Card(modifier.height(112.dp).clickable(onClick=onClick),shape=RoundedCornerShape(19.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
-  Column(Modifier.fillMaxSize().padding(horizontal=8.dp,vertical=13.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.SpaceBetween){
+/**
+ * Text grows to three lines and cards expand instead of clipping at 2x font.
+ * The original three-column layout is used at standard font scale.
+ */
+@Composable fun FormaShortcut(
+ label:String,
+ icon:androidx.compose.ui.graphics.vector.ImageVector,
+ tint:Color,
+ onClick:()->Unit,
+ modifier:Modifier=Modifier,
+ onLabelLayout:(TextLayoutResult)->Unit={}
+){
+ Card(modifier.heightIn(min=112.dp).clickable(onClick=onClick),
+  shape=RoundedCornerShape(19.dp),
+  colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){
+  Column(Modifier.fillMaxWidth().heightIn(min=112.dp).padding(horizontal=8.dp,vertical=13.dp),
+   horizontalAlignment=Alignment.CenterHorizontally,
+   verticalArrangement=Arrangement.SpaceBetween){
    Icon(icon,contentDescription=null,tint=tint,modifier=Modifier.size(28.dp))
-   Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Medium,color=MaterialTheme.colorScheme.onSurface,maxLines=2,lineHeight=14.sp)
+   Text(label,style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Medium,
+    color=MaterialTheme.colorScheme.onSurface,maxLines=3,lineHeight=16.sp,
+    textAlign=TextAlign.Center,onTextLayout=onLabelLayout)
   }
  }
 }
+
+private data class HomeShortcutItem(
+ val text:String,
+ val icon:androidx.compose.ui.graphics.vector.ImageVector,
+ val tint:Color,
+ val onClick:()->Unit
+)
+
+/** Two wider columns are readable at 1.6x–2x; 3x2 is retained normally. */
+@Composable fun HomeShortcutGrid(
+ onTrain:()->Unit,onProgress:()->Unit,onBody:()->Unit,onProfile:()->Unit,
+ onLabelLayout:(String,TextLayoutResult)->Unit={_,_->}
+){
+ val items=listOf(
+  HomeShortcutItem("Программа\nтренировок",Icons.Outlined.FitnessCenter,MaterialTheme.colorScheme.primary,onTrain),
+  HomeShortcutItem("Моя\nстатистика",Icons.Outlined.BarChart,Color(0xFF72D4AD),onProgress),
+  HomeShortcutItem("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress),
+  HomeShortcutItem("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody),
+  HomeShortcutItem("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile),
+  HomeShortcutItem("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile)
+ )
+ val columns=if(LocalDensity.current.fontScale>=1.6f)2 else 3
+ Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(9.dp)){
+  items.chunked(columns).forEach{row->
+   Row(Modifier.fillMaxWidth().testTag("home-shortcut-row"),
+    horizontalArrangement=Arrangement.spacedBy(9.dp)){
+    row.forEach{item->
+     val extra=if(item.text=="Замеры\nтела")Modifier.testTag("shortcut-body") else Modifier
+     FormaShortcut(item.text,item.icon,item.tint,item.onClick,
+      Modifier.weight(1f).then(extra),
+      onLabelLayout={layout->onLabelLayout(item.text,layout)})
+    }
+   }
+  }
+ }
+}
+
+/** The hero is content-sized (minimum 316dp), not forcibly clipped at 2x. */
+@Composable fun HomeHero(
+ next:TrainingDay?,place:TrainingPlace,
+ onStart:(TrainingDay)->Unit,onProfile:()->Unit
+){
+ val today=java.time.LocalDate.now().dayOfWeek.value
+ Box(Modifier.fillMaxWidth().testTag("home-hero")
+  .clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
+  Image(painter=painterResource(R.drawable.forma_hero),contentDescription=null,
+   modifier=Modifier.align(Alignment.TopEnd).height(316.dp).width(246.dp),
+   contentScale=ContentScale.Crop)
+  Box(Modifier.matchParentSize().background(
+   Brush.horizontalGradient(listOf(Color(0xFF0C171D),
+    Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
+  Column(Modifier.fillMaxWidth().heightIn(min=316.dp).padding(20.dp),
+   verticalArrangement=Arrangement.SpaceBetween){
+   Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+    Text(if(next==null)"День восстановления"else if(next.day==today)"Сегодня\nтренировка"else"Следующая\nтренировка",
+     style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,
+     lineHeight=32.sp,color=Color.White)
+    Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,
+     fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
+   }
+   Spacer(Modifier.height(24.dp))
+   Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+    if(next!=null){
+     Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"
+      else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",
+      color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
+     Text("Место: "+place.label,color=Color(0xFFC8D6D8),style=MaterialTheme.typography.labelSmall)
+     Action("▶  Начать тренировку",{onStart(next)})
+    }else Action("Открыть профиль",onProfile)
+   }
+  }
+ }
+}
+
 @Composable fun Home(p:Profile,place:TrainingPlace,vm:FormaViewModel,onTrain:()->Unit,onProfile:()->Unit,onBody:()->Unit,onProgress:()->Unit){
  val now=System.currentTimeMillis();val weekStartMs=weekStart(now)
  val weekly=p.history.count{it.status==Phase.DONE&&it.finishedMs in weekStartMs..now}
@@ -178,34 +317,8 @@ fun number(value:String)=value.replace(',','.').toDoubleOrNull()?.takeIf{it.isFi
  val today=java.time.LocalDate.now().dayOfWeek.value;val next=plan.minByOrNull{(it.day-today+7)%7}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)){
   Text("Твой путь к сильной и здоровой версии себя",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-  Box(Modifier.fillMaxWidth().height(316.dp).clip(RoundedCornerShape(27.dp)).background(Color(0xFF0F2027))){
-   Image(painter=painterResource(R.drawable.forma_hero),contentDescription=null,modifier=Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(246.dp),contentScale=ContentScale.Crop)
-   Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xFF0C171D),Color(0xFF0C171D).copy(alpha=0.72f),Color.Transparent))))
-   Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.SpaceBetween){
-    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-     Text(if(next==null)"День восстановления"else if(next.day==today)"Сегодня\nтренировка"else"Следующая\nтренировка",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black,lineHeight=32.sp,color=Color.White)
-     Text(next?.name?:"Забота о себе",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=Color(0xFF3BF276))
-    }
-    Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
-     if(next!=null){
-      Text(if(next.cardio!=null)"Ходьба · "+(next.durationSec/60)+" минут"else next.exercises.size.toString()+" упражнения · "+next.exercises.sumOf{it.sets}+" подходов",color=Color(0xFFD0D9DA),style=MaterialTheme.typography.bodyMedium)
-       Text("Место: "+place.label,color=Color(0xFFC8D6D8),style=MaterialTheme.typography.labelSmall)
-      Action("▶  Начать тренировку",{vm.start(next)})
-     }else Action("Открыть профиль",onProfile)
-    }
-   }
-  }
-  val green=MaterialTheme.colorScheme.primary
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-   FormaShortcut("Программа\nтренировок",Icons.Outlined.FitnessCenter,green,onTrain,Modifier.weight(1f))
-   FormaShortcut("Моя\nстатистика",Icons.Outlined.BarChart,Color(0xFF72D4AD),onProgress,Modifier.weight(1f))
-   FormaShortcut("Цели и\nпрогресс",Icons.Outlined.TrackChanges,Color(0xFFF8858F),onProgress,Modifier.weight(1f))
-  }
-  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(9.dp)){
-   FormaShortcut("Замеры\nтела",Icons.Outlined.Straighten,Color(0xFFFFBD70),onBody,Modifier.weight(1f).testTag("shortcut-body"))
-   FormaShortcut("Голос и\nтаймер",Icons.Outlined.Timer,Color(0xFF78BEF4),onProfile,Modifier.weight(1f))
-   FormaShortcut("Мой\nпрофиль",Icons.Outlined.Person,Color(0xFFAFB6D4),onProfile,Modifier.weight(1f))
-  }
+  HomeHero(next,place,{vm.start(it)},onProfile)
+  HomeShortcutGrid(onTrain,onProgress,onBody,onProfile)
   Panel("На этой неделе"){
    Text(weekly.toString()+" завершённых занятий",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
    if(plan.isEmpty())Text("Сейчас нет доступного недельного плана.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -229,8 +342,17 @@ private val editableProfileSaver=Saver<Profile,String>(
  restore={saved->kotlinx.serialization.json.Json.decodeFromString(Profile.serializer(),saved)}
 )
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean,saving:Boolean=false){
+@Composable fun ProfileEditor(existing:Profile?,save:(Profile)->Unit,cancel:()->Unit,canCancel:Boolean,saving:Boolean=false,onSaveTouch:(SaveTouchStage)->Unit={}){
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+ val saveInteractionSource=remember{MutableInteractionSource()}
+ val touchObserver by rememberUpdatedState(onSaveTouch)
+ LaunchedEffect(saveInteractionSource){
+  saveInteractionSource.interactions.collect{event->when(event){
+   is PressInteraction.Press->touchObserver(SaveTouchStage.PRESS)
+   is PressInteraction.Release->touchObserver(SaveTouchStage.RELEASE)
+   is PressInteraction.Cancel->touchObserver(SaveTouchStage.CANCEL)
+  }}
+ }
  var p by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){mutableStateOf(existing?:Profile())}
  var name by rememberSaveable(existing?.id){mutableStateOf(p.name)}
  var age by rememberSaveable(existing?.id){mutableStateOf(p.age.toString())}
@@ -246,6 +368,31 @@ private val editableProfileSaver=Saver<Profile,String>(
   weightKg=number(weight)?:0.0,experience=p.experience,equipment=p.equipment,
   limitations=p.limitations,primary=p.primary,secondary=p.secondary,
   priorities=p.priorities,days=p.days,recovery=p.recovery
+ )
+ // Store only the editable baseline; do not place any history, measurements
+ // or active workout in the Activity's saved-state Bundle.
+ val baseline by rememberSaveable(existing?.id,stateSaver=editableProfileSaver){
+  mutableStateOf((existing?:p).copy(history=emptyList(),measurements=emptyList(),active=null))
+ }
+ val hasChanges=candidate.copy(history=emptyList(),measurements=emptyList(),active=null)!=baseline
+ var confirmDiscard by rememberSaveable(existing?.id){mutableStateOf(false)}
+ val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
+ fun requestCancel(){
+  if(hasChanges)confirmDiscard=true else cancel()
+ }
+ BackHandler(enabled=canCancel){
+  when{
+   saving->Unit // Durable save is already in flight; no premature screen exit.
+   keyboardVisible->{focus.clearFocus(force=true);keyboard?.hide()}
+   else->requestCancel()
+  }
+ }
+ if(confirmDiscard)AlertDialog(
+  onDismissRequest={confirmDiscard=false},
+  title={Text("Несохранённые изменения")},
+  text={Text("Изменения профиля ещё не сохранены. Выйти из редактирования без них? История тренировок и замеры останутся без изменений.")},
+  confirmButton={TextButton(onClick={confirmDiscard=false;cancel()}){Text("Выйти без сохранения")}},
+  dismissButton={TextButton(onClick={confirmDiscard=false}){Text("Продолжить редактирование")}}
  )
  Column(Modifier.fillMaxSize()){
   Box(Modifier.weight(1f)){
@@ -270,19 +417,22 @@ private val editableProfileSaver=Saver<Profile,String>(
   Panel("Восстановление: ${p.recovery}/5"){Text("1 — выраженное недомогание; 3 — нормально; 5 — хорошо.");Slider(p.recovery.toFloat(),{p=p.copy(recovery=it.toInt())},valueRange=1f..5f,steps=3)}
    }
   }
-  // Primary action is a fixed, accessible footer, not a scroll target.
+  // MainActivity uses adjustResize: its root already shrinks for the IME.
+  // A second imePadding() on the fixed footer can push Save outside that
+  // resized root (API30: save.bottom=1584 while root.bottom=990).
+  // The weighted form above remains scrollable; the Save target stays fixed.
   Column(Modifier.fillMaxWidth().padding(vertical=8.dp)){
    // Dispatch the durable save before focus/IME changes can recompose the editor.
    // Target the actual Button in UI tests, not its nested text bounds.
    Button(onClick={save(candidate);focus.clearFocus(force=true);keyboard?.hide()},
     modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("profile-save"),
-    enabled=candidate.valid()&&!saving){Text("Сохранить профиль")}
+    enabled=candidate.valid()&&!saving,interactionSource=saveInteractionSource){Text("Сохранить профиль")}
    if(saving)Row(Modifier.fillMaxWidth().padding(top=6.dp),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically){
     CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp)
     Spacer(Modifier.width(8.dp))
     Text("Сохранение профиля…")
    }
-   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();cancel()},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!saving){Text("Отмена")}
+   if(canCancel)TextButton({focus.clearFocus(force=true);keyboard?.hide();requestCancel()},Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("profile-cancel"),enabled=!saving){Text("Отмена")}
   }
  }
 }
@@ -300,10 +450,7 @@ private val editableProfileSaver=Saver<Profile,String>(
   Text("Дополнительная ходьба или интервалы не обязательны и не добавляются в недельный силовой план.")
   CardioControls(TrainingDay(day=java.time.LocalDate.now().dayOfWeek.value,name="Кардио по желанию",cardio=CardioKind.WALK,durationSec=1200)){vm.start(it)}
  }
- Panel("Техника упражнений"){
-  Text("${exerciseCatalog.size} упражнений с инструкциями. Начинайте с лёгкой нагрузки и комфортной амплитуды. Замены доступны в каждой силовой программе.")
-  exerciseCatalog.filter{it.equipment in availableEquipment(p,place)}.forEach{e->var open by remember(e.id){mutableStateOf(false)};TextButton({open=!open},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(e.name)};if(open){Text(e.cue);Text("Частые ошибки: ${e.mistakes}")}}
- }
+ ExerciseTechniqueCatalog(profileId=p.id,available=availableEquipment(p,place))
 }}
 @Composable fun TrainingDayCard(day:TrainingDay,p:Profile,vm:FormaViewModel,place:TrainingPlace){
  val available=availableEquipment(p,place)
@@ -313,6 +460,15 @@ private val editableProfileSaver=Saver<Profile,String>(
   Text(day.explanation)
   chosen.exercises.forEachIndexed{i,item->
    Text("${item.exercise.name} · ${item.sets} × ${item.reps}");Text(item.reason,style=MaterialTheme.typography.bodySmall)
+   key(item.exercise.id,item.exercise.equipment){
+    var techniqueOpen by remember{mutableStateOf(false)}
+    TextButton({techniqueOpen=!techniqueOpen},Modifier.fillMaxWidth().heightIn(min=48.dp)){
+     Text(if(techniqueOpen)"Скрыть технику: ${item.exercise.name}" else "Техника: ${item.exercise.name}")
+    }
+    if(techniqueOpen)ExerciseTechnique(item.exercise)
+   }
+   if(recordsExternalKilograms(item.exercise.equipment))Text("Плановый вес: ${item.weight} ${recordedExerciseLoadUnit(item.exercise)}",style=MaterialTheme.typography.bodySmall)
+   else Text(unmeasuredLoadExplanation(item.exercise.equipment),style=MaterialTheme.typography.bodySmall)
    val alternatives=exerciseCatalog.filter{it.id!=item.exercise.id && it.muscle==item.exercise.muscle && it.equipment in availableEquipment(p,place)}
    if(alternatives.isNotEmpty()){var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text("Заменить упражнение")};if(expanded)alternatives.forEach{e->TextButton({replacements=replacements+(i to e);expanded=false}){Text(e.name)}}}
   }
@@ -321,6 +477,7 @@ private val editableProfileSaver=Saver<Profile,String>(
 }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun CardioControls(day:TrainingDay,onStart:(TrainingDay)->Unit){
+ val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  // Only editor inputs belong in Activity saved state; workout state is Room-owned.
  var kindName by rememberSaveable(day.day,day.name){mutableStateOf((day.cardio?:CardioKind.WALK).name)}
  var duration by rememberSaveable(day.day,day.name){mutableStateOf((day.durationSec/60).toString())}
@@ -330,7 +487,12 @@ private val editableProfileSaver=Saver<Profile,String>(
  FlowRow{CardioKind.entries.forEach{k->FilterChip(kind==k,{kindName=k.name},label={Text(k.label)},modifier=Modifier.padding(end=6.dp))}}
  NumericField("Длительность, минут (1–120)",duration){duration=it};if(kind==CardioKind.INTERVAL){NumericField("Ходьба, секунд (10–1800)",walk){walk=it};NumericField("Бег, секунд (10–1800)",run){run=it}}
  val m=duration.toIntOrNull()?:0;val w=walk.toIntOrNull()?:0;val r=run.toIntOrNull()?:0
- Action("Начать кардио",{onStart(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))},m in 1..120&&w in 10..1800&&r in 10..1800)
+ Button(onClick={
+  // Dispatch the durable workout start BEFORE changing IME/focus state.
+  onStart(day.copy(cardio=kind,durationSec=m*60,intervals=listOf(w,r)))
+  focus.clearFocus(force=true);keyboard?.hide()
+ },modifier=Modifier.fillMaxWidth().heightIn(min=52.dp).testTag("cardio-start"),
+  enabled=m in 1..120&&w in 10..1800&&r in 10..1800){Text("Начать кардио")}
 }
 
 @Composable fun Runner(s:Session,vm:FormaViewModel,onOpenHistory:()->Unit){
@@ -368,12 +530,14 @@ private val editableProfileSaver=Saver<Profile,String>(
       Panel("Текущий подход"){
        Text("Текущий",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
        Text("Подход "+s.setNumber+" из "+current.sets,style=MaterialTheme.typography.bodySmall)
-      if(current.exercise.equipment!=Equipment.BODYWEIGHT)NumericField(recordedLoadInputLabel(current.exercise.equipment),weight){weight=it}
+      if(recordsExternalKilograms(current.exercise.equipment))NumericField(recordedLoadInputLabel(current.exercise),weight){weight=it}
+      else Text(unmeasuredLoadExplanation(current.exercise.equipment),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
       NumericField("Повторения",reps){reps=it}
       Text("Сложность: "+effort.toInt()+"/10")
       Slider(effort,{effort=it},modifier=Modifier.semantics{contentDescription="Сложность подхода от 1 до 10"},valueRange=1f..10f,steps=8)
       val w=number(weight);val n=reps.toIntOrNull()
-      Action("Подход выполнен",{vm.done(s.id,w?:0.0,n?:1,effort.toInt(),false)},!s.paused&&w!=null&&w in 0.0..500.0&&n!=null&&n in 1..100)
+      val measuredLoad=recordsExternalKilograms(current.exercise.equipment)
+      Action("Подход выполнен",{vm.done(s.id,if(measuredLoad)w?:0.0 else 0.0,n?:1,effort.toInt(),false)},!s.paused&&(!measuredLoad||(w!=null&&w in 0.0..500.0))&&n!=null&&n in 1..100)
      }
      // The detailed read-only list is optional: older phones should show the set action first.
      var setPlanExpanded by rememberSaveable(s.id,s.exerciseIndex){mutableStateOf(false)}
@@ -385,27 +549,39 @@ private val editableProfileSaver=Saver<Profile,String>(
       FormaAthleteArtwork(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(210.dp))
       Column(Modifier.align(Alignment.CenterEnd).width(108.dp).padding(end=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
        MuscleFocusMap(current.exercise.muscle,Modifier.fillMaxWidth().height(145.dp),secondaryMuscles(current.exercise))
-       Text("Зона нагрузки",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
+       Text("Схема мышц",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBBD5C5))
       }
       Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color(0xFF091217)))).padding(14.dp)){
        Text("Основная группа: "+current.exercise.muscle.label,style=MaterialTheme.typography.bodyMedium,color=Color.White)
       }
      }
-     var techniqueExpanded by rememberSaveable(s.id,s.exerciseIndex){mutableStateOf(false)}
-     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically){
-      FilledTonalButton({techniqueExpanded=!techniqueExpanded},modifier=Modifier.weight(1f)){
-       Text(if(techniqueExpanded)"Скрыть ошибки"else"Инструкция и ошибки")
+     var techniqueTab by rememberSaveable(s.id,s.exerciseIndex){mutableIntStateOf(1)}
+     // Set completion stays above nonessential media; video never autoplays.
+     // Until a reviewed exact-ID/equipment media entry is admitted, do not
+     // display a dead Video tab. An older restored selection also falls back
+     // without opening a stale player or changing Room-owned workout state.
+     val hasReviewedVideo=techniqueMediaCatalog.any{
+      it.exerciseId==current.exercise.id && it.equipment==current.exercise.equipment
+     }
+     val visibleTechniqueTab=if(!hasReviewedVideo && techniqueTab==0) 1 else techniqueTab
+     WorkoutTechniqueTabs(visibleTechniqueTab,{techniqueTab=it},hasReviewedVideo)
+     when(visibleTechniqueTab){
+      0->Panel("Демонстрация техники"){ExerciseTechnique(current.exercise,showInstructions=false,initiallyOpen=true)}
+      1->Panel("Инструкция и ошибки"){
+       Text(current.exercise.cue)
+       Text("Частые ошибки",style=MaterialTheme.typography.titleSmall)
+       Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."})
+       AuthoredTechniqueWalkthrough(current.exercise)
       }
-      Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer){
-       Text(current.exercise.muscle.label,Modifier.padding(horizontal=14.dp,vertical=11.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSecondaryContainer)
+      2->Panel("Работа мышц"){
+       val secondary=secondaryMuscles(current.exercise)
+       WorkoutMuscleViews(current.exercise.muscle,secondary)
+       Text("Основная группа: "+current.exercise.muscle.label)
+       if(secondary.isNotEmpty())Text("Дополнительно: "+secondary.joinToString{it.label})
+       Text("Схематичные зоны нагрузки спереди и сзади. Это не инструкция по движению и не медицинская анатомия.",
+        style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
       }
      }
-     val secondary=secondaryMuscles(current.exercise)
-     if(secondary.isNotEmpty())Text("Дополнительно работают: "+secondary.joinToString { it.label },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-     Text("Схема мышц не заменяет демонстрацию техники. Проверенные видео для отдельных упражнений пока готовятся.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-      if(techniqueExpanded)Panel("Частые ошибки"){
-       Text(current.exercise.mistakes.ifBlank{"Дополнительные замечания для этого упражнения пока не проверены."},style=MaterialTheme.typography.bodySmall)
-      }
     }
    }else{
     Panel("Текущий этап"){
@@ -439,7 +615,16 @@ private val editableProfileSaver=Saver<Profile,String>(
    Panel("Пользователи · ${profiles.size}"){
     if(profiles.size>4)OutlinedTextField(profileSearch,{profileSearch=it},label={Text("Найти профиль")},singleLine=true,modifier=Modifier.fillMaxWidth())
     val matches=profiles.filter{it.name.contains(profileSearch,ignoreCase=true)}
-    matches.take(40).forEach{v->OutlinedButton({vm.select(v.id)},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(p.id==v.id)"✓ ${v.name}"else v.name)}}
+    matches.take(40).forEach { v ->
+     // Selection is a real accessibility state, not only a visual checkmark.
+     // Keep the button's 48dp hit target and a stable per-profile semantics key.
+     OutlinedButton(
+      {vm.select(v.id)},
+      Modifier.fillMaxWidth().heightIn(min=48.dp)
+       .testTag("profile-choice:${v.id}")
+       .semantics { selected=p.id==v.id }
+     ) { Text(if(p.id==v.id)"✓ ${v.name}"else v.name) }
+    }
     if(matches.size>40)Text("Показаны первые 40. Уточните поиск.",style=MaterialTheme.typography.bodySmall)
     Action("Добавить пользователя",create)
     Text("Это локальные профили. До подключения защищённой синхронизации переносите данные между телефонами через резервные копии.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -447,19 +632,54 @@ private val editableProfileSaver=Saver<Profile,String>(
  Panel("${p.name} · ${p.age} лет"){Text("${p.heightCm} см · ${p.weightKg} кг");Text("${p.experience.label} · восстановление ${p.recovery}/5");Action("Изменить профиль и цели",edit)}
  val coach by vm.coachStatus.collectAsState()
  val context=LocalContext.current
- Panel("Сопровождение"){SwitchRow("Голос Android",settings.voice){vm.audio(it,settings.sound,settings.metronome)};SwitchRow("Звуковые сигналы",settings.sound){vm.audio(settings.voice,it,settings.metronome)};SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.audio(settings.voice,settings.sound,it)};Text(coach);Text("Громкость подсказок: ${settings.volume}%");Slider(settings.volume.toFloat(),{vm.coach(it.toInt(),settings.bpm,settings.speechRate)},valueRange=0f..100f)
- Text("Темп: ${settings.bpm} уд/мин");Slider(settings.bpm.toFloat(),{vm.coach(settings.volume,it.toInt(),settings.speechRate)},valueRange=40f..180f,steps=27)
- Text("Скорость речи: ${"%.1f".format(settings.speechRate)}");Slider(settings.speechRate,{vm.coach(settings.volume,settings.bpm,it)},valueRange=0.7f..1.3f)
+ Panel("Сопровождение"){
+  SwitchRow("Голос Android",settings.voice){vm.toggleVoice()}
+  SwitchRow("Звуковые сигналы",settings.sound){vm.toggleSound()}
+  SwitchRow("Метроном · ${settings.bpm} уд/мин",settings.metronome){vm.toggleMetronome()}
+  Text(coach)
+  CoachSettingSlider("Громкость подсказок",settings.volume.toFloat(),"${settings.volume}%",0f..100f){
+   vm.coach(it.toInt(),settings.bpm,settings.speechRate)
+  }
+  CoachSettingSlider("Темп",settings.bpm.toFloat(),"${settings.bpm} уд/мин",40f..180f,steps=27){
+   vm.coach(settings.volume,it.toInt(),settings.speechRate)
+  }
+  CoachSettingSlider("Скорость речи",settings.speechRate,"x${"%.1f".format(settings.speechRate)}",0.7f..1.3f){
+   vm.coach(settings.volume,settings.bpm,it)
+  }
  TextButton({runCatching{context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))}.onFailure{vm.error.value="Настройки синтеза речи недоступны на этом телефоне"}}){Text("Настроить голос Android")}
  Text("Голос выбирается среди русских офлайн-голосов Android. Общая громкость также зависит от уровня мультимедиа телефона.")}
- Panel("Оформление"){Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}}
+ Panel("Оформление"){
+  Row{TextButton({vm.dark(false)}){Text("Светлое")};TextButton({vm.dark(true)}){Text("Тёмное")};TextButton({vm.dark(null)}){Text("Система")}}
+  SwitchRow("Повышенная контрастность",settings.highContrast){vm.toggleHighContrast()}
+  SwitchRow("Уменьшить движения",settings.reducedMotion){vm.toggleReducedMotion()}
+  SwitchRow("Упростить эффекты",settings.simplifiedEffects){vm.toggleSimplifiedEffects()}
+ }
  NotificationPanel()
+ EncryptedBackupPanel(vm)
  BackupPanel(vm)
  Panel("FORMA · "+FormaUpdateClient(context).installedVersion()){Text("Локальные данные. Удаление приложения удаляет историю. Конфигурация сборки GetFitPro © 2026 warpirate — MIT; уведомление включено в APK.")}
   }
  }
 }
 /** One accessible switch for the full label + control, with a 56dp tap target. */
+/**
+ * Named and unit-labelled sliders for TalkBack without extra UI state.
+ * The underlying DataStore callback and ranges remain unchanged.
+ */
+@Composable fun CoachSettingSlider(
+ label:String,value:Float,displayValue:String,
+ range:ClosedFloatingPointRange<Float>,steps:Int=0,onValueChange:(Float)->Unit
+){
+ Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(2.dp)){
+  Text(label+": "+displayValue)
+  Slider(value=value,onValueChange=onValueChange,
+   modifier=Modifier.fillMaxWidth().heightIn(min=48.dp).semantics{
+    contentDescription=label
+    stateDescription=displayValue
+   },valueRange=range,steps=steps)
+ }
+}
+
 @Composable fun SwitchRow(label:String,value:Boolean,change:(Boolean)->Unit){
  Row(Modifier.fillMaxWidth().heightIn(min=56.dp).toggleable(value=value,role=Role.Switch,onValueChange=change),
   horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
@@ -471,18 +691,36 @@ private val editableProfileSaver=Saver<Profile,String>(
 
 
 @Composable fun BackupPanel(vm:FormaViewModel){
- val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{vm.exportBackup(it,allProfiles=false)}}
- val exportAll=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{vm.exportBackup(it,allProfiles=true)}}
+ val selectedProfile by vm.current.collectAsState()
+ var stagedProfileId by remember{mutableStateOf<String?>(null)}
+ var stagedAllProfileIds by remember{mutableStateOf<Set<String>?>(null)}
+ val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
+  val chosen=stagedProfileId
+  stagedProfileId=null
+  uri?.let{vm.exportBackup(it,expectedProfileId=chosen)}
+ }
+ val exportAll=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
+  val chosen=stagedAllProfileIds
+  stagedAllProfileIds=null
+  uri?.let{vm.exportBackup(it,allProfiles=true,expectedProfileIds=chosen)}
+ }
  val import=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(vm::importBackup)}
  var confirm by remember{mutableStateOf(false)}
  var confirmAll by remember{mutableStateOf(false)}
- Panel("Резервная копия"){
-  Text("По умолчанию сохраняется только текущий профиль: его история, тренировки и замеры. На другом телефоне файл можно импортировать как отдельный локальный профиль. Для защищённой автоматической синхронизации потребуется вход в аккаунт.")
-  Action("Экспортировать текущий профиль",{export.launch("FORMA-profile-${java.time.LocalDate.now()}.json")})
+ Panel("JSON без шифрования · совместимость"){
+  Text("Этот формат НЕ шифруется и содержит персональные данные. Используйте его только для совместимости со старыми копиями; для нового переноса рекомендуем защищённый файл выше. FORMA повторно проверит записанный JSON.")
+  Action("Экспортировать текущий профиль",{
+   stagedProfileId=selectedProfile?.id
+   export.launch("FORMA-profile-${java.time.LocalDate.now()}.json")
+  },selectedProfile!=null)
   TextButton({confirmAll=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Экспортировать все локальные профили")}
   OutlinedButton({confirm=true},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Восстановить из файла")}
  }
- if(confirmAll)AlertDialog(onDismissRequest={confirmAll=false},title={Text("Экспорт всех пользователей")},text={Text("Копия будет включать тренировки, замеры и другие персональные данные ВСЕХ локальных пользователей этого телефона. Делитесь таким файлом только с разрешения каждого владельца данных.")},confirmButton={TextButton({confirmAll=false;exportAll.launch("FORMA-all-profiles-${java.time.LocalDate.now()}.json")}){Text("Создать общую копию")}},dismissButton={TextButton({confirmAll=false}){Text("Отмена")}})
+ if(confirmAll)AlertDialog(onDismissRequest={confirmAll=false},title={Text("Экспорт всех пользователей")},text={Text("Копия будет включать тренировки, замеры и другие персональные данные ВСЕХ локальных пользователей этого телефона. Делитесь таким файлом только с разрешения каждого владельца данных.")},confirmButton={TextButton({
+  confirmAll=false
+  stagedAllProfileIds=vm.profiles.value.map{it.id}.toSet()
+  exportAll.launch("FORMA-all-profiles-${java.time.LocalDate.now()}.json")
+ }){Text("Создать общую копию")}},dismissButton={TextButton({confirmAll=false}){Text("Отмена")}})
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Восстановление копии")},text={Text("Профили добавятся как отдельные копии. Текущие данные не заменяются. Повторный импорт создаёт ещё одну копию каждого профиля. Файл до 32 МБ.")},confirmButton={TextButton({confirm=false;import.launch(arrayOf("application/json","text/plain","application/octet-stream"))}){Text("Выбрать файл")}},dismissButton={TextButton({confirm=false}){Text("Отмена")}})
 }
 
