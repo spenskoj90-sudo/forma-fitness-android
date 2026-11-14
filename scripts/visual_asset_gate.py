@@ -87,7 +87,10 @@ def inspect(repo: Path, manifest: dict) -> dict:
         if path.is_absolute() or any(p in ('..', '.') for p in path.parts):
             raise AssetError('path traversal')
         file = repo / path
-        if not file.is_file() or file.is_symlink() or not file.resolve().is_relative_to(root):
+        # Reject symlinks in every component, including the asset root itself.
+        if any((repo / Path(*path.parts[:n])).is_symlink() for n in range(1, len(path.parts) + 1)):
+            raise AssetError('symlink in asset path')
+        if not file.is_file() or not file.resolve().is_relative_to(root):
             raise AssetError('missing, symlinked or escaped asset')
         if file.stat().st_size > 24 * 1024 * 1024 or file.stat().st_size < 20:
             raise AssetError('asset exceeds bounded size')
