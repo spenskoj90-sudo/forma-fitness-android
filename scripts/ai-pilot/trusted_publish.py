@@ -208,6 +208,7 @@ def checkpoint(api, manifest, patch):
             "schedule_receipt": "PASS",
             "read_only_domain_tests": "PASS",
             "required_pr_checks": "NOT_RUN",
+            "ci_dispatch": "NOT_RUN",
         },
         "pr_number": None,
         "pr_url": None,
@@ -362,6 +363,49 @@ def finish_checkpoint(api, manifest, old, state, patch, pr, commit):
     return newer
 
 
+
+def dispatch_exact_pr_ci(api, manifest, pr, commit):
+    """Use only already-authorized Contents:write, not Actions:write.
+
+    GitHub repository_dispatch is an explicit exception to GITHUB_TOKEN's
+    workflow-trigger suppression. Its CI runs are on default main's event SHA,
+    so record the exact product head in the run summary and durable state.
+    """
+    old, stored = load_state(api, manifest["task_id"])
+    if stored is None:
+        raise TrustError("cannot dispatch CI without persisted checkpoint")
+    state, _patch = stored
+    if (state["status"] != "PUBLISHED" or state["pr_number"] != pr["number"]
+            or state["pr_head_sha"] != commit):
+        raise TrustError("cannot dispatch CI for mismatched PR/state")
+    if state["checks"].get("ci_dispatch") == "REQUESTED":
+        return old
+    if api.main_sha() != manifest["base_sha"]:
+        raise TrustError("STALE_BASE: cannot dispatch CI on changed main")
+    api.post("/dispatches", {
+        "event_type": "pilot-draft-ci",
+        "client_payload": {
+            "task_id": manifest["task_id"],
+            "pr_number": pr["number"],
+            "head_sha": commit,
+            "base_sha": manifest["base_sha"],
+            "patch_sha256": manifest["patch_sha256"],
+            "source_run_id": manifest["run_id"],
+        },
+    })
+    next_state = {
+        **state,
+        "checks": {**state["checks"], "ci_dispatch": "REQUESTED"},
+    }
+    newer = make_git_commit(
+        api, old, {"pilot-state.json": canonical_json(next_state) + b"\n"},
+        "chore(pilot): request read-only CI " + manifest["task_id"])
+    update_ref(api, manifest["state_branch"], old, newer)
+    saved, value = load_state(api, manifest["task_id"])
+    if saved != newer or value is None or value[0] != next_state:
+        raise TrustError("CI dispatch state did not survive readback")
+    return newer
+
 def publish(api, manifest, patch):
     if manifest.get("result") != "READY" or patch is None:
         raise TrustError("publisher must receive a reviewed product task")
@@ -380,8 +424,10 @@ def publish(api, manifest, patch):
     if api.main_sha() != manifest["base_sha"]:
         raise TrustError("STALE_BASE: protected main changed before draft PR")
     pr = create_draft(api, manifest, commit)
-    updated_state = finish_checkpoint(api, manifest, old, state, patch, pr, commit)
+    finish_checkpoint(api, manifest, old, state, patch, pr, commit)
+    updated_state = dispatch_exact_pr_ci(api, manifest, pr, commit)
     return {"status": "DRAFT_CREATED_OR_REUSED",
+            "ci_dispatch": "REQUESTED",
             "pr_url": pr.get("html_url"),
             "pr_number": pr["number"], "head_sha": commit,
             "base_sha": manifest["base_sha"],
