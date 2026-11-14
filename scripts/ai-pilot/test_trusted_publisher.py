@@ -166,8 +166,10 @@ class FakeAPI:
             commit = self.refs[body["head"]]
             record = {
                 "number": 501, "html_url": "https://github.com/" + REPO + "/pull/501",
-                "state": "open", "draft": body["draft"], "base": {"ref": "main"},
-                "head": {"ref": body["head"], "sha": commit},
+                "state": "open", "draft": body["draft"],
+                "base": {"ref": "main", "sha": BASE},
+                "head": {"ref": body["head"], "sha": commit,
+                         "repo": {"full_name": REPO}},
             }
             self.prs.append(record)
             return record
