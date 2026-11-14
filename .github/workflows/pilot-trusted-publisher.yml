@@ -1,0 +1,105 @@
+name: FORMA trusted draft publisher
+on:
+  workflow_run:
+    workflows: ["FORMA AI work queue"]
+    types: [completed]
+  pull_request:
+    paths:
+      - '.github/workflows/pilot-trusted-publisher.yml'
+      - 'scripts/ai-pilot/trusted_artifacts.py'
+      - 'scripts/ai-pilot/trusted_github.py'
+      - 'scripts/ai-pilot/trusted_publish.py'
+      - 'scripts/ai-pilot/test_trusted_publisher.py'
+      - 'scripts/ai-pilot/verify_dispatch.py'
+      - 'scripts/ai-pilot/test_dispatch.py'
+
+# Never expose a writable token to the Qwen/llama.cpp queue or test job.
+permissions: {}
+
+jobs:
+  contract-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate publisher contracts and crash/retry guards
+        run: |
+          python3 -m unittest discover -s scripts/ai-pilot -p test_trusted_publisher.py -v
+          python3 -m unittest discover -s scripts/ai-pilot -p test_dispatch.py -v
+
+  inspect:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'schedule' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ready: ${{ steps.inspect.outputs.ready }}
+      manifest_sha: ${{ steps.inspect.outputs.manifest_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Independently inspect exact scheduled run and downloaded ZIP
+        id: inspect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ai-pilot/trusted_publish.py \
+            --mode inspect \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-attempt "${{ github.event.workflow_run.run_attempt }}" \
+            --source-sha "${{ github.event.workflow_run.head_sha }}" \
+            --out-dir "$RUNNER_TEMP/pilot-trusted-inspection" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Parse and test exact reviewed Kotlin candidate without write access
+        if: steps.inspect.outputs.ready == 'true'
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.event.workflow_run.head_sha }}"
+          git apply --check "$RUNNER_TEMP/pilot-trusted-inspection/reviewed.patch"
+          git apply "$RUNNER_TEMP/pilot-trusted-inspection/reviewed.patch"
+          ./gradlew :domain:test --console=plain
+
+  publish:
+    needs: inspect
+    if: >-
+      github.event_name == 'workflow_run' &&
+      needs.inspect.result == 'success' &&
+      needs.inspect.outputs.ready == 'true'
+    # Serialize even unrelated tasks; single owner of all state and task refs.
+    concurrency:
+      group: forma-trusted-publisher-writer
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Recheck API provenance, checkpoint, branch lease and one draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ai-pilot/trusted_publish.py \
+            --mode publish \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-attempt "${{ github.event.workflow_run.run_attempt }}" \
+            --source-sha "${{ github.event.workflow_run.head_sha }}" \
+            --out-dir "$RUNNER_TEMP/pilot-trusted-publisher" \
+            --expected-manifest-sha "${{ needs.inspect.outputs.manifest_sha }}"
