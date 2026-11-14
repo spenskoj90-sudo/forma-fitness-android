@@ -75,11 +75,12 @@ jobs:
           persist-credentials: false
       - name: Select reviewed scheduled work
         if: github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --method GET "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-            --jq '[.[] | {number, state}]' > "$RUNNER_TEMP/forma-open-prs.json"
+          curl --disable --fail --silent --show-error --max-time 20 \
+            --header 'Accept: application/vnd.github+json' \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" |
+            jq -e 'if type == "array" then map({number, state}) else error("invalid PR response") end' \
+            > "$RUNNER_TEMP/forma-open-prs.json"
           python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
           python3 scripts/ai-pilot/scheduled_select.py \
             --revision "$EXPECTED_SHA" \

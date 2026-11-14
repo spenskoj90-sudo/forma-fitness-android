@@ -1,0 +1,611 @@
+{
+  "schema": 1,
+  "reviewed_utc": "2026-11-14",
+  "policy": {
+    "default": "deny",
+    "execution_from_catalog": false,
+    "auto_install": false,
+    "auto_promote": false,
+    "paid_api": false,
+    "privileged_write": false,
+    "production": false,
+    "signing": false
+  },
+  "tools": [
+    {
+      "id": "pilot-queue",
+      "repo": "spenskoj90-sudo/forma-fitness-android",
+      "license": "INTERNAL",
+      "roles": [
+        "coordination",
+        "author",
+        "review"
+      ],
+      "stage": "active",
+      "priority": 0,
+      "scope": "Local two-model queue, current reviewed packages",
+      "gate": "New product packages and automatic PR publication require independent review",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "llama-cpp",
+      "repo": "ggml-org/llama.cpp",
+      "license": "MIT",
+      "roles": [
+        "inference"
+      ],
+      "stage": "active",
+      "priority": 0,
+      "scope": "Current loopback CPU inference engine",
+      "gate": "Keep pinned binary and model-hash verification",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "github-runner",
+      "repo": "actions/runner",
+      "license": "MIT",
+      "roles": [
+        "coordination",
+        "qa",
+        "build"
+      ],
+      "stage": "active",
+      "priority": 0,
+      "scope": "Existing public-repository GitHub Actions runner",
+      "gate": "Quota best-effort; no assumed 24/7 SLA",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": true,
+      "secret_required": false
+    },
+    {
+      "id": "gh-aw",
+      "repo": "github/gh-aw",
+      "license": "MIT",
+      "roles": [
+        "coordination",
+        "review"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "Safe-output job isolation and compiled agentic workflows",
+      "gate": "Review security advisory, pinned safe version, runner tokens and engine authorization",
+      "paid_api_required": false,
+      "privileged_write": true,
+      "persistent_host": false,
+      "service_quota": true,
+      "secret_required": false
+    },
+    {
+      "id": "aider",
+      "repo": "Aider-AI/aider",
+      "license": "Apache-2.0",
+      "roles": [
+        "author"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "Repo-map, lint/test repair, Git-aware edits",
+      "gate": "Isolated CPU Qwen experiment with no auto-commit or API key",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "openhands-sdk",
+      "repo": "OpenHands/software-agent-sdk",
+      "license": "MIT",
+      "roles": [
+        "coordination",
+        "author"
+      ],
+      "stage": "evaluate",
+      "priority": 20,
+      "scope": "Sandboxed agent server SDK and state handling",
+      "gate": "Prove self-host CPU/SQLite compatibility and unprivileged isolation",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": true,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "openhands-automation",
+      "repo": "OpenHands/automation",
+      "license": "MIT",
+      "roles": [
+        "coordination"
+      ],
+      "stage": "defer",
+      "priority": 30,
+      "scope": "Webhooks, cron scheduler, run history",
+      "gate": "Beta requires automation service, database and sandbox lifecycle",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": true,
+      "service_quota": false,
+      "secret_required": true
+    },
+    {
+      "id": "openhands-ui",
+      "repo": "OpenHands/OpenHands",
+      "license": "MIT",
+      "roles": [
+        "coordination",
+        "author"
+      ],
+      "stage": "defer",
+      "priority": 40,
+      "scope": "Full Agent Canvas and server",
+      "gate": "Container/runtime footprint and model usage exceed present lightweight pilot",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": true,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "langgraph",
+      "repo": "langchain-ai/langgraph",
+      "license": "MIT",
+      "roles": [
+        "coordination"
+      ],
+      "stage": "evaluate",
+      "priority": 20,
+      "scope": "Checkpointed stateful agent DAG",
+      "gate": "Compare native queue first; disable optional hosted telemetry",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "smolagents",
+      "repo": "huggingface/smolagents",
+      "license": "Apache-2.0",
+      "roles": [
+        "coordination",
+        "author"
+      ],
+      "stage": "evaluate",
+      "priority": 25,
+      "scope": "Small tool/model-agnostic agent library",
+      "gate": "Only allow confined no-network subprocess, not arbitrary agent code execution",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "swe-agent",
+      "repo": "SWE-agent/SWE-agent",
+      "license": "MIT",
+      "roles": [
+        "author",
+        "review"
+      ],
+      "stage": "evaluate",
+      "priority": 25,
+      "scope": "Issue-to-patch environment with tests",
+      "gate": "Sandbox third-party tool runner; never give repo write or signer keys",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "continue",
+      "repo": "continuedev/continue",
+      "license": "Apache-2.0",
+      "roles": [
+        "author"
+      ],
+      "stage": "defer",
+      "priority": 40,
+      "scope": "IDE coding agent and context",
+      "gate": "No persistent IDE server in phone-first workflow",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "ollama",
+      "repo": "ollama/ollama",
+      "license": "MIT",
+      "roles": [
+        "inference"
+      ],
+      "stage": "evaluate",
+      "priority": 15,
+      "scope": "Local inference API and model management",
+      "gate": "Benchmark against existing llama.cpp CPU RAM/cold start",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "actionlint",
+      "repo": "rhysd/actionlint",
+      "license": "MIT",
+      "roles": [
+        "security",
+        "qa"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "Static GitHub Actions YAML validation",
+      "gate": "Pin verified artifact digest; add only affected workflow checks",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "zizmor",
+      "repo": "zizmorcore/zizmor",
+      "license": "MIT",
+      "roles": [
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "GitHub Actions privilege, template and credential audit",
+      "gate": "Pin verified version; inspect false positives; no auto-fix to main",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "gitleaks",
+      "repo": "gitleaks/gitleaks",
+      "license": "MIT",
+      "roles": [
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 15,
+      "scope": "Secret pattern scan in repository history and diffs",
+      "gate": "Use synthetic fixtures; no printing discovered secret values",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "osv-scanner",
+      "repo": "google/osv-scanner",
+      "license": "Apache-2.0",
+      "roles": [
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 15,
+      "scope": "Open vulnerability database dependency scanner",
+      "gate": "Bounded online metadata only; local SBOM/lockfile, no secrets",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "trivy",
+      "repo": "aquasecurity/trivy",
+      "license": "Apache-2.0",
+      "roles": [
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 18,
+      "scope": "Dependency, container and configuration vulnerabilities",
+      "gate": "Time bound database download; no production credentials",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "syft",
+      "repo": "anchore/syft",
+      "license": "Apache-2.0",
+      "roles": [
+        "security",
+        "build"
+      ],
+      "stage": "evaluate",
+      "priority": 18,
+      "scope": "Generate dependency software bill of materials",
+      "gate": "Pin binary; private release artifacts excluded",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "scorecard",
+      "repo": "ossf/scorecard",
+      "license": "Apache-2.0",
+      "roles": [
+        "security"
+      ],
+      "stage": "defer",
+      "priority": 30,
+      "scope": "OpenSSF repository hygiene assessment",
+      "gate": "Avoid privileged API tokens and noisy repeated checks",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "renovate",
+      "repo": "renovatebot/renovate",
+      "license": "AGPL-3.0",
+      "roles": [
+        "coordination",
+        "build"
+      ],
+      "stage": "defer",
+      "priority": 40,
+      "scope": "Automated dependency update PRs",
+      "gate": "Requires controlled bot write and change-budget limits",
+      "paid_api_required": false,
+      "privileged_write": true,
+      "persistent_host": true,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "cosign",
+      "repo": "sigstore/cosign",
+      "license": "Apache-2.0",
+      "roles": [
+        "build"
+      ],
+      "stage": "defer",
+      "priority": 50,
+      "scope": "Artifact/signature transparency and supply-chain provenance",
+      "gate": "Do not conflate with permanent Android APK signing; separate release privileges",
+      "paid_api_required": false,
+      "privileged_write": true,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "maestro",
+      "repo": "mobile-dev-inc/Maestro",
+      "license": "Apache-2.0",
+      "roles": [
+        "qa"
+      ],
+      "stage": "evaluate",
+      "priority": 12,
+      "scope": "Android UI E2E and agent-facing MCP",
+      "gate": "Separate emulator trial, no physical-device or production-data control",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "roborazzi",
+      "repo": "takahirom/roborazzi",
+      "license": "Apache-2.0",
+      "roles": [
+        "qa",
+        "design"
+      ],
+      "stage": "evaluate",
+      "priority": 12,
+      "scope": "Compose/JVM screenshot regression",
+      "gate": "Confirm Kotlin 2.0.21/Gradle 8.10.2 support before adding",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "paparazzi",
+      "repo": "cashapp/paparazzi",
+      "license": "Apache-2.0",
+      "roles": [
+        "qa",
+        "design"
+      ],
+      "stage": "evaluate",
+      "priority": 18,
+      "scope": "Android screenshot tests without emulator",
+      "gate": "Assess Android Gradle Plugin compatibility and test cost",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "detekt",
+      "repo": "detekt/detekt",
+      "license": "Apache-2.0",
+      "roles": [
+        "qa",
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 13,
+      "scope": "Static Kotlin code analysis",
+      "gate": "Pin version compatible with Kotlin 2.0.21; no new broad CI gate initially",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "penpot",
+      "repo": "penpot/penpot",
+      "license": "MPL-2.0",
+      "roles": [
+        "design"
+      ],
+      "stage": "evaluate",
+      "priority": 15,
+      "scope": "Open design platform, tokens and reusable components",
+      "gate": "No unapproved hosted account or persistent self-host deployment",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": true,
+      "service_quota": true,
+      "secret_required": false
+    },
+    {
+      "id": "blender",
+      "repo": "blender/blender",
+      "license": "NOASSERTION",
+      "roles": [
+        "asset3d"
+      ],
+      "stage": "evaluate",
+      "priority": 15,
+      "scope": "Original mesh/rig/animation generation",
+      "gate": "Official Blender GPL terms and headless reproducible export need separate check",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "filament",
+      "repo": "google/filament",
+      "license": "Apache-2.0",
+      "roles": [
+        "render3d"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "Android physically based 3D renderer",
+      "gate": "Isolated SDK/ABI/device performance spike; no main app regression",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "gltf-validator",
+      "repo": "KhronosGroup/glTF-Validator",
+      "license": "Apache-2.0",
+      "roles": [
+        "asset3d",
+        "security"
+      ],
+      "stage": "evaluate",
+      "priority": 10,
+      "scope": "Full glTF/GLB format and extension validation",
+      "gate": "Pin release checksum and inspect untrusted asset memory limits",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "sceneview",
+      "repo": "sceneview/sceneview",
+      "license": "Apache-2.0",
+      "roles": [
+        "render3d"
+      ],
+      "stage": "defer",
+      "priority": 40,
+      "scope": "Compose Filament wrapper and AR integration",
+      "gate": "Latest tooling exceeds current FORMA compileSdk/Kotlin/Java versions",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "godot",
+      "repo": "godotengine/godot",
+      "license": "MIT",
+      "roles": [
+        "asset3d",
+        "render3d"
+      ],
+      "stage": "defer",
+      "priority": 40,
+      "scope": "Full 3D engine/editor and animation authoring",
+      "gate": "Native Android integration scope larger than Blender + Filament",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "uv",
+      "repo": "astral-sh/uv",
+      "license": "Apache-2.0",
+      "roles": [
+        "build"
+      ],
+      "stage": "evaluate",
+      "priority": 18,
+      "scope": "Fast locked Python tooling and executable environment",
+      "gate": "Pin release digest; not needed for stdlib pilot",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    },
+    {
+      "id": "act",
+      "repo": "nektos/act",
+      "license": "MIT",
+      "roles": [
+        "qa"
+      ],
+      "stage": "defer",
+      "priority": 30,
+      "scope": "Locally emulate GitHub Actions workflows",
+      "gate": "Docker-based and not equivalent to GitHub/OEM acceptance",
+      "paid_api_required": false,
+      "privileged_write": false,
+      "persistent_host": false,
+      "service_quota": false,
+      "secret_required": false
+    }
+  ]
+}
