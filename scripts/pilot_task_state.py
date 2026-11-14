@@ -132,7 +132,7 @@ class GitLedger:
                 raise StateError("invalid patch size")
             pb = git("--git-dir", self.bare, "hash-object", "-w", "--stdin", input=patch).decode().strip()
             entries.append(f"100644 blob {pb}\tpatch.diff\n")
-        tree = git("--git-dir", self.bare, "mktree", input="".join(sorted(entries, key=lambda x: x.split("\\t", 1)[1])).encode()).decode().strip()
+        tree = git("--git-dir", self.bare, "mktree", input="".join(sorted(entries, key=lambda x: x.split(chr(9), 1)[1])).encode()).decode().strip()
         args = ["-c", "user.name=PILOT-SIM", "-c", "user.email=pilot-sim@example.invalid",
                 "--git-dir", self.bare, "commit-tree", tree]
         if expected:
