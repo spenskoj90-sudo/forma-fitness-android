@@ -24,7 +24,7 @@
 **GitHub Actions — одна команда для существующей read-only очереди** (не требует отдельного платного API; для ручного workflow_dispatch у инициирующей учётной записи должно быть право запуска Actions):
 
 ```bash
-gh workflow run ai-work-queue.yml --repo spenskoj90-sudo/forma-fitness-android --ref main -f package=smoke -f expected_sha="$(git rev-parse HEAD)" -f batch=all
+gh workflow run ai-work-queue.yml --repo spenskoj90-sudo/forma-fitness-android --ref main -f package=smoke -f expected_sha="$(gh api repos/spenskoj90-sudo/forma-fitness-android/git/ref/heads/main --jq .object.sha)" -f batch=all
 ```
 
 Слово `smoke` выбрано сознательно при уже занятых двух одобренных реальных пакетах. **Ручной dispatch НЕ равен событию schedule**, нельзя записывать его как результат расписания. При независимом одобрении и освобождении конкретного пакета вместо smoke можно выбрать его имя и последнюю точную базу. GitHub cron действует лишь на default branch и без SLA регулярности.
