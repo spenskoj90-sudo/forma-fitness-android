@@ -25,11 +25,28 @@ class ScheduledSelectionTest(unittest.TestCase):
             result = choose_package(pathlib.Path("/nonexistent"), SHA, prs)
         return result, check.call_count
 
-    def test_open_pr_does_not_start_product_model(self):
+    def test_occupied_task_does_not_freeze_unrelated_task(self):
         (name, reason), calls = self.choose([{"number": 21, "state": "open"}])
+        self.assertEqual(name, "backup-replay")
+        self.assertIn("unclaimed reviewed task", reason)
+        self.assertEqual(calls, 1)
+
+    def test_both_preapproved_tasks_occupied_fall_back_to_smoke(self):
+        (name, reason), calls = self.choose([
+            {"number": 21, "state": "open"}, {"number": 15, "state": "open"}])
         self.assertEqual(name, "smoke")
-        self.assertIn("open PR", reason)
+        self.assertIn("occupied", reason)
         self.assertEqual(calls, 0)
+
+    def test_unrelated_open_pr_does_not_block(self):
+        self.assertEqual(self.choose([{"number": 13, "state": "open"}])[0][0],
+                         "workout-date")
+
+    def test_matching_branch_claim_blocks_task_even_with_new_pr_number(self):
+        prs = [{"number": 999, "state": "open",
+                "head_ref": "pilot/task-forma-workout-finish-date-v1"}]
+        self.assertEqual(self.choose(prs)[0][0], "backup-replay")
+
 
     def test_no_pr_selects_first_matching_reviewed_package(self):
         self.assertEqual(self.choose([])[0][0], "workout-date")

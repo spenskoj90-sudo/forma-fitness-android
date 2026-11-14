@@ -14,9 +14,16 @@ import sys
 from queue_tasks import BACKUP, ORIGINAL, SESSION, WORKOUT_DATE
 
 
+# All entries are reviewed source-controlled packages. Their task identities and
+# existing PR aliases are used only for de-duplication, never as model prompts.
+# A different, unrelated PR must not freeze the queue.
 ALLOWED = (
-    ("workout-date", SESSION, WORKOUT_DATE),
-    ("backup-replay", BACKUP, ORIGINAL),
+    ("workout-date", "forma-workout-finish-date-v1", SESSION, WORKOUT_DATE,
+     frozenset({21}), frozenset({"forma/workout-finish-date-20261113",
+                               "pilot/task-forma-workout-finish-date-v1"})),
+    ("backup-replay", "forma-backup-completed-sets-v1", BACKUP, ORIGINAL,
+     frozenset({15}), frozenset({"forma/backup-completed-sets-20261112",
+                               "pilot/task-forma-backup-completed-sets-v1"})),
 )
 
 
@@ -25,10 +32,10 @@ class ScheduleError(ValueError):
 
 
 def choose_package(repo: Path, revision: str, pull_requests: object) -> tuple[str, str]:
-    """Return (package, reason); fail closed when any draft/review is outstanding."""
+    """Return (package, reason); only an occupied matching task blocks itself."""
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ScheduleError("invalid revision")
-    if not isinstance(pull_requests, list) or len(pull_requests) > 100:
+    if not isinstance(pull_requests, list) or len(pull_requests) >= 100:
         raise ScheduleError("invalid PR snapshot")
     if any(not isinstance(pr, dict) or not isinstance(pr.get("number"), int)
            or isinstance(pr.get("number"), bool) or pr["number"] < 1
@@ -36,9 +43,16 @@ def choose_package(repo: Path, revision: str, pull_requests: object) -> tuple[st
         raise ScheduleError("invalid open PR entry")
     if len({pr["number"] for pr in pull_requests}) != len(pull_requests):
         raise ScheduleError("duplicate PR entries")
-    if pull_requests:
-        return "smoke", "open PRs: product changes require existing-branch review"
-    for name, path, marker in ALLOWED:
+    for name, task_id, path, marker, known_numbers, known_branches in ALLOWED:
+        occupied = any(
+            pr["number"] in known_numbers or
+            pr.get("head_ref") in known_branches or
+            (isinstance(pr.get("head_ref"), str) and
+             pr["head_ref"] == f"pilot/task-{task_id}")
+            for pr in pull_requests
+        )
+        if occupied:
+            continue
         try:
             source = subprocess.check_output(
                 ["git", "show", f"{revision}:{path}"], cwd=repo,
@@ -46,8 +60,8 @@ def choose_package(repo: Path, revision: str, pull_requests: object) -> tuple[st
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             continue
         if source.count(marker) == 1:
-            return name, f"exact-revision reviewed source matches {name}"
-    return "smoke", "no open reviewed product package on this revision"
+            return name, f"unclaimed reviewed task {task_id} on exact revision"
+    return "smoke", "reviewed packages are occupied or do not match this exact source"
 
 
 def main() -> int:
