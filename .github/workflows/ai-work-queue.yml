@@ -6,6 +6,7 @@ on:
       - 'scripts/ai-pilot/test_scheduled_select.py'
       - 'scripts/pilot_task_state.py'
       - 'scripts/test_pilot_task_state.py'
+      - 'scripts/pilot_demo.py'
       - '.github/workflows/ai-work-queue.yml'
   schedule:
     - cron: '23 * * * *'
@@ -66,6 +67,8 @@ jobs:
           persist-credentials: false
       - name: Verify durable task ledger and simulated draft PR
         run: python3 -m unittest discover -s scripts -p test_pilot_task_state.py -v
+      - name: Separate one-command Linux process proof (simulated only)
+        run: python3 scripts/pilot_demo.py
   queue:
     if: github.event_name != 'pull_request'
     permissions:
