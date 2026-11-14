@@ -1,5 +1,10 @@
 name: FORMA AI work queue
 on:
+  pull_request:
+    paths:
+      - 'scripts/ai-pilot/scheduled_select.py'
+      - 'scripts/ai-pilot/test_scheduled_select.py'
+      - '.github/workflows/ai-work-queue.yml'
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
@@ -33,7 +38,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scheduler-tests:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify scheduled selection
+        run: python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
   queue:
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       actions: read
@@ -54,6 +73,26 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Select reviewed scheduled work
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq '[.[] | {number, state}]' > "$RUNNER_TEMP/forma-open-prs.json"
+          python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
+          python3 scripts/ai-pilot/scheduled_select.py \
+            --revision "$EXPECTED_SHA" \
+            --prs "$RUNNER_TEMP/forma-open-prs.json" \
+            --output "$RUNNER_TEMP/forma-scheduled-plan.json"
+          package="$(jq -er '.package | select(. == "smoke" or . == "backup-replay" or . == "workout-date")' "$RUNNER_TEMP/forma-scheduled-plan.json")"
+          echo "PACKAGE=$package" >> "$GITHUB_ENV"
+          {
+            echo '## Scheduled work selection'
+            echo '```json'
+            cat "$RUNNER_TEMP/forma-scheduled-plan.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Restore exact-revision evidence
         if: github.event_name == 'schedule' || inputs.resume_run != ''
         env:
@@ -154,5 +193,6 @@ jobs:
           path: |
             ${{ runner.temp }}/forma-ai-queue/queue.json
             ${{ runner.temp }}/forma-ai-queue/*.patch
+            ${{ runner.temp }}/forma-scheduled-plan.json
           retention-days: 7
           if-no-files-found: ignore
