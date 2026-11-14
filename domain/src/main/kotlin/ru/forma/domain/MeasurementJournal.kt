@@ -16,7 +16,7 @@ package ru.forma.domain
  * is indistinguishable from that value; such a latest-entry correction applies.
  */
 fun Profile.withMeasurement(item:Measurement,editingId:String?=null):Profile {
- require(item.valid()){"Некорректные значения замера"}
+ require(item.valid() && item.dateMs >= 0){"Некорректные значения замера"}
  val found=measurements.firstOrNull{it.id==item.id}
  if(found==item && (editingId==null || editingId==item.id))return this
  val records=if(editingId!=null) {
