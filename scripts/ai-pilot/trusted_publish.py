@@ -174,6 +174,20 @@ def checkpoint(api, manifest, patch):
                 previous_patch != patch or
                 state.get("status") not in ("READY", "PUBLISHED")):
             raise TrustError("existing durable task state does not match source")
+        if state["status"] == "READY":
+            # Crash/retry: preserve the same approved patch while recording
+            # the resumed attempt on the durable server-side Git ref.
+            if type(state.get("attempt")) is not int or not 1 <= state["attempt"] < 32:
+                raise TrustError("invalid or exhausted checkpoint attempts")
+            resumed = {**state, "attempt": state["attempt"] + 1}
+            next_commit = make_git_commit(
+                api, old, {"pilot-state.json": canonical_json(resumed) + b"\n"},
+                "chore(pilot): resume verified task " + task)
+            update_ref(api, branch, old, next_commit)
+            after, val = load_state(api, task)
+            if after != next_commit or val is None or val[0] != resumed:
+                raise TrustError("resumed checkpoint readback mismatch")
+            return after, resumed
         return old, state
     initial = {
         "schema": 1,
@@ -188,6 +202,7 @@ def checkpoint(api, manifest, patch):
         "branch": manifest["branch"],
         "status": "READY",
         "attempt": 1,
+        "writer": "trusted-publisher-workflow",
         "checks": {
             "github_source": "PASS",
             "schedule_receipt": "PASS",
@@ -357,7 +372,13 @@ def publish(api, manifest, patch):
         # An earlier reviewed task is owned by a separate product PR.
         return {"status": "SKIP_EXISTING_PR", "number": matched["number"]}
     old, state = checkpoint(api, manifest, patch)
+    # Branch creation and the external PR API are separate writes. Fail
+    # closed if main changes between the first check and publication.
+    if api.main_sha() != manifest["base_sha"]:
+        raise TrustError("STALE_BASE: protected main changed during publication")
     commit = product_commit(api, manifest, patch)
+    if api.main_sha() != manifest["base_sha"]:
+        raise TrustError("STALE_BASE: protected main changed before draft PR")
     pr = create_draft(api, manifest, commit)
     updated_state = finish_checkpoint(api, manifest, old, state, patch, pr, commit)
     return {"status": "DRAFT_CREATED_OR_REUSED",
