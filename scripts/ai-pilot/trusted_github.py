@@ -51,6 +51,9 @@ class GitHubClient:
             raise GitHubFailure(f"GitHub {method} endpoint returned HTTP {e.code}") from None
         except (urllib.error.URLError, TimeoutError) as e:
             raise GitHubFailure("GitHub endpoint unavailable") from e
+        if not raw:
+            # POST /dispatches succeeds with HTTP 204 (no response body).
+            return {}
         try:
             return json.loads(raw)
         except (ValueError, UnicodeError) as e:
