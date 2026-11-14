@@ -81,6 +81,14 @@ class GateTests(unittest.TestCase):
         with self.assertRaises(AssetError):
             check_glb(glb()[:-2])
 
+    def test_reject_duplicate_binary_chunks(self):
+        container = glb()
+        bin_chunk = struct.pack('<II', 4, 0x004e4942) + b'\0' * 4
+        body = container[12:] + bin_chunk * 2
+        duplicate = container[:8] + struct.pack('<I', 12 + len(body)) + body
+        with self.assertRaisesRegex(AssetError, 'duplicate BIN'):
+            check_glb(duplicate)
+
     def test_claimed_review_requires_reference(self):
         with self.assertRaises(AssetError):
             self.check({**self.entry, 'status': 'reviewed', 'review': None})

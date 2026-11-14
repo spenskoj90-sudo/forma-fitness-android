@@ -51,7 +51,7 @@ def check_glb(raw: bytes) -> None:
         if not isinstance(records, list) or any(not isinstance(item, dict) or 'uri' in item for item in records):
             raise AssetError('external resource URI or invalid buffer/image')
     offset = 20 + chunk_len
-    while offset < len(raw):
+    if offset < len(raw):
         if offset + 8 > len(raw):
             raise AssetError('truncated GLB chunk header')
         size, kind = struct.unpack_from('<II', raw, offset)
@@ -59,7 +59,7 @@ def check_glb(raw: bytes) -> None:
             raise AssetError('unexpected or truncated GLB chunk')
         offset += 8 + size
     if offset != len(raw):
-        raise AssetError('GLB chunk-length mismatch')
+        raise AssetError('unexpected trailing data or duplicate BIN chunk')
 
 
 def inspect(repo: Path, manifest: dict) -> dict:
