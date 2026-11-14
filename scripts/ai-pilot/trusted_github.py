@@ -141,6 +141,6 @@ class GitHubClient:
         raise GitHubFailure("incomplete PR pagination")
 
     def branch_ref(self, branch):
-        if not re.fullmatch(r"pilot(?:-state)?/task-[a-z0-9-]{3,75}", branch):
+        if not re.fullmatch(r"(?:pilot/task-|pilot-state/)[a-z0-9-]{3,75}", branch):
             raise GitHubFailure("branch outside task namespace")
         return self.get("/git/ref/heads/" + branch, absent=True)
