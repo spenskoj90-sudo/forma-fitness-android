@@ -4,6 +4,8 @@ on:
     paths:
       - 'scripts/ai-pilot/scheduled_select.py'
       - 'scripts/ai-pilot/test_scheduled_select.py'
+      - 'scripts/ai-pilot/verify_schedule_evidence.py'
+      - 'scripts/ai-pilot/test_schedule_evidence.py'
       - 'scripts/pilot_task_state.py'
       - 'scripts/test_pilot_task_state.py'
       - 'scripts/pilot_demo.py'
@@ -53,7 +55,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Verify scheduled selection
-        run: python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
+        run: |
+          python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
+          python3 -m unittest discover -s scripts/ai-pilot -p test_schedule_evidence.py -v
   pilot-ledger-tests:
     if: github.event_name == 'pull_request'
     permissions:
@@ -204,6 +208,24 @@ jobs:
                 "$EVIDENCE/queue.json"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Independently check scheduled plan and queue artifacts
+        if: ${{ always() && github.event_name == 'schedule' }}
+        run: |
+          python3 scripts/ai-pilot/verify_schedule_evidence.py \
+            --event "$GITHUB_EVENT_NAME" --repo "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" --revision "$EXPECTED_SHA" \
+            --checkout "$(git rev-parse HEAD)" \
+            --plan "$RUNNER_TEMP/forma-scheduled-plan.json" \
+            --queue "$RUNNER_TEMP/forma-ai-queue/queue.json" \
+            --evidence-dir "$RUNNER_TEMP/forma-ai-queue" \
+            --output "$RUNNER_TEMP/forma-schedule-evidence.json"
+          {
+            echo '## Scheduled artifact integrity receipt'
+            echo 'This receipt checks local data integrity; GitHub run event/SHA must be checked independently.'
+            echo '```json'
+            cat "$RUNNER_TEMP/forma-schedule-evidence.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Save queue evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -213,5 +235,6 @@ jobs:
             ${{ runner.temp }}/forma-ai-queue/queue.json
             ${{ runner.temp }}/forma-ai-queue/*.patch
             ${{ runner.temp }}/forma-scheduled-plan.json
+            ${{ runner.temp }}/forma-schedule-evidence.json
           retention-days: 7
           if-no-files-found: ignore
