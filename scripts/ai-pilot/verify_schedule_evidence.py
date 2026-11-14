@@ -113,7 +113,8 @@ def verify_artifacts(event, repository, run_id, revision, checkout,
             raise EvidenceError("model queue did not complete checks and review")
         history = r.get("history")
         if (not isinstance(history, list) or not history
-                or len(history) > 4 or history[-1].get("result") != "PASS"):
+                or len(history) > 4 or not isinstance(history[-1], dict)
+                or history[-1].get("result") != "PASS"):
             raise EvidenceError("checkpoint contains no completed model attempt")
         raw = patch_raws[task]
         if not isinstance(raw, bytes) or not 0 < len(raw) <= BOUND:
@@ -167,6 +168,10 @@ def main():
         if selected not in PLANS:
             raise EvidenceError("unknown reviewed package")
         folder = args.evidence_dir
+        present = {file.name for file in folder.glob("*.patch")}
+        expected = {name + ".patch" for name in PLANS[selected]}
+        if present != expected:
+            raise EvidenceError("unexpected or missing patch files")
         patches = {name: data_file(folder / (name + ".patch")) for name in PLANS[selected]}
         result = verify_artifacts(args.event, args.repo, args.run_id,
                                   args.revision, args.checkout, plan_raw,
