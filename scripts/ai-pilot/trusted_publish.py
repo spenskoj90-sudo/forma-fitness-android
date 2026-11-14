@@ -43,12 +43,15 @@ def verified_candidate(api, run_id, attempt, expected_sha):
     if manifest["result"] == "SKIP_SYNTHETIC":
         return manifest, None
     existing = inspect_prs(api.pulls(), manifest["task_id"])
-    if existing:
+    if existing and (existing.get("head") or {}).get("ref") != manifest["branch"]:
         return {
             **manifest, "result": "SKIP_EXISTING_PR",
             "pr_number": existing["number"],
             "pr_url": existing.get("html_url"),
         }, None
+    # The deterministic PILOT branch may already have a draft PR after a
+    # crash before the published checkpoint was saved. Let the publisher
+    # reconcile it; it must never create a second one.
     return {**manifest, "result": "READY"}, patch
 
 
@@ -350,8 +353,8 @@ def publish(api, manifest, patch):
     if api.main_sha() != manifest["base_sha"]:
         raise TrustError("STALE_BASE: protected main changed")
     matched = inspect_prs(api.pulls(), manifest["task_id"])
-    if matched:
-        # Already-claimed legacy PRs are never published a second time.
+    if matched and (matched.get("head") or {}).get("ref") != manifest["branch"]:
+        # An earlier reviewed task is owned by a separate product PR.
         return {"status": "SKIP_EXISTING_PR", "number": matched["number"]}
     old, state = checkpoint(api, manifest, patch)
     commit = product_commit(api, manifest, patch)
