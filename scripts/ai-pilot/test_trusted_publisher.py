@@ -317,6 +317,20 @@ class TrustedPublisherTests(unittest.TestCase):
         self.assertNotEqual(new["checkpoint_sha"], initial)
         self.assertEqual(api.draft_post_count, 1)
 
+    def test_unfinished_checkpoint_retry_increments_attempt_once_per_retry(self):
+        api = FakeAPI()
+        manifest, patch = verified_candidate(api, 12345, 1, BASE)
+        first_ref, first = checkpoint(api, manifest, patch)
+        next_ref, second = checkpoint(api, manifest, patch)
+        self.assertEqual(first["attempt"], 1)
+        self.assertEqual(second["attempt"], 2)
+        self.assertEqual(second["patch_sha256"], first["patch_sha256"])
+        self.assertNotEqual(first_ref, next_ref)
+        done = publish(api, manifest, patch)
+        self.assertEqual(api.draft_post_count, 1)
+        self.assertEqual(checkpoint(api, manifest, patch)[1]["attempt"], 3)
+        self.assertEqual(done["status"], "DRAFT_CREATED_OR_REUSED")
+
     def test_interruption_after_product_branch_recovers(self):
         api = FakeAPI()
         manifest, patch = verified_candidate(api, 12345, 1, BASE)
