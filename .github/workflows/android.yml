@@ -22,6 +22,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify one protected FORMA release route
         run: python3 scripts/check-release-workflows.py
+      - name: Verify original 3D asset provenance (read-only)
+        run: python3 scripts/visual_asset_gate.py
       - name: Check release CI verification logic
         run: |
           python3 -m unittest discover -s scripts -p "test*.py" -v
