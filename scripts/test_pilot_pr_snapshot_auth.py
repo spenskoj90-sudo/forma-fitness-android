@@ -14,7 +14,7 @@ class PRSnapshotSecurityTests(unittest.TestCase):
         permissions = job.split("\n    permissions:\n", 1)[1].split("\n    runs-on:", 1)[0]
         self.assertIn("      contents: read\n", permissions)
         self.assertIn("      actions: read\n", permissions)
-        self.assertIn("      pull-requests: read\n", permissions)
+        self.assertIn("      pull-requests: read", permissions.splitlines())
         self.assertNotIn("write", permissions)
         self.assertEqual(source.count("pull-requests: read"), 1)
 
