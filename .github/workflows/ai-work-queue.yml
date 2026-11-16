@@ -58,6 +58,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
           python3 -m unittest discover -s scripts/ai-pilot -p test_schedule_evidence.py -v
+          python3 -m unittest discover -s scripts -p test_pilot_pr_snapshot_auth.py -v
   pilot-ledger-tests:
     if: github.event_name == 'pull_request'
     permissions:
@@ -78,6 +79,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -97,11 +99,15 @@ jobs:
           persist-credentials: false
       - name: Select reviewed scheduled work
         if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl --disable --fail --silent --show-error --max-time 20 \
-            --header 'Accept: application/vnd.github+json' \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" |
-            jq -e 'if type == "array" then map({number, state, head_ref: .head.ref}) else error("invalid PR response") end' \
+          # GitHub-hosted anonymous REST traffic can return HTTP 403.
+          # This ephemeral token has read-only PR metadata scope and is never
+          # passed to the Qwen/llama.cpp process or into the evidence artifact.
+          gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq 'if type == "array" then map({number, state, head_ref: .head.ref}) else error("invalid PR response") end' \
             > "$RUNNER_TEMP/forma-open-prs.json"
           python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
           python3 scripts/ai-pilot/scheduled_select.py \
