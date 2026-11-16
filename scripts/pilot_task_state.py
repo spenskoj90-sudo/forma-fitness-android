@@ -30,6 +30,12 @@ TASKS = {
         "occupied_prs": (15,),
         "occupied_branches": ("forma/backup-completed-sets-20261112",),
     },
+    "forma-progress-chronology-v1": {
+        "package": "progress-chronology",
+        "path": "domain/src/main/kotlin/ru/forma/domain/WeeklyPlanProgress.kt",
+        "occupied_prs": (),
+        "occupied_branches": (),
+    },
     # CI-only fixture; NEVER eligible for a product schedule or live publication.
     "pilot-synthetic-e2e-v1": {
         "package": "synthetic",
