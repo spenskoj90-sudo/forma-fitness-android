@@ -19,12 +19,14 @@ BOUND = 32768
 PLANS = {
     "smoke": {"clamp": [], "clamp-followup": ["clamp"]},
     "workout-date": {"workout-date": []},
+    "progress-chronology": {"progress-chronology": []},
     "backup-replay": {"backup-pr15": [], "clamp": [], "clamp-followup": ["clamp"]},
 }
 PATHS = {
     "clamp": "bounds.py",
     "clamp-followup": "followup_bounds.py",
     "workout-date": "domain/src/main/kotlin/ru/forma/domain/Session.kt",
+    "progress-chronology": "domain/src/main/kotlin/ru/forma/domain/WeeklyPlanProgress.kt",
     "backup-pr15": "domain/src/main/kotlin/ru/forma/domain/Backup.kt",
 }
 
