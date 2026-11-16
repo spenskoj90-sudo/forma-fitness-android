@@ -65,6 +65,71 @@ fun originalVolumeTriangles(scene: OriginalVolumeScene): VolumeTriangles {
    triangle(link.b,a1,b1,rgb)
   }
  }
+ // Authored volume-reconstruction layer, separate from the exercise's
+ // motion rig. Five elliptical cross-sections make a chest/waist/pelvis
+ // silhouette instead of a uniform stick. The original joints, depth and
+ // exact exercise/equipment trajectory remain untouched and unreviewed.
+ if(scene.links.size>=10 && scene.joints.size>=3 &&
+    scene.links[1].tone==VolumeTone.TORSO) {
+  val shoulder=scene.links[1].a
+  val hip=scene.links[1].b
+  val direction=(hip-shoulder).unit()
+  // All authored body rigs currently have sagittal XY poses and bilateral Z.
+  val side=VolumePoint(0f,0f,1f)
+  val depth=direction.cross(side).unit()
+  val bodyColor=floatArrayOf(0.57f,0.68f,0.72f)
+  // Fraction along shoulder->hip, lateral half-width and sagittal half-depth.
+  // This is a stylized neutral body, NOT a measured body scan.
+  val sections=listOf(
+   Triple(0f,0.57f,0.39f),
+   Triple(0.18f,0.72f,0.53f),
+   Triple(0.52f,0.58f,0.41f),
+   Triple(0.78f,0.53f,0.37f),
+   Triple(1f,0.61f,0.43f)
+  )
+  val sides=16
+  fun pos(section:Triple<Float,Float,Float>,i:Int):VolumePoint {
+   val theta=2.0*PI*i/sides
+   return shoulder+(hip-shoulder)*section.first+
+    side*(cos(theta).toFloat()*section.second)+
+    depth*(sin(theta).toFloat()*section.third)
+  }
+  fun normal(section:Triple<Float,Float,Float>,i:Int):VolumePoint {
+   val theta=2.0*PI*i/sides
+   return (side*(cos(theta).toFloat()/section.second)+
+    depth*(sin(theta).toFloat()/section.third)).unit()
+  }
+  fun emit(p:VolumePoint,n:VolumePoint) {
+   put(p.x);put(p.y);put(p.z)
+   put(n.x);put(n.y);put(n.z)
+   put(bodyColor[0]);put(bodyColor[1]);put(bodyColor[2])
+  }
+  fun face(a:VolumePoint,an:VolumePoint,b:VolumePoint,bn:VolumePoint,
+           c:VolumePoint,cn:VolumePoint) {
+   val cross=(b-a).cross(c-a)
+   val normalSum=an+bn+cn
+   val outward=cross.x*normalSum.x+cross.y*normalSum.y+cross.z*normalSum.z
+   if(outward>=0f) {
+    emit(a,an);emit(b,bn);emit(c,cn)
+   } else {
+    emit(a,an);emit(c,cn);emit(b,bn)
+   }
+  }
+  for(level in 0 until sections.size-1)for(i in 0 until sides) {
+   val lower=sections[level]
+   val upper=sections[level+1]
+   val a=pos(lower,i)
+   val b=pos(upper,i)
+   val c=pos(lower,i+1)
+   val d=pos(upper,i+1)
+   val an=normal(lower,i)
+   val bn=normal(upper,i)
+   val cn=normal(lower,i+1)
+   val dn=normal(upper,i+1)
+   face(a,an,b,bn,c,cn)
+   face(c,cn,b,bn,d,dn)
+  }
+ }
  // Spherical nodes give joints and head a genuinely volumetric silhouette.
  for(joint in scene.joints) {
   val rgb=color(joint.tone)
