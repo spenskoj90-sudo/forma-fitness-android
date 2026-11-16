@@ -5,7 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 revision="${1:?exact checkout SHA required}"
 output="${2:?checkpoint directory required}"
 package="${3:?reviewed package required}"
-case "$package" in smoke|backup-replay|workout-date) ;; *) exit 2 ;; esac
+case "$package" in smoke|backup-replay|workout-date|progress-chronology) ;; *) exit 2 ;; esac
 shift 3
 [[ "$revision" == "$(git -C "$script_dir" rev-parse HEAD)" ]]
 git -C "$script_dir" diff --quiet "$revision" -- .

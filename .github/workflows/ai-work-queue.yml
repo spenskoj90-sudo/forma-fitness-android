@@ -17,7 +17,7 @@ on:
       package:
         description: Reviewed work package
         type: choice
-        options: [smoke, backup-replay, workout-date]
+        options: [smoke, backup-replay, workout-date, progress-chronology]
         default: backup-replay
         required: true
       expected_sha:
@@ -89,7 +89,7 @@ jobs:
         run: |
           test "$GITHUB_REF" = refs/heads/main
           test "$EXPECTED_SHA" = "$GITHUB_SHA"
-          case "$PACKAGE" in smoke|backup-replay|workout-date) ;; *) exit 2 ;; esac
+          case "$PACKAGE" in smoke|backup-replay|workout-date|progress-chronology) ;; *) exit 2 ;; esac
           case "$BATCH" in all|one-attempt) ;; *) exit 2 ;; esac
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -108,7 +108,7 @@ jobs:
             --revision "$EXPECTED_SHA" \
             --prs "$RUNNER_TEMP/forma-open-prs.json" \
             --output "$RUNNER_TEMP/forma-scheduled-plan.json"
-          package="$(jq -er '.package | select(. == "smoke" or . == "backup-replay" or . == "workout-date")' "$RUNNER_TEMP/forma-scheduled-plan.json")"
+          package="$(jq -er '.package | select(. == "smoke" or . == "backup-replay" or . == "workout-date" or . == "progress-chronology")' "$RUNNER_TEMP/forma-scheduled-plan.json")"
           echo "PACKAGE=$package" >> "$GITHUB_ENV"
           {
             echo '## Scheduled work selection'

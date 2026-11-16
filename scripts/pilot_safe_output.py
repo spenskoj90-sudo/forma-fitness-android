@@ -16,9 +16,11 @@ import tempfile
 SOURCES = {
     "workout-date": ("workout-date", "domain/src/main/kotlin/ru/forma/domain/Session.kt"),
     "backup-replay": ("backup-pr15", "domain/src/main/kotlin/ru/forma/domain/Backup.kt"),
+    "progress-chronology": ("progress-chronology", "domain/src/main/kotlin/ru/forma/domain/WeeklyPlanProgress.kt"),
 }
 PLANS = {
     "workout-date": {"workout-date": []},
+    "progress-chronology": {"progress-chronology": []},
     "backup-replay": {
         "backup-pr15": [], "clamp": [], "clamp-followup": ["clamp"],
     },

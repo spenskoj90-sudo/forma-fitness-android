@@ -17,6 +17,7 @@ TASK_PATHS = {
     "clamp": "bounds.py",
     "clamp-followup": "followup_bounds.py",
     "workout-date": "domain/src/main/kotlin/ru/forma/domain/Session.kt",
+    "progress-chronology": "domain/src/main/kotlin/ru/forma/domain/WeeklyPlanProgress.kt",
     "backup-pr15": "domain/src/main/kotlin/ru/forma/domain/Backup.kt",
 }
 
@@ -66,7 +67,7 @@ class ScheduleEvidenceTests(unittest.TestCase):
         self.assertEqual(len(result["patch_sha256"]), 2)
 
     def test_reviewed_product_package_preserves_provenance_limit(self):
-        for package in ("workout-date", "backup-replay"):
+        for package in ("workout-date", "backup-replay", "progress-chronology"):
             with self.subTest(package=package):
                 result = self.evidence(package)
                 self.assertEqual(result["task_type"], "reviewed-product-package")
