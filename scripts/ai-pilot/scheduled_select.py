@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-from queue_tasks import BACKUP, ORIGINAL, SESSION, WORKOUT_DATE
+from queue_tasks import BACKUP, ORIGINAL, SESSION, WORKOUT_DATE, PROGRESS, PROGRESS_FILTER
 
 
 # All entries are reviewed source-controlled packages. Their task identities and
@@ -24,6 +24,8 @@ ALLOWED = (
     ("backup-replay", "forma-backup-completed-sets-v1", BACKUP, ORIGINAL,
      frozenset({15}), frozenset({"forma/backup-completed-sets-20261112",
                                "pilot/task-forma-backup-completed-sets-v1"})),
+    ("progress-chronology", "forma-progress-chronology-v1", PROGRESS, PROGRESS_FILTER,
+     frozenset(), frozenset({"pilot/task-forma-progress-chronology-v1"})),
 )
 
 
