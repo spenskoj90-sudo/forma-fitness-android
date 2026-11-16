@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import patch
 
 from scheduled_select import ScheduleError, choose_package
-from queue_tasks import BACKUP, ORIGINAL, SESSION, WORKOUT_DATE
+from queue_tasks import BACKUP, ORIGINAL, SESSION, WORKOUT_DATE, PROGRESS, PROGRESS_FILTER
 
 SHA = "a" * 40
 
 
 class ScheduledSelectionTest(unittest.TestCase):
     def choose(self, prs, sources=None):
-        sources = sources if sources is not None else {SESSION: WORKOUT_DATE, BACKUP: ORIGINAL}
+        sources = sources if sources is not None else {SESSION: WORKOUT_DATE, BACKUP: ORIGINAL, PROGRESS: PROGRESS_FILTER}
 
         def git_show(args, **kwargs):
             key = args[-1].split(":", 1)[1]
@@ -31,12 +31,27 @@ class ScheduledSelectionTest(unittest.TestCase):
         self.assertIn("unclaimed reviewed task", reason)
         self.assertEqual(calls, 1)
 
-    def test_both_preapproved_tasks_occupied_fall_back_to_smoke(self):
+    def test_occupied_legacy_tasks_allow_distinct_chronology_task(self):
         (name, reason), calls = self.choose([
             {"number": 21, "state": "open"}, {"number": 15, "state": "open"}])
+        self.assertEqual(name, "progress-chronology")
+        self.assertIn("forma-progress-chronology-v1", reason)
+        self.assertEqual(calls, 1)
+
+    def test_occupied_new_task_falls_back_to_smoke(self):
+        (name, reason), calls = self.choose([
+            {"number": 21, "state": "open"}, {"number": 15, "state": "open"},
+            {"number": 77, "state": "open", "head_ref": "pilot/task-forma-progress-chronology-v1"}])
         self.assertEqual(name, "smoke")
         self.assertIn("occupied", reason)
         self.assertEqual(calls, 0)
+
+    def test_changed_chronology_source_marker_falls_back_to_smoke(self):
+        sources = {SESSION: WORKOUT_DATE, BACKUP: ORIGINAL, PROGRESS: "already fixed"}
+        (name, reason), calls = self.choose([
+            {"number": 21, "state": "open"}, {"number": 15, "state": "open"}], sources)
+        self.assertEqual(name, "smoke")
+        self.assertEqual(calls, 1)
 
     def test_unrelated_open_pr_does_not_block(self):
         self.assertEqual(self.choose([{"number": 13, "state": "open"}])[0][0],
