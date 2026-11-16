@@ -22,6 +22,35 @@ class OriginalVolumeTrianglesTest {
    }
   }
  }
+ @Test fun authoredTorsoHasSmoothOutwardNormalsAndRealChestWaistDepth() {
+  // Uses only the already-authored joint path; the mesh adds no pose claim.
+  val squat=exerciseCatalog.first{it.id=="squat"}
+  for(phase in listOf(0f,0.5f,1f)) {
+   val scene=originalVolumeAt(squat,phase)!!
+   val shoulder=scene.links[1].a
+   val axis=(scene.links[1].b-shoulder).unit()
+   val vertices=originalVolumeTriangles(scene).vertices
+   var loftVertices=0
+   var minZ=Float.POSITIVE_INFINITY
+   var maxZ=Float.NEGATIVE_INFINITY
+   for(i in vertices.indices step 9) {
+    if(abs(vertices[i+6]-0.57f)>0.0001f)continue
+    loftVertices++
+    val p=VolumePoint(vertices[i],vertices[i+1],vertices[i+2])
+    val n=VolumePoint(vertices[i+3],vertices[i+4],vertices[i+5])
+    val rel=p-shoulder
+    val along=rel.x*axis.x+rel.y*axis.y+rel.z*axis.z
+    val radial=rel-axis*along
+    assertTrue("Torso must not have inward surface normals",
+     radial.x*n.x+radial.y*n.y+radial.z*n.z>0.15f)
+    assertTrue("Torso normals must be near unit length",abs(n.length()-1f)<0.01f)
+    minZ=minOf(minZ,p.z)
+    maxZ=maxOf(maxZ,p.z)
+   }
+   assertTrue("Missing authored multi-section torso volume",loftVertices>=380)
+   assertTrue("Chest must be volumetric across bilateral Z",maxZ-minZ>1.35f)
+  }
+ }
  @Test fun tubeRadiusChangesGeometryInAllThreeAxes() {
   val p=VolumePoint(0f,0f,0f)
   val scene=OriginalVolumeScene("fixture",Equipment.BODYWEIGHT,
