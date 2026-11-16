@@ -7,10 +7,48 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import ru.forma.domain.*
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 class StorageTest {
+ @Test fun visualPreferencesToggleAtomicallyAndPreserveUnrelatedSettings():Unit=runBlocking {
+  val settings=SettingsRepository(RuntimeEnvironment.getApplication())
+  val before=settings.settings.first()
+  settings.toggleHighContrast()
+  assertEquals(!before.highContrast,settings.settings.first().highContrast)
+  settings.toggleHighContrast()
+  settings.toggleReducedMotion()
+  settings.toggleReducedMotion()
+  settings.toggleSimplifiedEffects()
+  settings.toggleSimplifiedEffects()
+  val after=settings.settings.first()
+  assertEquals(before.highContrast,after.highContrast)
+  assertEquals(before.reducedMotion,after.reducedMotion)
+  assertEquals(before.simplifiedEffects,after.simplifiedEffects)
+  assertEquals(before.selected,after.selected)
+  assertEquals(before.voice,after.voice)
+  assertEquals(before.dark,after.dark)
+ }
+ @Test fun repeatedAudioTapsUseSerializedDatastoreValueAndLeaveOtherSettingsAlone():Unit=runBlocking {
+  val settings=SettingsRepository(RuntimeEnvironment.getApplication())
+  val initial=settings.settings.first()
+  settings.toggleVoice()
+  assertEquals(!initial.voice,settings.settings.first().voice)
+  settings.toggleVoice()
+  assertEquals(initial.voice,settings.settings.first().voice)
+  settings.toggleSound()
+  settings.toggleSound()
+  settings.toggleMetronome()
+  settings.toggleMetronome()
+  val after=settings.settings.first()
+  assertEquals(initial.voice,after.voice)
+  assertEquals(initial.sound,after.sound)
+  assertEquals(initial.metronome,after.metronome)
+  assertEquals(initial.selected,after.selected)
+  assertEquals(initial.dark,after.dark)
+ }
+
  @Test fun legacyV1DatabasePreservesHistoryMeasurementsAndPausedWorkout():Unit=runBlocking {
   val ctx=RuntimeEnvironment.getApplication()
   val name="forma-legacy-v1-compatibility.db"
@@ -44,15 +82,22 @@ class StorageTest {
    legacy.version=1
   } finally { legacy.close() }
 
-  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).addMigrations(MIGRATION_1_2).build()
   try {
    var repo=ProfileRepository(db)
+   // The real v1 SQLite file migrates through Room's v2 schema validation.
+   // Initial outbox/bindings must be empty, and legacy JSON bytes untouched.
+   assertEquals(0,db.sync().totalRows())
+   assertNull(db.sync().binding(original.id))
+   assertNull(db.sync().binding(second.id))
+   assertEquals(kotlinx.serialization.json.Json.encodeToString(
+    ru.forma.domain.Profile.serializer(),original),db.profiles().get(original.id)!!.document)
    assertEquals(original,repo.load(original.id))
    assertEquals(second,repo.load(second.id))
    repo.mutate(original.id){it.copy(weightKg=83.0)}
    assertEquals(second,repo.load(second.id))
    db.close()
-   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).build()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name).addMigrations(MIGRATION_1_2).build()
    repo=ProfileRepository(db)
    assertEquals(original.history,repo.load(original.id)!!.history)
    assertEquals(original.measurements,repo.load(original.id)!!.measurements)

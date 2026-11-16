@@ -2,6 +2,8 @@ package ru.forma.app
 import android.app.Application
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.*
@@ -19,13 +21,59 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
-@Database(entities=[ProfileRow::class],version=1,exportSchema=true) abstract class FormaDatabase:RoomDatabase() {abstract fun profiles():ProfileDao}
+// Add-only schema migration: never rewrite the v1 profiles table or its JSON.
+val MIGRATION_1_2=object:Migration(1,2){
+ override fun migrate(db:SupportSQLiteDatabase){
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_bindings (profileId TEXT NOT NULL, accountUid TEXT NOT NULL, consentAtMs INTEGER NOT NULL, PRIMARY KEY(profileId))")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_bindings_accountUid ON sync_bindings (accountUid)")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_outbox (opId TEXT NOT NULL, accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, revision INTEGER NOT NULL, snapshot TEXT NOT NULL, state TEXT NOT NULL, tombstone INTEGER NOT NULL, createdAtMs INTEGER NOT NULL, PRIMARY KEY(opId))")
+  db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sync_outbox_accountUid_profileId_kind_recordId_revision ON sync_outbox (accountUid,profileId,kind,recordId,revision)")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_state ON sync_outbox (state)")
+ }
+}
+@Database(entities=[ProfileRow::class,SyncBindingRow::class,SyncOutboxRow::class],version=2,exportSchema=true)
+abstract class FormaDatabase:RoomDatabase(){
+ abstract fun profiles():ProfileDao
+ abstract fun sync():SyncOutboxDao
+}
 class ProfileRepository(private val db:FormaDatabase) {
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
  val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
  suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
  suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
+ /**
+  * Local persistence primitive for a future Firebase-verified, explicitly
+  * consented profile binding. NO production Auth/consent caller exists yet.
+  * Binding plus the complete existing snapshot commit atomically: a crash
+  * cannot leave a bound historical profile with an empty initial outbox.
+  * Repeated consent for the same UID is idempotent; rehoming to another UID
+  * is forbidden until a separately reviewed ownership/recovery flow exists.
+  */
+ internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
+  profileId:String,identity:VerifiedSyncIdentity,consentAtMs:Long
+ ) {
+  // A user-entered or stored UID is never authority to bind personal history.
+  // A verified Auth lease must be the same before and after this transaction.
+  require(consentAtMs>0){"Explicit consent is required"}
+  val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}
+   ?:error("A verified account session is required")
+  db.withTransaction {
+   require(identity.currentLease()==lease){"Account session changed during consent"}
+   val profile=load(profileId)?:error("Profile missing")
+   val prior=db.sync().binding(profileId)
+   if(prior!=null){
+    require(prior.accountUid==lease.uid){"Local profile is already bound to a different account"}
+    require(identity.currentLease()==lease){"Account session changed during consent"}
+    return@withTransaction
+   }
+   db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,lease.uid,consentAtMs))
+   enqueueBoundChanges(db,null,profile,json)
+   // Roll back binding and all initial historical rows if sign-out,
+   // account switch or generation change occurs while queuing.
+   require(identity.currentLease()==lease){"Account session changed during consent"}
+  }
+ }
  suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
@@ -67,20 +115,36 @@ class ProfileRepository(private val db:FormaDatabase) {
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }
- private suspend fun put(p:Profile)=db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
+ // All put() call sites run inside db.withTransaction. The local write and
+ // any opted-in outbox events commit together, or both are rolled back.
+ private suspend fun put(p:Profile){
+  val before=db.profiles().get(p.id)?.let(::decode)
+  db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
+  enqueueBoundChanges(db,before,p,json)
+ }
  suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());if(next!=old)put(next)}
 }
 private val Context.store by preferencesDataStore(name="forma_preferences")
-data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME)
+data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME,val highContrast:Boolean=false,val reducedMotion:Boolean=false,val simplifiedEffects:Boolean=false)
 class SettingsRepository(private val context:Context) {
  private val volume=intPreferencesKey("volume");private val bpm=intPreferencesKey("bpm");private val rate=floatPreferencesKey("speech_rate")
  private val selected=stringPreferencesKey("selected");private val voice=booleanPreferencesKey("voice");private val sound=booleanPreferencesKey("sound");private val metronome=booleanPreferencesKey("metronome");private val theme=stringPreferencesKey("theme");private val placeKey=stringPreferencesKey("training_place")
- val settings=context.store.data.map{Preferences(it[selected].orEmpty(),it[voice]?:true,it[sound]?:true,it[metronome]?:false,when(it[theme]){"dark"->true;"light"->false;"system"->null;else->true},(it[volume]?:65).coerceIn(0,100),(it[bpm]?:60).coerceIn(40,180),(it[rate]?:1f).coerceIn(0.7f,1.3f),TrainingPlace.entries.firstOrNull{place->place.name==it[placeKey]}?:TrainingPlace.HOME)}
+ private val highContrastKey=booleanPreferencesKey("high_contrast");private val reducedMotionKey=booleanPreferencesKey("reduced_motion");private val simplifiedEffectsKey=booleanPreferencesKey("simplified_effects")
+ val settings=context.store.data.map{Preferences(it[selected].orEmpty(),it[voice]?:true,it[sound]?:true,it[metronome]?:false,when(it[theme]){"dark"->true;"light"->false;"system"->null;else->true},(it[volume]?:65).coerceIn(0,100),(it[bpm]?:60).coerceIn(40,180),(it[rate]?:1f).coerceIn(0.7f,1.3f),TrainingPlace.entries.firstOrNull{place->place.name==it[placeKey]}?:TrainingPlace.HOME,it[highContrastKey]?:false,it[reducedMotionKey]?:false,it[simplifiedEffectsKey]?:false)}
  suspend fun select(id:String){context.store.edit{it[selected]=id}}
  suspend fun audio(v:Boolean,s:Boolean,m:Boolean){context.store.edit{it[voice]=v;it[sound]=s;it[metronome]=m}}
+ // A user can tap twice before Compose receives a new DataStore snapshot.
+ // Toggle inside the serialized edit, never from a potentially stale UI value.
+ suspend fun toggleVoice(){context.store.edit{it[voice]=!(it[voice]?:true)}}
+ suspend fun toggleSound(){context.store.edit{it[sound]=!(it[sound]?:true)}}
+ suspend fun toggleMetronome(){context.store.edit{it[metronome]=!(it[metronome]?:false)}}
  suspend fun coach(v:Int,b:Int,r:Float){require(v in 0..100 && b in 40..180 && r.isFinite() && r in 0.7f..1.3f);context.store.edit{it[volume]=v;it[bpm]=b;it[rate]=r}}
  suspend fun dark(v:Boolean?){context.store.edit{it[theme]=when(v){true->"dark";false->"light";null->"system"}}}
  suspend fun trainingPlace(place:TrainingPlace){context.store.edit{it[placeKey]=place.name}}
+ // Repeat gestures are serialized against committed DataStore values, not a stale Compose snapshot.
+ suspend fun toggleHighContrast(){context.store.edit{it[highContrastKey]=!(it[highContrastKey]?:false)}}
+ suspend fun toggleReducedMotion(){context.store.edit{it[reducedMotionKey]=!(it[reducedMotionKey]?:false)}}
+ suspend fun toggleSimplifiedEffects(){context.store.edit{it[simplifiedEffectsKey]=!(it[simplifiedEffectsKey]?:false)}}
 }
 class FormaApp:Application(){
  @Volatile var serviceRunning=false
@@ -95,7 +159,7 @@ class FormaApp:Application(){
  val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
- val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").build()}
+ val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
  val repository by lazy{ProfileRepository(database)}
  val settings by lazy{SettingsRepository(this)}
 }

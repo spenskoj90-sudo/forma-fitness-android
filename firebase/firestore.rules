@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This is the F4 *client* contract, never an Admin SDK authorization rule.
+    // All identity is request.auth.uid, NEVER an owner ID supplied by a client.
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function stableId(id) {
+      return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$');
+    }
+    function envelopeFields() {
+      return ['ownerUid', 'profileId', 'id', 'schemaVersion', 'revision',
+              'opId', 'createdAt', 'updatedAt', 'deleted', 'payload'];
+    }
+    function validEnvelope(d, uid, profileId, docId) {
+      return d.keys().hasAll(envelopeFields()) &&
+        d.keys().hasOnly(envelopeFields()) &&
+        stableId(profileId) && stableId(docId) &&
+        d.ownerUid == uid && d.profileId == profileId && d.id == docId &&
+        d.schemaVersion == 1 &&
+        d.revision is int && d.revision >= 1 && d.revision <= 2147483646 &&
+        stableId(d.opId) &&
+        d.createdAt is timestamp && d.updatedAt is timestamp &&
+        d.deleted is bool && d.payload is map;
+    }
+    function validCreate(uid, profileId, docId) {
+      return validEnvelope(request.resource.data, uid, profileId, docId) &&
+        request.resource.data.revision == 1 &&
+        request.resource.data.deleted == false &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+    }
+    function validUpdate(uid, profileId, docId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return validEnvelope(before, uid, profileId, docId) &&
+        validEnvelope(after, uid, profileId, docId) &&
+        before.deleted == false &&
+        after.createdAt == before.createdAt &&
+        after.revision == before.revision + 1 &&
+        after.opId != before.opId &&
+        after.updatedAt == request.time &&
+        after.diff(before).affectedKeys().hasOnly(
+          ['revision', 'opId', 'updatedAt', 'deleted', 'payload']);
+    }
+    function validReplay(uid, profileId, docId) {
+      // An identical retry is harmless. The client still must READ after
+      // a timed-out write before deciding whether to increase revision.
+      return validEnvelope(resource.data, uid, profileId, docId) &&
+        request.resource.data == resource.data;
+    }
+    function parentActive(uid, profileId) {
+      return exists(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)) &&
+        get(/databases/$(database)/documents/accounts/$(uid)/profiles/$(profileId)).data.deleted == false;
+    }
+    function goalCodes() {
+      return ['MUSCLE', 'STRENGTH', 'ENDURANCE', 'FITNESS', 'FAT_LOSS'];
+    }
+    function validProfile(p) {
+      // Match CloudProfilePayload, not an arbitrary Firebase-authenticated map.
+      // Local Room-only history and active workout never enter this document.
+      let fields = ['name', 'age', 'heightCm', 'weightKg', 'experience',
+                    'equipment', 'limitations', 'primary', 'secondary',
+                    'priorities', 'days', 'recovery'];
+      return p.keys().hasAll(fields) && p.keys().hasOnly(fields) &&
+        p.name is string && p.name.size() > 0 && p.name.size() <= 80 &&
+        p.age is int && p.age >= 18 && p.age <= 100 &&
+        p.heightCm is number && p.heightCm >= 100 && p.heightCm <= 240 &&
+        p.weightKg is number && p.weightKg >= 30 && p.weightKg <= 300 &&
+        p.experience in ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'] &&
+        p.equipment is list && p.equipment.size() <= 15 &&
+        p.equipment.hasOnly(['BODYWEIGHT', 'DUMBBELL', 'BARBELL',
+          'KETTLEBELL', 'RESISTANCE_BAND', 'PULL_UP_BAR', 'MAT', 'BENCH',
+          'CABLE_MACHINE', 'LAT_PULLDOWN', 'LEG_PRESS_MACHINE',
+          'CHEST_PRESS_MACHINE', 'SEATED_ROW_MACHINE', 'LEG_CURL_MACHINE',
+          'SMITH_MACHINE']) &&
+        p.equipment.toSet().size() == p.equipment.size() &&
+        p.limitations is string && p.limitations.size() <= 2000 &&
+        p.primary in goalCodes() &&
+        (p.secondary == null || p.secondary in goalCodes()) &&
+        p.priorities is list && p.priorities.size() <= 6 &&
+        p.priorities.hasOnly(['LEGS', 'BACK', 'CHEST', 'SHOULDERS', 'ARMS', 'CORE']) &&
+        p.priorities.toSet().size() == p.priorities.size() &&
+        p.days is list && p.days.size() <= 7 &&
+        p.days.hasOnly([1, 2, 3, 4, 5, 6, 7]) &&
+        p.days.toSet().size() == p.days.size() &&
+        p.recovery is int && p.recovery >= 1 && p.recovery <= 5;
+    }
+    function validMetric(m, k, minValue, maxValue) {
+      return !m.keys().hasAny([k]) ||
+        (m[k] is number && m[k] > 0 && m[k] >= minValue && m[k] <= maxValue);
+    }
+    function validMeasurement(p) {
+      return p.keys().hasAll(['dateMs', 'values']) &&
+        p.keys().hasOnly(['dateMs', 'values']) &&
+        p.dateMs is int && p.dateMs >= 0 &&
+        p.get('values', {}) is map &&
+        p.get('values', {}).keys().size() > 0 &&
+        p.get('values', {}).keys().hasOnly(
+          ['weight', 'height', 'chest', 'waist', 'hips', 'shoulders',
+           'biceps', 'forearms', 'neck', 'calves']) &&
+        validMetric(p.values, 'weight', 30, 300) &&
+        validMetric(p.values, 'height', 100, 240) &&
+        validMetric(p.values, 'chest', 0, 300) &&
+        validMetric(p.values, 'waist', 0, 300) &&
+        validMetric(p.values, 'hips', 0, 300) &&
+        validMetric(p.values, 'shoulders', 0, 300) &&
+        validMetric(p.values, 'biceps', 0, 300) &&
+        validMetric(p.values, 'forearms', 0, 300) &&
+        validMetric(p.values, 'neck', 0, 300) &&
+        validMetric(p.values, 'calves', 0, 300);
+    }
+    function validWorkoutDay(d) {
+      // Kotlin TrainingDay is embedded in CloudWorkoutPayload; reject
+      // arbitrary nested extra fields and non-day values before upload.
+      let fields = ['day', 'name', 'exercises', 'cardio',
+                    'durationSec', 'intervals', 'explanation'];
+      return d is map && d.keys().hasAll(fields) &&
+        d.keys().hasOnly(fields) &&
+        d.day is int && d.day >= 1 && d.day <= 7 &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 200 &&
+        d.exercises is list && d.exercises.size() <= 20 &&
+        (d.cardio == null || d.cardio in ['WALK', 'BRISK', 'JOG', 'INTERVAL']) &&
+        (d.cardio != null || d.exercises.size() > 0) &&
+        d.durationSec is int && d.durationSec >= 60 && d.durationSec <= 7200 &&
+        d.intervals is list && d.intervals.size() >= 2 &&
+        d.intervals.size() <= 20 &&
+        d.explanation is string && d.explanation.size() <= 4000;
+    }
+    function validWorkout(p) {
+      // Only finalized or explicitly stopped workouts can leave the device.
+      // Bound the saved session projection; live timer/active state stay local.
+      let fields = ['startedMs', 'finishedMs', 'status', 'sets',
+                    'day', 'activeSeconds', 'painReported'];
+      return p.keys().hasAll(fields) && p.keys().hasOnly(fields) &&
+        p.startedMs is int && p.startedMs >= 0 &&
+        p.finishedMs is int && p.finishedMs >= p.startedMs &&
+        p.status in ['DONE', 'STOPPED'] &&
+        p.sets is list && p.sets.size() <= 200 &&
+        validWorkoutDay(p.day) &&
+        p.activeSeconds is int && p.activeSeconds >= 0 &&
+        p.activeSeconds <= 86400 &&
+        p.painReported is bool;
+    }
+
+    match /accounts/{uid}/profiles/{profileId} {
+      allow get, list: if owner(uid);
+      allow create: if owner(uid) &&
+        validCreate(uid, profileId, profileId) &&
+        validProfile(request.resource.data.payload);
+      allow update: if owner(uid) &&
+        validProfile(request.resource.data.payload) &&
+        (validReplay(uid, profileId, profileId) ||
+         validUpdate(uid, profileId, profileId));
+      allow delete: if false; // revisioned tombstones, never hard deletes
+
+      match /measurements/{measurementId} {
+        allow get, list: if owner(uid);
+        allow create: if owner(uid) && parentActive(uid, profileId) &&
+          validCreate(uid, profileId, measurementId) &&
+          validMeasurement(request.resource.data.payload);
+        allow update: if owner(uid) && parentActive(uid, profileId) &&
+          validMeasurement(request.resource.data.payload) &&
+          (validReplay(uid, profileId, measurementId) ||
+           validUpdate(uid, profileId, measurementId));
+        allow delete: if false;
+      }
+      match /workouts/{workoutId} {
+        allow get, list: if owner(uid);
+        allow create: if owner(uid) && parentActive(uid, profileId) &&
+          validCreate(uid, profileId, workoutId) &&
+          validWorkout(request.resource.data.payload);
+        allow update: if owner(uid) && parentActive(uid, profileId) &&
+          validWorkout(request.resource.data.payload) &&
+          (validReplay(uid, profileId, workoutId) ||
+           validUpdate(uid, profileId, workoutId));
+        allow delete: if false;
+      }
+    }
+
+    // No unauthenticated/parent/other nested/collection-group access.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

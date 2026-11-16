@@ -1,0 +1,368 @@
+package ru.forma.app
+
+import androidx.room.Room
+import kotlinx.coroutines.runBlocking
+import org.junit.Test
+import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import ru.forma.domain.*
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk=[28])
+class SyncOutboxTest {
+ // A fixed synthetic lease is test evidence, NEVER a production Firebase login.
+ private fun fixtureIdentity(uid:String)=object:VerifiedSyncIdentity {
+  override suspend fun currentLease()=VerifiedSyncLease(uid,1L)
+ }
+ @Test fun guestAndBackupImportNeverAutoBindOrQueue():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="guest",name="Guest"))
+   repo.mutate("guest"){it.copy(weightKg=80.0)}
+   val imported=repo.importBackup(repo.exportBackup())
+   assertEquals(1,imported.size)
+   assertNull(db.sync().binding("guest"))
+   assertNull(db.sync().binding(imported.single()))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(80.0,repo.load("guest")!!.weightKg,0.0)
+  }finally{db.close()}
+ }
+ @Test fun syntheticConsentQueuesProfileAndFinishedWorkoutButNotActiveSession():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"))
+   // Fixture only. No real Auth/guest-consent pathway is active yet.
+   db.sync().bindForVerifiedConsent(SyncBindingRow("a","synthetic-uid-A",100))
+   repo.mutate("a"){it.copy(weightKg=80.0)}
+   val first=db.sync().pendingForAccount("synthetic-uid-A").single()
+   assertEquals("profile",first.kind)
+   assertEquals("a",first.profileId)
+   assertEquals("synthetic-uid-A",first.accountUid)
+   assertEquals(1,first.revision)
+   assertTrue(first.snapshot.contains("\"weightKg\":80.0"))
+   assertFalse(first.snapshot.contains("\"history\""))
+   assertFalse(first.snapshot.contains("\"measurements\""))
+   assertFalse(first.snapshot.contains("\"active\""))
+   repo.mutate("a"){it}
+   assertEquals(1,db.sync().pendingForAccount("synthetic-uid-A").size)
+   val p=repo.load("a")!!
+   val session=repo.start("a",generateProgram(p).first(),1000)
+   repo.mutateSession("a",session.id){pauseSession(it,1100)}
+   repo.mutateSession("a",session.id){stopSession(it,false,1200)}
+   assertEquals(1,db.sync().pendingForAccount("synthetic-uid-A").size)
+   repo.mutate("a"){finishSession(it,it.active!!,1300)}
+   val rows=db.sync().pendingForAccount("synthetic-uid-A")
+   assertEquals(2,rows.size)
+   val workout=rows.single{it.kind=="workout"}
+   assertEquals(session.id,workout.recordId)
+   assertEquals(1,workout.revision)
+   assertTrue(workout.snapshot.contains("\"status\":\"STOPPED\""))
+   assertNull(repo.load("a")!!.active)
+   assertEquals(1,repo.load("a")!!.history.size)
+   repo.mutate("a"){it.copy(weightKg=81.0)}
+   val revisions=db.sync().pendingForAccount("synthetic-uid-A").filter{it.kind=="profile"}.sortedBy{it.revision}
+   assertEquals(listOf(1,2),revisions.map{it.revision})
+   assertEquals(2,revisions.map{it.opId}.distinct().size)
+  }finally{db.close()}
+ }
+ @Test fun oneLocalProfileNeverQueuesIntoAnotherScope():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"));repo.saveProfile(Profile(id="b",name="B"))
+   db.sync().bindForVerifiedConsent(SyncBindingRow("a","uid-A",100))
+   repo.mutate("b"){it.copy(weightKg=92.0)}
+   assertTrue(db.sync().pendingForAccount("uid-A").isEmpty())
+   repo.mutate("a"){it.copy(weightKg=76.0)}
+   assertEquals(listOf("uid-A"),db.sync().pendingForAccount("uid-A").map{it.accountUid})
+   assertEquals(listOf("a"),db.sync().pendingForAccount("uid-A").map{it.profileId})
+   assertEquals(92.0,repo.load("b")!!.weightKg,0.0)
+  }finally{db.close()}
+ }
+ @Test fun outboxConstraintFailureRollsBackTheSameRoomProfileTransaction():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"))
+   db.sync().bindForVerifiedConsent(SyncBindingRow("a","uid-A",100))
+   val m=Measurement(id="duplicate-id",dateMs=1000L,values=mapOf("waist" to 80.0))
+   val err=runCatching{repo.mutate("a"){it.copy(measurements=listOf(m,m))}}
+   assertTrue(err.isFailure)
+   assertTrue(repo.load("a")!!.measurements.isEmpty())
+   assertEquals(0,db.sync().totalRows())
+  }finally{db.close()}
+ }
+ @Test fun editedMeasurementKeepsUuidAndBothOutboxRevisions():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"))
+   db.sync().bindForVerifiedConsent(SyncBindingRow("a","uid-A",100))
+   val m=Measurement(id="m-1",dateMs=1000L,values=mapOf("waist" to 80.0))
+   repo.mutate("a"){it.copy(measurements=listOf(m))}
+   repo.mutate("a"){it.copy(measurements=listOf(m.copy(values=mapOf("waist" to 81.0))))}
+   val rows=db.sync().pendingForAccount("uid-A").filter{it.kind=="measurement"}.sortedBy{it.revision}
+   assertEquals(listOf(1,2),rows.map{it.revision})
+   assertEquals(listOf("m-1","m-1"),rows.map{it.recordId})
+   assertTrue(rows.last().snapshot.contains("81.0"))
+   assertEquals(1,repo.load("a")!!.measurements.size)
+  }finally{db.close()}
+ }
+
+ @Test fun existingOfflineHistoryQueuesOnlyForItsConsentingUidAndNeverDuplicates():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val guest=Profile(id="offline-a",name="Alice",measurements=listOf(
+    Measurement(id="measure-a",dateMs=1000L,values=mapOf("weight" to 75.0))
+   ))
+   val stopped=stopSession(startSession(guest.id,generateProgram(guest).first(),1000L),false,1300L)
+   val historical=finishSession(guest,stopped,1400L)
+   repo.saveProfile(historical)
+   repo.saveProfile(Profile(id="offline-b",name="Bob"))
+   // Even a newly active session stays exclusively on the device.
+   val active=repo.start(guest.id,generateProgram(guest).first(),2000L)
+   assertNotNull(active)
+   assertEquals(0,db.sync().totalRows())
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-A"),3000L)
+   val initial=db.sync().pendingForAccount("uid-A")
+   assertEquals(3,initial.size)
+   assertEquals(setOf("profile","measurement","workout"),initial.map{it.kind}.toSet())
+   assertEquals(setOf("offline-a","measure-a",stopped.id),initial.map{it.recordId}.toSet())
+   assertTrue(initial.all{it.accountUid=="uid-A"&&it.profileId==guest.id&&it.revision==1})
+   assertTrue(initial.none{it.snapshot.contains("\"active\":")})
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   assertNull(db.sync().binding("offline-b"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-A"),3000L)
+   assertEquals(3,db.sync().totalRows())
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(guest.id,fixtureIdentity("uid-B"),4000L)
+   }.isFailure)
+   assertEquals("uid-A",db.sync().binding(guest.id)!!.accountUid)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b",fixtureIdentity("uid-B"),5000L)
+   assertEquals(3,db.sync().pendingForAccount("uid-A").size)
+   assertEquals(listOf("offline-b"),db.sync().pendingForAccount("uid-B").map{it.profileId})
+   assertEquals(historical.history,repo.load(guest.id)!!.history)
+  }finally{db.close()}
+ }
+
+ @Test fun consentedBacklogSurvivesReopenWithoutCrossAccountReplay():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-consented-outbox-restart-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+   .addMigrations(MIGRATION_1_2).build()
+  try {
+   var repo=ProfileRepository(db)
+   val a=Profile(id="offline-a",name="Alice",
+    measurements=listOf(Measurement(id="measure-a",dateMs=1000L,
+     values=mapOf("weight" to 75.0))))
+   repo.saveProfile(a)
+   repo.saveProfile(Profile(id="offline-b",name="Bob"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),3000L)
+   val original=db.sync().pendingForAccount("uid-A")
+   assertEquals(2,original.size)
+   assertEquals(setOf("profile","measurement"),original.map{it.kind}.toSet())
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   db.close()
+
+   // Simulates process death/account B signing in while A's work is pending.
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+    .addMigrations(MIGRATION_1_2).build()
+   repo=ProfileRepository(db)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   assertEquals("uid-A",db.sync().binding("offline-a")!!.accountUid)
+   assertNull(db.sync().binding("offline-b"))
+   assertEquals(a,repo.load("offline-a"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-b",fixtureIdentity("uid-B"),4000L)
+   val bRows=db.sync().pendingForAccount("uid-B")
+   assertEquals(1,bRows.size)
+   assertEquals("offline-b",bRows.single().profileId)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   // Retrying A consent after restart must not generate new revisions.
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline-a",fixtureIdentity("uid-A"),5000L)
+   assertEquals(original,db.sync().pendingForAccount("uid-A"))
+   assertEquals(3,db.sync().totalRows())
+  }finally{
+   db.close()
+   ctx.deleteDatabase(name)
+  }
+ }
+
+
+ @Test fun parentProfileIsAlwaysQueuedBeforeNestedRecords():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val guest=Profile(id="offline",name="Offline",
+    measurements=listOf(Measurement(id="m-1",dateMs=1000L,values=mapOf("waist" to 80.0))))
+   val stopped=stopSession(startSession(guest.id,generateProgram(guest).first(),1000L),false,1300L)
+   repo.saveProfile(finishSession(guest,stopped,1400L))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline",fixtureIdentity("uid-A"),2000L)
+   val pending=db.sync().pendingForAccount("uid-A")
+   assertEquals(listOf("profile","measurement","workout"),pending.map{it.kind})
+   assertEquals(pending.first(),db.sync().nextPendingForAccount("uid-A"))
+   assertNull(db.sync().nextPendingForAccount("uid-B"))
+  }finally{db.close()}
+ }
+
+ @Test fun remoteEchoAckRequiresExactUidOperationRevisionAndPayloadAcrossReopen():Unit=runBlocking {
+  val ctx=RuntimeEnvironment.getApplication()
+  val name="forma-exact-remote-ack-test.db"
+  ctx.deleteDatabase(name)
+  var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+   .addMigrations(MIGRATION_1_2).build()
+  try {
+   var repo=ProfileRepository(db)
+   repo.saveProfile(Profile(id="a",name="A"))
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent("a",fixtureIdentity("uid-A"),100L)
+   repo.mutate("a"){it.copy(weightKg=80.0)}
+   val rows=db.sync().pendingForAccount("uid-A")
+   assertEquals(listOf(1,2),rows.map{it.revision})
+   val first=rows.first()
+   suspend fun ack(row:SyncOutboxRow,uid:String="uid-A",opId:String=row.opId,
+    revision:Int=row.revision,snapshot:String=row.snapshot,tombstone:Boolean=row.tombstone)=
+    db.sync().acknowledgeExactRemoteEcho(
+     uid,opId,row.profileId,row.kind,row.recordId,revision,snapshot,tombstone)
+   assertEquals(0,ack(first,uid="uid-B"))
+   assertEquals(0,ack(first,opId="stale-or-forged"))
+   assertEquals(0,ack(first,revision=2))
+   assertEquals(0,ack(first,snapshot="different-remote-payload"))
+   assertEquals(0,ack(first,tombstone=true))
+   assertEquals(rows,db.sync().pendingForAccount("uid-A"))
+   assertEquals(1,ack(first))
+   assertEquals(0,ack(first))
+   assertEquals(listOf(rows[1]),db.sync().pendingForAccount("uid-A"))
+   assertEquals(rows[1],db.sync().nextPendingForAccount("uid-A"))
+   db.close()
+   db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
+    .addMigrations(MIGRATION_1_2).build()
+   repo=ProfileRepository(db)
+   assertEquals(2,db.sync().totalRows()) // ACK rows remain for stable revisions.
+   assertEquals(listOf(rows[1]),db.sync().pendingForAccount("uid-A"))
+   assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
+   assertEquals(1,ack(rows[1]))
+   assertNull(db.sync().nextPendingForAccount("uid-A"))
+   assertEquals(2,db.sync().latestRevision("uid-A","a","profile","a"))
+   repo.mutate("a"){it.copy(weightKg=81.0)}
+   assertEquals(listOf(3),db.sync().pendingForAccount("uid-A").map{it.revision})
+   assertEquals(3,db.sync().totalRows())
+  }finally{
+   db.close()
+   ctx.deleteDatabase(name)
+  }
+ }
+
+
+ @Test fun legacyPathIdsFailConsentWithoutMutatingOrLosingLocalHistory():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val legacy=Profile(id="legacy/profile",name="Historical")
+   repo.saveProfile(legacy) // Room supports this; Cloud Firestore path does not.
+   val other=Profile(id="safe-profile",name="Saved",
+    measurements=listOf(Measurement(id="metric/unsafe",dateMs=1000L,
+     values=mapOf("waist" to 80.0))))
+   repo.saveProfile(other)
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(legacy.id,fixtureIdentity("uid-A"),100L)
+   }.isFailure)
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(other.id,fixtureIdentity("uid-A"),200L)
+   }.isFailure)
+   assertNull(db.sync().binding(legacy.id))
+   assertNull(db.sync().binding(other.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(legacy,repo.load(legacy.id))
+   assertEquals(other,repo.load(other.id))
+   // A legacy profile is still usable locally and can be exported unchanged.
+   assertTrue(repo.exportBackup(legacy.id).contains(legacy.id))
+  }finally{db.close()}
+ }
+
+ @Test fun boundProfileRejectsUnsafeNewMeasurementIdAtomically():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val local=Profile(id="safe",name="Safe")
+   repo.saveProfile(local)
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(local.id,fixtureIdentity("uid-A"),300L)
+   val initial=db.sync().pendingForAccount("uid-A")
+   assertEquals(1,initial.size)
+   val unsafe=Measurement(id="not/a/cloud-id",dateMs=1000L,
+    values=mapOf("weight" to 75.0))
+   assertTrue(runCatching {
+    repo.mutate(local.id){it.copy(measurements=listOf(unsafe))}
+   }.isFailure)
+   assertEquals(local,repo.load(local.id))
+   assertEquals(initial,db.sync().pendingForAccount("uid-A"))
+   assertEquals(1,db.sync().totalRows())
+  }finally{db.close()}
+ }
+
+ @Test fun corruptOldHistoryCannotHalfBindAndPartialQueue():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val m=Measurement(id="duplicate",dateMs=1000L,values=mapOf("waist" to 80.0))
+   val corrupt=Profile(id="offline",name="Guest",measurements=listOf(m,m))
+   // Simulate legacy stored JSON that predates outbox UUID validation.
+   db.profiles().put(ProfileRow(corrupt.id,corrupt.name,
+    kotlinx.serialization.json.Json.encodeToString(Profile.serializer(),corrupt)))
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent("offline",fixtureIdentity("uid-A"),3000L)
+   }.isFailure)
+   assertNull(db.sync().binding("offline"))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(corrupt,repo.load("offline"))
+  }finally{db.close()}
+ }
+ @Test fun switchingVerifiedLeaseDuringInitialConsentRollsBackAllRows():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val existing=Profile(id="offline-a",name="Local")
+   repo.saveProfile(existing)
+   var reads=0
+   val changing=object:VerifiedSyncIdentity {
+    override suspend fun currentLease():VerifiedSyncLease {
+     reads++
+     return if(reads<3)VerifiedSyncLease("uid-A",1L)
+      else VerifiedSyncLease("uid-B",2L)
+    }
+   }
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(existing.id,changing,100L)
+   }.isFailure)
+   assertEquals(3,reads)
+   assertNull(db.sync().binding(existing.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(existing,repo.load(existing.id))
+  }finally{db.close()}
+ }
+
+ @Test fun missingVerifiedLeaseNeverGrantsConsent():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val existing=Profile(id="offline-a",name="Local")
+   repo.saveProfile(existing)
+   val signedOut=object:VerifiedSyncIdentity {
+    override suspend fun currentLease():VerifiedSyncLease?=null
+   }
+   assertTrue(runCatching{
+    repo.bindAndQueueInitialSnapshotForVerifiedConsent(existing.id,signedOut,100L)
+   }.isFailure)
+   assertNull(db.sync().binding(existing.id))
+   assertEquals(0,db.sync().totalRows())
+   assertEquals(existing,repo.load(existing.id))
+  }finally{db.close()}
+ }
+
+}
