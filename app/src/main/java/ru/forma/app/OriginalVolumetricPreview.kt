@@ -126,7 +126,7 @@ private class Original3DRenderer : GLSurfaceView.Renderer {
   val matrix=FloatArray(16)
   Matrix.perspectiveM(projection,0,45f,width.toFloat()/height,0.1f,100f)
   val angle=Math.toRadians(cameraAngle.toDouble())
-  Matrix.setLookAtM(view,0,(sin(angle)*22.0).toFloat(),7.6f,(cos(angle)*22.0).toFloat(),
+  Matrix.setLookAtM(view,0,(sin(angle)*19.0).toFloat(),7.2f,(cos(angle)*19.0).toFloat(),
    0f,5.0f,0f,0f,1f,0f)
   Matrix.multiplyMM(matrix,0,projection,0,view,0)
   GLES20.glUseProgram(program)
@@ -185,7 +185,7 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
    LaunchedEffect(visual.reducedMotion) {
     if(visual.reducedMotion){still=true;playing=false}
    }
-   var angle by rememberSaveable { mutableFloatStateOf(25f) }
+   var angle by rememberSaveable { mutableFloatStateOf(55f) }
    val phase=remember { Animatable(0f) }
    val scope=rememberCoroutineScope()
    val lifecycle=LocalLifecycleOwner.current
