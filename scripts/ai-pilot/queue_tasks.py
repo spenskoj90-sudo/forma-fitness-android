@@ -18,11 +18,13 @@ BACKUP = "domain/src/main/kotlin/ru/forma/domain/Backup.kt"
 ORIGINAL = "w.status!=Phase.DONE || w.day.cardio!=null || w.sets.size==w.day.exercises.sumOf{it.sets}"
 SESSION = "domain/src/main/kotlin/ru/forma/domain/Session.kt"
 WORKOUT_DATE = "Workout(s.id,s.day,s.startedMs,now,s.sets,"
+PROGRESS = "domain/src/main/kotlin/ru/forma/domain/WeeklyPlanProgress.kt"
+PROGRESS_FILTER = "it.status == Phase.DONE && it.finishedMs in fromInclusiveMs..toInclusiveMs"
 KOTLIN_WORDS = set(
     "prescriptions sets sumOf it groupBy groupingBy mapValues eachCount exercise id "
     "value values key prescription xs pair entry count size list group grouped".split()
 )
-KOTLIN_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9]*|[0-9]{1,3}L?|==|!=|&&|\|\||->|\?:|[.(){}:,<>+!_]")
+KOTLIN_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9]*|[0-9]{1,3}L?|==|!=|>=|<=|&&|\|\||->|\?:|[.(){}:,<>+!_]")
 
 
 def patch(before, after, path):
@@ -157,6 +159,41 @@ def workout_date_task(repo, revision, failure):
     return verify, brief
 
 
+
+def progress_chronology_task(repo, revision, failure):
+    try:
+        before = subprocess.check_output(
+            ["git", "show", f"{revision}:{PROGRESS}"],
+            cwd=repo, text=True, timeout=8)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        raise failure("base", "Exact progress source unavailable.") from None
+    if before.count(PROGRESS_FILTER) != 1:
+        raise failure("base", "Progress chronology marker changed or already fixed.")
+
+    def verify(candidate):
+        expr = kotlin_expression(candidate, failure, {"it", "finishedMs", "startedMs"})
+        replacement = (
+            "it.status == Phase.DONE && (" + expr + ") && "
+            "it.finishedMs in fromInclusiveMs..toInclusiveMs")
+        after = before.replace(PROGRESS_FILTER, replacement)
+        verify_domain(repo, revision, PROGRESS, after, "ProgressChronologyTest.kt",
+                      failure, "Reject a completed legacy record if finishedMs precedes startedMs; "
+                               "keep equal timestamps and later finishes valid.")
+        return patch(before, after, PROGRESS)
+
+    brief = (
+        "In FORMA's read-only planned-day progress counter, return one Kotlin Boolean "
+        "expression which is true exactly when a completed workout's finish timestamp "
+        "is NOT earlier than its start timestamp. Input is it: Workout. "
+        "Available properties: it.finishedMs and it.startedMs, both Long. "
+        "Equal timestamps are allowed. The surrounding filter already checks "
+        "Phase.DONE and the selected time window; do not repeat them. "
+        "Return only one expression, with no code block, comments or declarations. "
+        "Allowed identifiers: it, finishedMs, startedMs."
+    )
+    return verify, brief
+
+
 def synthetic_task(low, high, path, failure):
     before = f"def bounded(n):\n    return max({low}, n)\n"
 
@@ -181,6 +218,8 @@ def synthetic_task(low, high, path, failure):
 def make_tasks(repo, revision, package, task, failure):
     if package == "workout-date":
         return [domain_task(repo, revision, "workout-date", workout_date_task, task, failure)]
+    if package == "progress-chronology":
+        return [domain_task(repo, revision, "progress-chronology", progress_chronology_task, task, failure)]
     verify, brief = synthetic_task(0, 9, "bounds.py", failure)
     follow, follow_brief = synthetic_task(2, 7, "followup_bounds.py", failure)
     tasks = []
