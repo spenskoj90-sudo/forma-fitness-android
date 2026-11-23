@@ -65,6 +65,6 @@ fun skipStage(s:Session,now:Long):Session { val v=advanceTimed(s,now);if(v.phase
 private fun skipCredited(s:Session,now:Long)=when{ s.paused||s.terminal->s;s.phase==Phase.WARMUP->enterMain(s,now);s.phase==Phase.REST||s.phase==Phase.WORK->nextSet(s);s.phase==Phase.CARDIO->s.copy(phase=Phase.STOPPED,deadlineMs=0);else->s}
 fun finishSession(p:Profile,s:Session,now:Long):Profile{
  if(s.profileId!=p.id||!s.terminal)return p
- val history=if(p.history.any{it.id==s.id})p.history else p.history+Workout(s.id,s.day,s.startedMs,now,s.sets,if(s.phase==Phase.DONE)completionPhase(s) else s.phase,s.activeSeconds,s.painReported)
+ val history=if(p.history.any{it.id==s.id})p.history else p.history+Workout(s.id,s.day,s.startedMs,(maxOf(now, s.startedMs, s.sets.map { it.timeMs }.maxOrNull() ?: 0L)),s.sets,if(s.phase==Phase.DONE)completionPhase(s) else s.phase,s.activeSeconds,s.painReported)
  return p.copy(history=history,recovery=if(s.painReported)1 else p.recovery,active=if(p.active?.id==s.id)null else p.active)
 }
