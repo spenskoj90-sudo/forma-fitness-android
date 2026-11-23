@@ -26,7 +26,6 @@ internal fun AuthoredTechniqueWalkthrough(exercise: Exercise) {
  key(exercise.id, exercise.equipment) {
   // The optional 3-D preview is a source-only prototype until independent review.
   OriginalVolumetricPreview(exercise)
-  OriginalMotionDemo(exercise)
   var page by rememberSaveable { mutableIntStateOf(0) }
   val current = page.coerceIn(0, frames.lastIndex)
   ElevatedCard(Modifier.fillMaxWidth().testTag("authored-technique-card")) {

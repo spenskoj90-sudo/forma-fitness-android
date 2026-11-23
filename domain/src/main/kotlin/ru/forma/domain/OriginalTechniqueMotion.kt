@@ -1,5 +1,10 @@
 package ru.forma.domain
 
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+
 /**
  * FORMA's own 2-D teaching sketches. No extracted video frames, motion
  * tracking, third-party characters or media clips. A sketch visualizes a
@@ -13,13 +18,13 @@ enum class MotionKind {
  SQUAT, GOBLET_SQUAT, SMITH_SQUAT, WALL_PUSH, BIRD_DOG, PRONE_W, CALF, HINGE_ROW, FLOOR_PRESS, LATERAL_RAISE, CURL, BRIDGE, INCLINE_PUSH, DEAD_BUG, HINGE, OVERHEAD_PRESS, WALL_SLIDE, SELF_CURL, BAND_ROW, BAND_PRESS, TRICEPS_EXTENSION, KETTLEBELL_HINGE, SCAP_PULL, PLANK, STEP_UP, LAT_PULL, LEG_PRESS, SEATED_PRESS, SEATED_ROW, LEG_CURL
 }
 data class OriginalMotionSpec(
- val exerciseId: String, val equipment: Equipment, val kind: MotionKind,
- val view: String = "Условный вид сбоку"
+ val exerciseId: String, val equipment: Equipment, val kind: MotionKind
 )
 private fun pose(vararg p: Int): MotionPose {
  require(p.size == 14)
  return MotionPose(p.toList().chunked(2).map { MotionPoint(it[0].toFloat(), it[1].toFloat()) })
 }
+private val forearmPlank = pose(18, 72, 31, 80, 31, 107, 51, 107, 56, 88, 77, 96, 98, 103)
 private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  MotionKind.SQUAT to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 75, 60, 77, 66, 45, 78, 75, 86, 54, 105)),
  MotionKind.GOBLET_SQUAT to (pose(52, 22, 52, 38, 58, 49, 58, 46, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 67, 57, 65, 54, 45, 78, 75, 86, 54, 105)),
@@ -27,11 +32,11 @@ private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  // fixed rail X, while torso/hips lower; other squat variants are unchanged.
  MotionKind.SMITH_SQUAT to (pose(52, 22, 52, 38, 46, 51, 52, 38, 52, 69, 52, 86, 52, 105) to pose(65, 37, 52, 50, 54, 60, 52, 50, 45, 78, 75, 86, 54, 105)),
  MotionKind.WALL_PUSH to (pose(71, 22, 66, 39, 84, 44, 99, 42, 54, 68, 46, 88, 38, 106) to pose(82, 30, 75, 47, 88, 49, 99, 42, 54, 70, 46, 88, 38, 106)),
- MotionKind.BIRD_DOG to (pose(76, 48, 59, 61, 59, 82, 60, 96, 36, 64, 35, 90, 22, 103) to pose(78, 44, 57, 59, 77, 51, 99, 47, 36, 64, 28, 75, 9, 66)),
- MotionKind.PRONE_W to (pose(24, 86, 42, 86, 52, 81, 59, 79, 65, 92, 78, 95, 94, 101) to pose(24, 82, 42, 80, 54, 71, 64, 72, 65, 88, 78, 95, 94, 101)),
- MotionKind.CALF to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(52, 15, 52, 31, 47, 50, 44, 61, 52, 62, 52, 79, 52, 97)),
+ MotionKind.BIRD_DOG to (pose(76, 52, 59, 63, 59, 85, 60, 107, 36, 64, 35, 106, 22, 107) to pose(76, 52, 59, 63, 78, 55, 99, 55, 36, 64, 25, 63, 9, 63)),
+ MotionKind.PRONE_W to (pose(24, 98, 42, 103, 52, 104, 43, 104, 65, 104, 78, 104, 94, 106) to pose(24, 98, 42, 102, 52, 99, 43, 98, 65, 104, 78, 104, 94, 106)),
+ MotionKind.CALF to (pose(52, 22, 52, 38, 62, 54, 76, 51, 52, 69, 52, 86, 52, 105) to pose(53, 15, 53, 31, 62, 49, 76, 51, 53, 62, 53, 79, 53, 97)),
  MotionKind.HINGE_ROW to (pose(77, 40, 64, 48, 70, 65, 71, 87, 44, 67, 51, 86, 52, 105) to pose(77, 40, 64, 48, 62, 57, 59, 64, 44, 67, 51, 86, 52, 105)),
- MotionKind.FLOOR_PRESS to (pose(19, 88, 36, 87, 50, 72, 56, 51, 64, 90, 82, 79, 95, 105) to pose(19, 88, 36, 87, 52, 60, 57, 35, 64, 90, 82, 79, 95, 105)),
+ MotionKind.FLOOR_PRESS to (pose(19, 102, 36, 102, 40, 106, 40, 91, 64, 103, 82, 80, 95, 106) to pose(19, 102, 36, 102, 39, 87, 41, 72, 64, 103, 82, 80, 95, 106)),
  MotionKind.LATERAL_RAISE to (pose(52, 22, 52, 38, 48, 54, 45, 70, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 72, 42, 93, 41, 52, 69, 52, 86, 52, 105)),
  MotionKind.CURL to (pose(52, 22, 52, 38, 47, 57, 44, 71, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 50, 56, 59, 46, 52, 69, 52, 86, 52, 105)),
  MotionKind.BRIDGE to (pose(22, 91, 39, 89, 48, 93, 55, 97, 62, 94, 81, 79, 95, 103) to pose(22, 91, 39, 89, 48, 87, 55, 89, 62, 69, 81, 79, 95, 103)),
@@ -45,14 +50,14 @@ private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  MotionKind.BAND_PRESS to (pose(52, 22, 52, 38, 64, 53, 71, 56, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 77, 49, 101, 48, 52, 69, 52, 86, 52, 105)),
  MotionKind.TRICEPS_EXTENSION to (pose(52, 22, 52, 38, 56, 52, 66, 47, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 56, 53, 62, 75, 52, 69, 52, 86, 52, 105)),
  MotionKind.KETTLEBELL_HINGE to (pose(68, 35, 60, 45, 67, 65, 67, 80, 46, 68, 51, 86, 52, 105) to pose(52, 22, 52, 38, 47, 57, 49, 72, 52, 69, 52, 86, 52, 105)),
- MotionKind.SCAP_PULL to (pose(52, 30, 52, 44, 52, 28, 52, 13, 52, 69, 52, 86, 52, 106) to pose(52, 25, 52, 39, 52, 26, 52, 13, 52, 63, 52, 80, 52, 100)),
- MotionKind.PLANK to (pose(18, 53, 32, 61, 34, 80, 41, 94, 55, 64, 80, 78, 97, 102) to pose(18, 53, 32, 61, 34, 80, 41, 94, 55, 59, 80, 76, 97, 102)),
- MotionKind.STEP_UP to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(52, 15, 52, 31, 47, 50, 44, 61, 52, 61, 75, 75, 88, 85)),
+ MotionKind.SCAP_PULL to (pose(52, 30, 52, 44, 52, 28, 52, 13, 52, 69, 52, 86, 52, 106) to pose(52, 25, 52, 39, 52, 26, 52, 13, 52, 63, 57, 83, 52, 106)),
+ MotionKind.PLANK to (forearmPlank to forearmPlank),
+ MotionKind.STEP_UP to (pose(53, 36, 54, 50, 53, 67, 52, 82, 50, 78, 71, 75, 73, 87) to pose(73, 13, 73, 29, 70, 47, 69, 59, 73, 61, 73, 74, 73, 87)),
  MotionKind.LAT_PULL to (pose(52, 32, 52, 47, 65, 31, 77, 14, 52, 77, 52, 88, 52, 104) to pose(52, 32, 52, 47, 68, 49, 66, 57, 52, 77, 52, 88, 52, 104)),
- MotionKind.LEG_PRESS to (pose(20, 40, 35, 51, 43, 67, 44, 75, 50, 76, 75, 79, 96, 68) to pose(20, 40, 35, 51, 43, 67, 44, 75, 50, 76, 86, 67, 108, 52)),
- MotionKind.SEATED_PRESS to (pose(39, 29, 42, 44, 58, 56, 71, 55, 45, 76, 64, 83, 64, 104) to pose(39, 29, 42, 44, 78, 51, 102, 50, 45, 76, 64, 83, 64, 104)),
+ MotionKind.LEG_PRESS to (pose(20, 40, 35, 51, 43, 67, 44, 75, 50, 76, 69, 53, 87, 77) to pose(20, 40, 35, 51, 43, 67, 44, 75, 50, 76, 74, 58, 103, 64)),
+ MotionKind.SEATED_PRESS to (pose(39, 29, 42, 44, 58, 56, 71, 55, 45, 76, 64, 83, 64, 104) to pose(39, 29, 42, 44, 78, 51, 102, 55, 45, 76, 64, 83, 64, 104)),
  MotionKind.SEATED_ROW to (pose(39, 29, 42, 44, 73, 55, 97, 58, 45, 76, 64, 83, 64, 104) to pose(39, 29, 42, 44, 55, 53, 63, 62, 45, 76, 64, 83, 64, 104)),
- MotionKind.LEG_CURL to (pose(39, 29, 42, 44, 48, 60, 52, 68, 45, 76, 77, 78, 103, 88) to pose(39, 29, 42, 44, 48, 60, 52, 68, 45, 76, 77, 79, 68, 101)),
+ MotionKind.LEG_CURL to (pose(39, 29, 42, 44, 48, 60, 52, 68, 45, 76, 77, 72, 103, 82) to pose(39, 29, 42, 44, 48, 60, 52, 68, 45, 76, 77, 72, 68, 98)),
 )
 private val motionById: Map<String, OriginalMotionSpec> = mapOf(
  "squat" to OriginalMotionSpec("squat", Equipment.BODYWEIGHT, MotionKind.SQUAT),
@@ -107,6 +112,24 @@ fun originalMotionAt(spec: OriginalMotionSpec, fraction: Float): MotionPose {
  val t = fraction.coerceIn(0f, 1f)
  val coords = pair.first.joints.zip(pair.second.joints) { a, b ->
   MotionPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+ }.toMutableList()
+ if (spec.kind == MotionKind.LEG_PRESS) {
+  // Resolve the knee from hip and guided foot with fixed upper/lower segment lengths.
+  val hip = coords[4]
+  val ankle = coords[6]
+  val dx = ankle.x - hip.x
+  val dy = ankle.y - hip.y
+  val distance = sqrt(dx * dx + dy * dy)
+  val offset = sqrt(30f * 30f - distance * distance / 4f)
+  coords[5] = MotionPoint(hip.x + dx / 2f + dy / distance * offset,
+   hip.y + dy / 2f - dx / distance * offset)
+ }
+ if (spec.kind == MotionKind.LEG_CURL) {
+  // The seated machine rotates around a fixed knee, including between key poses.
+  val knee = coords[5]
+  val radians = (20f + 90f * t) * PI / 180.0
+  coords[6] = MotionPoint(knee.x + (28f * cos(radians)).toFloat(),
+   knee.y + (28f * sin(radians)).toFloat())
  }
  return MotionPose(coords)
 }

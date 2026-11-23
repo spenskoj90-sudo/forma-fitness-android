@@ -26,10 +26,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import ru.forma.domain.Exercise
+import ru.forma.domain.MotionKind
 import ru.forma.domain.VolumePoint
 import ru.forma.domain.VolumeTriangles
 import ru.forma.domain.originalVolumeAt
 import ru.forma.domain.originalVolumeTriangles
+import ru.forma.domain.originalMotionFor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -195,6 +197,7 @@ private class Original3DSurface(context:Context,framing:VolumeFraming):GLSurface
  }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun OriginalVolumetricPreview(exercise:Exercise) {
  val context=LocalContext.current
@@ -203,7 +206,9 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
   (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
    .deviceConfigurationInfo.reqGlEsVersion>=0x20000
  }
- if(!supported || originalVolumeAt(exercise,0f)==null)return
+ val spec=remember(exercise.id,exercise.equipment){originalMotionFor(exercise)} ?: return
+ if(!supported)return
+ val isHold=spec.kind==MotionKind.PLANK
  key(exercise.id,exercise.equipment) {
   var expanded by rememberSaveable { mutableStateOf(false) }
   OutlinedButton(
@@ -234,7 +239,7 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
     if(lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
     onDispose {lifecycle.lifecycle.removeObserver(observer);view.onPause()}
    }
-   val motionDisabled=still || visual.reducedMotion
+   val motionDisabled=isHold || still || visual.reducedMotion
    LaunchedEffect(playing,motionDisabled){
     if(playing && !motionDisabled) {
      phase.animateTo(1f,animationSpec=infiniteRepeatable(
@@ -257,20 +262,24 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
       modifier=Modifier.fillMaxWidth().height(236.dp).testTag("volume-preview-surface")
        .semantics { contentDescription="Объёмная модель движения: " + exercise.name + ". Прототип, техника не подтверждена." }
      )
-     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-      OutlinedButton(onClick={playing=!playing},enabled=!motionDisabled,
-       modifier=Modifier.heightIn(min=48.dp).testTag("volume-preview-play")){
-       Text(if(playing)"Пауза 3D" else "Воспроизвести 3D")
+     if(isHold) {
+      Text("Статическое удержание",style=MaterialTheme.typography.labelMedium)
+     } else {
+      FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+       OutlinedButton(onClick={playing=!playing},enabled=!motionDisabled,
+        modifier=Modifier.heightIn(min=48.dp).testTag("volume-preview-play")){
+        Text(if(playing)"Пауза 3D" else "Воспроизвести 3D")
+       }
+       FilterChip(selected=motionDisabled,
+        onClick={if(!visual.reducedMotion){still=!still;playing=false}},
+        enabled=!visual.reducedMotion,
+        label={Text("Без движения")},modifier=Modifier.heightIn(min=48.dp))
       }
-      FilterChip(selected=motionDisabled,
-       onClick={if(!visual.reducedMotion){still=!still;playing=false}},
-       enabled=!visual.reducedMotion,
-       label={Text("Без движения")},modifier=Modifier.heightIn(min=48.dp))
+      Text("Фаза движения",style=MaterialTheme.typography.labelMedium)
+      Slider(value=phase.value.coerceIn(0f,1f),
+       onValueChange={v->playing=false;scope.launch{phase.snapTo(v)}},
+       modifier=Modifier.fillMaxWidth().testTag("volume-preview-scrub"))
      }
-     Text("Фаза движения",style=MaterialTheme.typography.labelMedium)
-     Slider(value=phase.value.coerceIn(0f,1f),
-      onValueChange={v->playing=false;scope.launch{phase.snapTo(v)}},
-      modifier=Modifier.fillMaxWidth().testTag("volume-preview-scrub"))
      Text("Поворот объёмной модели",style=MaterialTheme.typography.labelMedium)
      Slider(value=angle,onValueChange={angle=it},valueRange= -180f..180f,
       modifier=Modifier.fillMaxWidth().testTag("volume-preview-orbit"))

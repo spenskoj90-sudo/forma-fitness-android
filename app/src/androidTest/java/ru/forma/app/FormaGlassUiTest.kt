@@ -50,17 +50,22 @@ class FormaGlassUiTest {
   }
  }
 
- @Test fun reducedMotionStops2DSchematicPlaybackButKeepsManualScrubbing(){
+ @Test fun staticPlankOffersCameraRotationAndTheOfflineTechniqueWithoutPlayback(){
   rule.setContent{
    MaterialTheme {
     CompositionLocalProvider(LocalFormaVisualOptions provides FormaVisualOptions(reducedMotion=true)) {
-     OriginalMotionDemo(ru.forma.domain.exerciseCatalog.first())
+     Column(Modifier.width(260.dp).verticalScroll(rememberScrollState())) {
+      AuthoredTechniqueWalkthrough(ru.forma.domain.exerciseCatalog.first{it.id=="mat_plank"})
+     }
     }
    }
   }
-  rule.onNodeWithTag("original-motion-play").assertIsNotEnabled()
-  rule.onNodeWithTag("original-motion-scrubber").assertExists()
-  rule.onNodeWithText("Уменьшение движения включено.",substring=true).assertExists()
+  rule.onNodeWithTag("volume-preview-toggle").performScrollTo().performClick()
+  rule.onNodeWithText("Статическое удержание").performScrollTo().assertIsDisplayed()
+  rule.onNodeWithTag("volume-preview-orbit").assertExists()
+  rule.onNodeWithTag("volume-preview-play").assertDoesNotExist()
+  rule.onNodeWithTag("volume-preview-scrub").assertDoesNotExist()
+  rule.onNodeWithTag("authored-technique-frame").performScrollTo().assertIsDisplayed()
  }
  @Test fun narrowDoubleFontSwitchLabelsStayOperable(){
   var high by mutableStateOf(false)

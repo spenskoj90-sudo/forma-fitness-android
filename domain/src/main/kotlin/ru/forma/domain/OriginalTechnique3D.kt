@@ -46,18 +46,21 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
  val spec = originalMotionFor(exercise) ?: return null
  val t = fraction.coerceIn(0f, 1f)
  val eased = t * t * (3f - 2f * t)
- val primary = originalMotionAt(spec, eased).joints
- val alternate = if(exercise.id in setOf("bird_dog", "dead_bug", "bench_step", "self_curl"))
-  originalMotionAt(spec, 1f - eased).joints else primary
+ val contralateral = spec.kind == MotionKind.BIRD_DOG || spec.kind == MotionKind.DEAD_BUG
+ // Finish the first reach before starting the opposite reach. The central
+ // frame is the supported starting pose, with both sides returned.
+ val primary = originalMotionAt(spec, if(contralateral) (2f*eased-1f).coerceAtLeast(0f) else eased).joints
+ val alternate = if(contralateral) originalMotionAt(spec,(1f-2f*eased).coerceAtLeast(0f)).joints else primary
+ val trunk = if(contralateral) originalMotionAt(spec,0f).joints else primary
  fun p(j: MotionPoint, depth: Float): VolumePoint =
   VolumePoint((j.x - 60f) * 0.092f, (109f - j.y) * 0.092f, depth)
  fun link(a: VolumePoint, b: VolumePoint, r: Float, tone: VolumeTone = VolumeTone.TORSO) =
   VolumeLink(a, b, r, tone)
- val head = p(primary[0], 0f)
- val shoulder = p(primary[1], 0f)
- val hip = p(primary[4], 0f)
- val leftShoulder = p(primary[1], 0.48f)
- val rightShoulder = p(alternate[1], -0.48f)
+ val head = p(trunk[0], 0f)
+ val shoulder = p(trunk[1], 0f)
+ val hip = p(trunk[4], 0f)
+ val leftShoulder = p(trunk[1], 0.48f)
+ val rightShoulder = p(trunk[1], -0.48f)
  // The exact lateral-raise variant must abduct outwards in actual Z depth.
  // A side-view-only motion would merely swing both arms forward, so use
  // a hand-authored bilateral depth path while keeping the catalog torso.
@@ -71,21 +74,46 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    shoulder.y-drop*(1f-eased)-elbowBend*eased,
    side*(rest+(extended-rest)*eased))
  }
- val leftElbow = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,false) else p(primary[2], 0.67f)
- val rightElbow = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,false) else p(alternate[2], -0.67f)
- val leftWrist = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,true) else p(primary[3], 0.67f)
- val rightWrist = if(exercise.id=="raise") lateralPoint(rightShoulder,-1f,true) else p(alternate[3], -0.67f)
+ val armDepth = when(spec.kind) {
+  MotionKind.FLOOR_PRESS -> 1.47f-0.8f*eased
+  MotionKind.PRONE_W -> 1.45f
+  else -> 0.67f
+ }
+ val gripDepth = when {
+  spec.kind == MotionKind.GOBLET_SQUAT -> 0.16f
+  spec.kind == MotionKind.PRONE_W -> 1.10f
+  exercise.equipment == Equipment.KETTLEBELL -> 0.24f
+  else -> armDepth
+ }
+ val leftElbow = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,false) else p(primary[2], armDepth)
+ val rightElbow = when(spec.kind) {
+  MotionKind.LATERAL_RAISE -> lateralPoint(rightShoulder,-1f,false)
+  MotionKind.SELF_CURL -> p(MotionPoint(59f,56f),-0.40f)
+  else -> p(alternate[2],-armDepth)
+ }
+ val leftWrist = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,true) else p(primary[3], gripDepth)
+ val rightWrist = when(spec.kind) {
+  MotionKind.LATERAL_RAISE -> lateralPoint(rightShoulder,-1f,true)
+  // The assisting hand follows the working forearm, close to its wrist.
+  MotionKind.SELF_CURL -> leftElbow+(leftWrist-leftElbow)*0.85f+VolumePoint(0f,0.13f,0f)
+  else -> p(alternate[3],-gripDepth)
+ }
  // Bird-dog and dead-bug require contralateral reach, not same-side
  // arm+leg extension. Only these exact-ID leg phase sources are crossed.
- val contralateral = exercise.id == "bird_dog" || exercise.id == "dead_bug"
  val leftLegPose = if(contralateral) alternate else primary
  val rightLegPose = if(contralateral) primary else alternate
  val leftHip = p(leftLegPose[4], 0.31f)
  val rightHip = p(rightLegPose[4], -0.31f)
  val leftKnee = p(leftLegPose[5], 0.39f)
- val rightKnee = p(rightLegPose[5], -0.39f)
+ val rightKnee = if(spec.kind == MotionKind.STEP_UP)
+  p(MotionPoint(52f+28f*eased,91f-17f*eased),-0.39f) else p(rightLegPose[5],-0.39f)
  val leftAnkle = p(leftLegPose[6], 0.39f)
- val rightAnkle = p(rightLegPose[6], -0.39f)
+ val rightAnkle = if(spec.kind == MotionKind.STEP_UP) {
+  // Lift the trailing foot above the leading edge before advancing over it.
+  val lift=(eased/0.56f).coerceAtMost(1f)
+  val forward=((eased-0.56f)/0.44f).coerceAtLeast(0f)
+  p(MotionPoint(48f+34f*forward,107f-20f*lift),-0.39f)
+ } else p(rightLegPose[6],-0.39f)
  val body = mutableListOf(
   link(head, shoulder, 0.18f),
   link(shoulder, hip, 0.39f),
@@ -111,6 +139,20 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
  fun support(a: VolumePoint, b: VolumePoint, r: Float = 0.12f) { body += link(a, b, r, VolumeTone.SUPPORT) }
  fun x(x: Float, y: Float, z: Float) = VolumePoint(x, y, z)
  val handMid = (leftWrist + rightWrist) * 0.5f
+ fun seatedSupport() {
+  // The pelvis rests on a fixed seat. The back rail follows the nominal seat angle.
+  for(z in listOf(-0.8f,0.8f)) {
+   val rear=hip+x(-0.5f,-0.47f,z)
+   support(rear,hip+x(0.95f,-0.47f,z),0.13f)
+   support(rear,shoulder+x(-0.47f,0.35f,z),0.13f)
+   support(x(rear.x,0f,z),rear)
+  }
+  val seat=hip+x(0.15f,-0.47f,0f)
+  support(seat+x(0f,0f,-0.8f),seat+x(0f,0f,0.8f),0.13f)
+ }
+ fun transverseGrip(halfWidth:Float) {
+  gear(handMid+x(0f,0f,-halfWidth),handMid+x(0f,0f,halfWidth))
+ }
  when(exercise.equipment) {
   Equipment.DUMBBELL -> if(exercise.id=="goblet") {
    // One vertical goblet dumbbell is shared by both hands at chest height.
@@ -134,6 +176,17 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
   Equipment.KETTLEBELL -> {
    joints += VolumeJoint(handMid+x(0f,-0.3f,0f),0.35f,VolumeTone.EQUIPMENT)
    gear(handMid,handMid+x(0f,-0.32f,0f),0.10f)
+   transverseGrip(0.28f)
+   if(spec.kind == MotionKind.KETTLEBELL_HINGE) {
+    val startGrip=p(originalMotionAt(spec,0f).joints[3],0f)
+    val topY=startGrip.y-0.77f
+    for(z in listOf(-0.57f,0.57f)) {
+     support(x(startGrip.x-0.62f,topY,z),x(startGrip.x+0.62f,topY,z))
+     support(x(startGrip.x-0.62f,0f,z),x(startGrip.x-0.62f,topY,z))
+     support(x(startGrip.x+0.62f,0f,z),x(startGrip.x+0.62f,topY,z))
+    }
+    support(x(startGrip.x,topY,-0.57f),x(startGrip.x,topY,0.57f))
+   }
   }
   Equipment.SMITH_MACHINE -> {
    // This authored scene depicts a VERTICAL Smith guide, not every angled
@@ -144,21 +197,25 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
     support(x(railX,0f,z),x(railX,11f,z),0.13f)
   }
   Equipment.RESISTANCE_BAND -> {
-   val anchorX = if(spec.kind == MotionKind.BAND_ROW) 4.1f else -4.1f
-   val anchor=x(anchorX,5f,0f)
+   val anchorX = if(spec.kind == MotionKind.BAND_PRESS) -4.1f else 4.1f
+   val anchor=x(anchorX,if(spec.kind == MotionKind.TRICEPS_EXTENSION) 9.2f else 5f,0f)
    gear(leftWrist,anchor,0.035f)
    gear(rightWrist,anchor,0.035f)
+   support(x(anchorX,0f,0f),anchor)
   }
   Equipment.PULL_UP_BAR -> {
    // The catalog's scapular pull keeps the hands on a stationary bar.
    // Align the crossbar with both wrist contacts, not above/behind them.
    support(x(handMid.x,handMid.y,-1.8f),x(handMid.x,handMid.y,1.8f),0.17f)
+   val footX=leftAnkle.x
+   for(z in listOf(-0.81f,0.81f)) support(x(footX-0.5f,0.15f,z),x(footX+0.5f,0.15f,z))
+   for(px in listOf(footX-0.5f,footX+0.5f)) support(x(px,0.15f,-0.81f),x(px,0.15f,0.81f))
   }
   Equipment.BENCH -> {
    // Low stationary platform: both alternating raised feet in the authored
    // bench_step path must land within its top surface, not past a thin rail.
    // A wireframe perimeter makes the full depth and footing legible.
-   val front=-2.6f
+   val front=0.83f
    val back=3.2f
    val halfWidth=1.15f
    val height=2.0f
@@ -173,28 +230,68 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
   Equipment.MAT -> {
    support(x(-4.6f,0f,-1.8f),x(4.6f,0f,-1.8f),0.06f)
    support(x(-4.6f,0f,1.8f),x(4.6f,0f,1.8f),0.06f)
+   for(ankle in listOf(leftAnkle,rightAnkle))
+    body += link(ankle,x(ankle.x+0.25f,0.15f,ankle.z),0.14f)
   }
-  Equipment.CABLE_MACHINE, Equipment.LAT_PULLDOWN, Equipment.LEG_PRESS_MACHINE,
-  Equipment.LEG_CURL_MACHINE, Equipment.SEATED_ROW_MACHINE, Equipment.CHEST_PRESS_MACHINE -> {
-   support(x(4.4f,0f,-1.5f),x(4.4f,10.7f,-1.5f))
-   support(x(4.4f,0f,1.5f),x(4.4f,10.7f,1.5f))
-   support(x(4.4f,9.8f,-1.5f),x(4.4f,9.8f,1.5f))
-   if(exercise.equipment == Equipment.LAT_PULLDOWN) {
-    // The cable bar follows the two hands throughout the pulldown; a fixed
-    // bar above the athlete would misleadingly show the hands detaching.
-    gear(handMid+x(0f,0f,-1.05f),handMid+x(0f,0f,1.05f))
+  Equipment.CABLE_MACHINE, Equipment.LAT_PULLDOWN, Equipment.SEATED_ROW_MACHINE -> {
+   val pulley=when(exercise.equipment) {
+    Equipment.LAT_PULLDOWN -> x(1.15f,10.1f,0f)
+    Equipment.SEATED_ROW_MACHINE -> x(4.4f,2.2f,0f)
+    else -> x(4.4f,9.8f,0f)
    }
-   if(exercise.equipment == Equipment.LEG_PRESS_MACHINE) {
-    val foot = (leftAnkle + rightAnkle) * 0.5f
-    support(foot + x(0.55f,-0.7f,-1.0f),foot + x(0.55f,0.7f,-1.0f),0.23f)
-    support(foot + x(0.55f,-0.7f,1.0f),foot + x(0.55f,0.7f,1.0f),0.23f)
+   support(x(pulley.x,0f,-1.5f),pulley+x(0f,0f,-1.5f))
+   support(x(pulley.x,0f,1.5f),pulley+x(0f,0f,1.5f))
+   support(pulley+x(0f,0f,-1.5f),pulley+x(0f,0f,1.5f))
+   if(exercise.equipment != Equipment.CABLE_MACHINE) seatedSupport()
+   if(exercise.equipment == Equipment.LAT_PULLDOWN)
+    support(hip+x(0.8f,0.38f,-0.82f),hip+x(0.8f,0.38f,0.82f),0.2f)
+   transverseGrip(if(exercise.equipment == Equipment.LAT_PULLDOWN) 1.05f else 0.75f)
+   gear(handMid,pulley,0.045f)
+  }
+  Equipment.LEG_PRESS_MACHINE -> {
+   seatedSupport()
+   val start=p(originalMotionAt(spec,0f).joints[6],0f)
+   val end=p(originalMotionAt(spec,1f).joints[6],0f)
+   val foot=(leftAnkle+rightAnkle)*0.5f
+   for(z in listOf(-0.95f,0.95f)) {
+    val lower=start+x(0f,-0.55f,z)
+    val upper=end+x(0f,-0.55f,z)
+    support(lower,upper)
+    support(x(lower.x,0f,z),lower)
+    support(x(upper.x,0f,z),upper)
+    gear(foot+x(0f,-0.55f,z),foot+x(0.1f,0.6f,z),0.16f)
    }
-   if(exercise.equipment == Equipment.CHEST_PRESS_MACHINE || exercise.equipment == Equipment.SEATED_ROW_MACHINE || exercise.equipment == Equipment.CABLE_MACHINE)
-    gear(handMid, x(4.4f,handMid.y,0f),0.08f)
-   if(exercise.equipment == Equipment.LEG_CURL_MACHINE)
-    gear(leftAnkle+x(0f,-0.1f,-0.2f),rightAnkle+x(0f,-0.1f,0.2f),0.25f)
+   for(y in listOf(-0.22f,0.36f)) gear(foot+x(0.1f,y,-0.95f),foot+x(0.1f,y,0.95f),0.15f)
+  }
+  Equipment.CHEST_PRESS_MACHINE -> {
+   seatedSupport()
+   val start=p(originalMotionAt(spec,0f).joints[3],0f)
+   val end=p(originalMotionAt(spec,1f).joints[3],0f)
+   for(wrist in listOf(leftWrist,rightWrist)) {
+    val railZ=if(wrist.z>0) 1.35f else -1.35f
+    support(x(start.x,start.y,railZ),x(end.x,end.y,railZ))
+    support(x(start.x,0f,railZ),x(start.x,start.y,railZ))
+    gear(wrist,x(wrist.x,wrist.y,railZ))
+    gear(wrist+x(0f,-0.21f,0f),wrist+x(0f,0.21f,0f))
+   }
+  }
+  Equipment.LEG_CURL_MACHINE -> {
+   seatedSupport()
+   val ankles=(leftAnkle+rightAnkle)*0.5f
+   val knee=(leftKnee+rightKnee)*0.5f
+   support(knee+x(-0.2f,0.26f,-0.93f),knee+x(-0.2f,0.26f,0.93f),0.16f)
+   val roller=knee+(ankles-knee)*0.94f
+   gear(roller+x(0f,0f,-0.93f),roller+x(0f,0f,0.93f),0.21f)
+   for(z in listOf(-0.93f,0.93f)) gear(knee+x(0f,0f,z),roller+x(0f,0f,z))
   }
   Equipment.BODYWEIGHT -> when(exercise.id) {
+   "calf" -> {
+    support(x(handMid.x,0f,-1.08f),x(handMid.x,handMid.y,-1.08f))
+    support(x(handMid.x,0f,1.08f),x(handMid.x,handMid.y,1.08f))
+    support(x(handMid.x,handMid.y,-1.08f),x(handMid.x,handMid.y,1.08f))
+    val toeX=p(originalMotionAt(spec,0f).joints[6],0f).x+0.56f
+    for(ankle in listOf(leftAnkle,rightAnkle)) body+=link(ankle,x(toeX,0.13f,ankle.z),0.13f)
+   }
    "wall_slide" -> {
     // Exact catalog cue: back to the wall, not the facing-wall rehab variant.
     // Both authored elbow/wrist X coordinates stay in this stationary plane.

@@ -72,9 +72,13 @@ fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
 
 // Revision each exact exercise when its authored rig/equipment trajectory changes.
 // Digests bind source keyposes, not final rendered images or expert acceptance.
-private val originalPoseRevisions=mapOf("goblet" to 2,"raise" to 2,"lat_pulldown" to 2,
- "scap_pull" to 2,"wall_push" to 2,"incline_push" to 2,"bench_step" to 2,
- "chair_squat" to 2,"wall_slide" to 2,"bird_dog" to 2,"dead_bug" to 2,"smith_squat" to 2)
+private val originalPoseRevisions=mapOf(
+ "goblet" to 3,"lat_pulldown" to 3,"bench_step" to 3,"bird_dog" to 3,"dead_bug" to 3,"scap_pull" to 3,
+ "raise" to 2,"wall_push" to 2,"incline_push" to 2,"chair_squat" to 2,"self_curl" to 2,"prone_w" to 2,
+ "wall_slide" to 2,"smith_squat" to 2,"calf" to 2,"floor_press" to 2,"band_row" to 2,
+ "band_press" to 2,"band_extension" to 2,"kettlebell_squat" to 2,"kettlebell_deadlift" to 2,
+ "mat_plank" to 2,"cable_triceps" to 2,"leg_press" to 2,"chest_press" to 2,
+ "machine_row" to 2,"leg_curl" to 2)
 
 /** Reproducible digest of five source-authored keyposes and exact equipment. */
 private fun digestVolume(exercise:Exercise,revision:Int):String {

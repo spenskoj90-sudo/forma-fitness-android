@@ -5,7 +5,7 @@ import org.junit.Test
 import kotlin.math.abs
 
 class OriginalTechnique3DTest {
- @Test fun all37ExactExerciseEquipmentPairsProduceVolumetricMovingOfflineRigs() {
+ @Test fun all37ExactExerciseEquipmentPairsProduceVolumetricOfflineRigs() {
   assertEquals(37, exerciseCatalog.size)
   assertEquals(exerciseCatalog.map { it.id }.toSet(), originalVolumeCoverage())
   for(exercise in exerciseCatalog) {
@@ -29,8 +29,8 @@ class OriginalTechnique3DTest {
       it.a.y in -3f..15f && it.b.y in -3f..15f
     })
    }
-   assertNotEquals("Static rig for " + exercise.id,
-     start.links.take(10),end!!.links.take(10))
+   if(exercise.id=="mat_plank") assertEquals(listOf(start.links,start.links),listOf(mid.links,end.links))
+   else assertNotEquals("Static rig for " + exercise.id,start.links.take(10),end.links.take(10))
   }
  }
  @Test fun equipmentMeshesCannotBeSubstitutedByBodyweightVariant() {
@@ -90,7 +90,7 @@ class OriginalTechnique3DTest {
   val start=originalVolumeAt(exercise,0f)!!
   val end=originalVolumeAt(exercise,1f)!!
   for(scene in listOf(start,end)) {
-   val bar=scene.links.filter{it.tone==VolumeTone.EQUIPMENT}.single()
+   val bar=scene.links.single{it.tone==VolumeTone.EQUIPMENT && it.b.z-it.a.z>1.9f}
    val leftHand=scene.links[3].b
    val rightHand=scene.links[5].b
    val center=(bar.a+bar.b)*0.5f
@@ -115,7 +115,14 @@ class OriginalTechnique3DTest {
     val handMid=(leftHand+rightHand)*0.5f
     val supports=scene.links.filter{it.tone==VolumeTone.SUPPORT}
     assertEquals("Wrong supporting structure for "+id,
-     if(id=="scap_pull") 1 else 3,supports.size)
+     if(id=="scap_pull") 5 else 3,supports.size)
+    if(id=="scap_pull") {
+     val foot=scene.links[7].b
+     assertEquals(originalVolumeAt(exercise,0f)!!.links[7].b,foot)
+     val footPlate=supports.filter{it.a.y<0.2f&&it.b.y<0.2f}
+     assertEquals(4,footPlate.size)
+     assertTrue(foot.x in footPlate.minOf{minOf(it.a.x,it.b.x)}..footPlate.maxOf{maxOf(it.a.x,it.b.x)})
+    }
     val crossbars=supports.filter{
      abs(it.a.y-it.b.y)<0.001f && abs(it.b.z-it.a.z)>2.5f
     }
@@ -149,14 +156,15 @@ class OriginalTechnique3DTest {
    val minZ=corners.minOf{it.z}
    val maxZ=corners.maxOf{it.z}
    assertTrue("Platform must be a surface, not a zero-width rail",maxZ-minZ>2f)
-   assertTrue("Platform must extend along the stepping direction",maxX-minX>5f)
-   if(scene.phase==0f || scene.phase==1f) {
-    val feet=listOf(scene.links[7].b,scene.links[9].b)
-    val raised=feet.maxBy{it.y}
-    assertTrue("Raised foot must be close to platform height",abs(raised.y-2f)<0.35f)
-    assertTrue("Raised foot must remain within platform X bounds",raised.x in minX..maxX)
-    assertTrue("Raised foot must remain within platform Z bounds",raised.z in minZ..maxZ)
-   }
+   assertTrue("Platform must extend along the stepping direction",maxX-minX>2f)
+   val lead=scene.links[7].b
+   assertEquals("The leading foot stays planted on the step",scenes.first().links[7].b,lead)
+   assertEquals(2f,lead.y,0.05f)
+   assertTrue(lead.x in minX..maxX && lead.z in minZ..maxZ)
+   val trail=scene.links[9].b
+   if(trail.x >= minX) assertTrue("The trailing foot must clear the step edge",trail.y>=2f)
+   if(scene.phase==0f) assertTrue("Trailing foot starts on the floor outside the step",trail.y<0.3f&&trail.x<minX)
+   if(scene.phase==1f) assertTrue("Both feet finish over the step",trail.x in minX..maxX&&trail.z in minZ..maxZ)
   }
  }
  @Test fun chairSquatSeatStaysFixedAndMeetsOnlyLoweredPelvis() {
@@ -241,6 +249,117 @@ class OriginalTechnique3DTest {
     armDeltas[0]*armDeltas[1]<0f)
    assertTrue("The extended leg side must alternate for "+id,
     legDeltas[0]*legDeltas[1]<0f)
+   val neutral=originalVolumeAt(exercise,0.5f)!!
+   assertEquals(neutral.links[3].b.y,neutral.links[5].b.y,0.001f)
+   assertEquals(neutral.links[7].b.y,neutral.links[9].b.y,0.001f)
+   if(id=="bird_dog") {
+    assertTrue("Both hands return to the floor before switching sides",neutral.links[3].b.y<0.2f)
+    assertTrue("Both knees return to the floor",neutral.links[7].a.y<0.3f&&neutral.links[9].a.y<0.3f)
+   }
+   for(phase in listOf(0.25f,0.75f)) {
+    val phaseScene=originalVolumeAt(exercise,phase)!!
+    val supportingHand=if(phase<0.5f) 3 else 5
+    val supportingLeg=if(phase<0.5f) 9 else 7
+    assertEquals(neutral.links[supportingHand].b,phaseScene.links[supportingHand].b)
+    assertEquals(neutral.links[supportingLeg].b,phaseScene.links[supportingLeg].b)
+   }
+  }
+ }
+ @Test fun holdsAndRaisedSupportsStayInContactAcrossPhase() {
+  val plank=exerciseCatalog.first{it.id=="mat_plank"}
+  val hold=originalVolumeAt(plank,0f)!!
+  assertEquals(hold.links,originalVolumeAt(plank,0.73f)!!.links)
+  assertTrue(hold.links[3].a.y<0.2f && hold.links[3].b.y<0.2f)
+  assertTrue(hold.links.takeLast(2).all{it.b.y<=it.radius+0.06f})
+
+  val calf=exerciseCatalog.first{it.id=="calf"}
+  val low=originalVolumeAt(calf,0f)!!
+  val high=originalVolumeAt(calf,1f)!!
+  assertEquals(low.links.filter{it.tone==VolumeTone.SUPPORT},high.links.filter{it.tone==VolumeTone.SUPPORT})
+  assertEquals(low.links[3].b,high.links[3].b)
+  assertEquals(low.links.takeLast(2).map{it.b},high.links.takeLast(2).map{it.b})
+  assertTrue(high.links[7].b.y-low.links[7].b.y>0.6f)
+
+  val deadlift=exerciseCatalog.first{it.id=="kettlebell_deadlift"}
+  val rest=originalVolumeAt(deadlift,0f)!!
+  val standing=originalVolumeAt(deadlift,1f)!!
+  val stand=rest.links.filter{it.tone==VolumeTone.SUPPORT}
+  assertEquals(stand,standing.links.filter{it.tone==VolumeTone.SUPPORT})
+  val top=stand.maxOf{maxOf(it.a.y,it.b.y)+it.radius}
+  val bell=rest.joints.single{it.tone==VolumeTone.EQUIPMENT}
+  assertEquals(top,bell.position.y-bell.radius,0.04f)
+  assertTrue(standing.joints.single{it.tone==VolumeTone.EQUIPMENT}.position.y-bell.position.y>0.6f)
+ }
+ @Test fun fixedPulleysAndMachineSupportsAreSeparateFromMovingHandles() {
+  for(id in listOf("band_row","band_press","band_extension","lat_pulldown","machine_row","cable_triceps")){
+   val exercise=exerciseCatalog.first{it.id==id}
+   val rest=originalVolumeAt(exercise,0f)!!
+   val supports=rest.links.filter{it.tone==VolumeTone.SUPPORT}
+   val anchor=rest.links.last{it.tone==VolumeTone.EQUIPMENT}.b
+   for(i in 0..8){
+    val scene=originalVolumeAt(exercise,i/8f)!!
+    assertEquals(id,supports,scene.links.filter{it.tone==VolumeTone.SUPPORT})
+    val cable=scene.links.last{it.tone==VolumeTone.EQUIPMENT}
+    assertEquals(id,anchor,cable.b)
+    if(id in listOf("lat_pulldown","cable_triceps","band_extension")) assertTrue(id,anchor.y>cable.a.y)
+    if(id=="machine_row") assertTrue(anchor.y<cable.a.y)
+   }
+  }
+  val press=exerciseCatalog.first{it.id=="chest_press"}
+  val start=originalVolumeAt(press,0f)!!
+  val finish=originalVolumeAt(press,1f)!!
+  assertEquals(start.links.filter{it.tone==VolumeTone.SUPPORT},finish.links.filter{it.tone==VolumeTone.SUPPORT})
+  for(scene in listOf(start,finish)){
+   val handles=scene.links.filter{it.tone==VolumeTone.EQUIPMENT&&abs(it.a.x-it.b.x)<0.001f&&abs(it.a.y-it.b.y)>0.4f}
+   assertEquals(2,handles.size)
+   assertEquals(scene.links[3].b,(handles[0].a+handles[0].b)*0.5f)
+   assertEquals(scene.links[5].b,(handles[1].a+handles[1].b)*0.5f)
+  }
+ }
+ @Test fun seatedLegMachinesKeepPelvisAndTheirMechanicalConstraintsThroughTheRange(){
+  for(id in listOf("leg_press","leg_curl")){
+   val exercise=exerciseCatalog.first{it.id==id}
+   val rest=originalVolumeAt(exercise,0f)!!
+   val supports=rest.links.filter{it.tone==VolumeTone.SUPPORT}
+   val restShin=(rest.links[7].a-rest.links[7].b).length()
+   val restThigh=(rest.links[6].a-rest.links[6].b).length()
+   for(i in 0..16){
+    val scene=originalVolumeAt(exercise,i/16f)!!
+    assertEquals(rest.joints[2],scene.joints[2])
+    assertEquals(supports,scene.links.filter{it.tone==VolumeTone.SUPPORT})
+    assertEquals(restShin,(scene.links[7].a-scene.links[7].b).length(),0.001f)
+    assertEquals(restThigh,(scene.links[6].a-scene.links[6].b).length(),0.001f)
+    if(id=="leg_curl") assertEquals(rest.links[7].a,scene.links[7].a)
+   }
+  }
+ }
+ @Test fun floorPressStartsWithUpperArmNearTheFloorAndRaisesBothLoads(){
+  val exercise=exerciseCatalog.first{it.id=="floor_press"}
+  val low=originalVolumeAt(exercise,0f)!!
+  val high=originalVolumeAt(exercise,1f)!!
+  for(index in listOf(3,5)) {
+   assertTrue(low.links[index].a.y<0.3f)
+   assertTrue(high.links[index].b.y-low.links[index].b.y>1.5f)
+  }
+  assertEquals(low.joints[1],high.joints[1])
+  assertEquals(low.joints[2],high.joints[2])
+ }
+ @Test fun proneWForearmsPointTowardHeadAndAssistingCurlHandFollowsForearm(){
+  val prone=exerciseCatalog.first{it.id=="prone_w"}
+  val low=originalVolumeAt(prone,0f)!!
+  val high=originalVolumeAt(prone,1f)!!
+  assertEquals(low.joints[2],high.joints[2])
+  for(index in listOf(3,5)){
+   val forearm=high.links[index]
+   assertTrue(forearm.b.x<forearm.a.x && abs(forearm.b.z)<abs(forearm.a.z))
+   assertTrue(forearm.b.y>low.links[index].b.y)
+  }
+  val curl=exerciseCatalog.first{it.id=="self_curl"}
+  for(i in 0..8){
+   val scene=originalVolumeAt(curl,i/8f)!!
+   val working=scene.links[3]
+   val contact=working.a+(working.b-working.a)*0.85f
+   assertTrue((scene.links[5].b-contact).length()<=working.radius)
   }
  }
  @Test fun smithGuideRailsRemainFixedAsBarSlidesWithShoulderAndHands() {

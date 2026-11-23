@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OriginalTechniqueMotionTest {
- @Test fun all37CatalogEntriesHaveDistinctAndFiniteAnimatedJointPaths() {
+ @Test fun all37CatalogEntriesHaveFiniteJointPathsIncludingTheIsometricHold() {
   assertEquals(37, exerciseCatalog.size)
   assertEquals(exerciseCatalog.map { it.id }.toSet(), originalMotionCoverage())
   exerciseCatalog.forEach { exercise ->
@@ -15,7 +15,8 @@ class OriginalTechniqueMotionTest {
    val middle = originalMotionAt(spec, 0.5f)
    val end = originalMotionAt(spec, 1f)
    assertEquals(7, start.joints.size)
-   assertNotEquals("${exercise.id} must move", start, end)
+   if(spec.kind == MotionKind.PLANK) assertEquals(listOf(start,start),listOf(middle,end))
+   else assertNotEquals("${exercise.id} must move", start, end)
    for (pose in listOf(start, middle, end)) {
     assertTrue("${exercise.id} out of scene bounds",pose.joints.all {
      it.x.isFinite() && it.y.isFinite() && it.x in 0f..120f && it.y in 0f..120f
