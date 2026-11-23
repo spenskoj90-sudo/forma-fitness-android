@@ -37,7 +37,8 @@ class FirebaseSyncEmulatorTest {
                 .build(), "forma-emulator-${UUID.randomUUID()}")
             val auth = FirebaseAuth.getInstance(app).apply { useEmulator(emulatorHost, 9099) }
             val firestore = FirebaseFirestore.getInstance(app).apply { useEmulator(emulatorHost, 8080) }
-            val identity = FirebaseSyncIdentity(app)
+            val account = FirebaseAccount(app)
+            val identity = account.identity
             val remote = FirestoreSyncRemote(app, identity)
             val db = Room.inMemoryDatabaseBuilder(context, FormaDatabase::class.java).build()
             try {
@@ -51,9 +52,12 @@ class FirebaseSyncEmulatorTest {
                 assertNull(repo.profilesForVerifiedAccount(identity))
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
 
-                auth.createUserWithEmailAndPassword(firstEmail, password).await()
+                account.register(firstEmail, password)
+                assertEquals(AccountSession.EMAIL_UNVERIFIED, account.currentSession)
                 assertNull(identity.currentLease()) // The user has not verified their email yet.
                 verifyEmail(auth, firstEmail)
+                account.refreshVerification()
+                assertEquals(AccountSession.EMAIL_VERIFIED, account.currentSession)
                 val first = checkNotNull(identity.currentLease())
                 val firstDocument = firestore.document("accounts/${first.uid}/profiles/${profile.id}")
                 assertEquals(VerifiedAccountProfiles(first, emptyList()), repo.profilesForVerifiedAccount(identity))
@@ -93,7 +97,8 @@ class FirebaseSyncEmulatorTest {
                 assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
                 assertTrue(checkNotNull(remote.read(first, tombstone)).tombstone)
 
-                identity.signOut()
+                account.signOut()
+                assertEquals(AccountSession.SIGNED_OUT, account.currentSession)
                 assertNull(repo.profilesForVerifiedAccount(identity))
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
                 assertNull(ProfileRepository.forGuest(db).load(profile.id))
@@ -102,8 +107,9 @@ class FirebaseSyncEmulatorTest {
                     firstDocument.get(Source.SERVER).await()
                 }
                 val secondEmail = "${UUID.randomUUID()}@example.test"
-                auth.createUserWithEmailAndPassword(secondEmail, password).await()
+                account.register(secondEmail, password)
                 verifyEmail(auth, secondEmail)
+                account.refreshVerification()
                 val second = checkNotNull(identity.currentLease())
                 assertNotEquals(first.uid, second.uid)
                 assertEquals(VerifiedAccountProfiles(second, emptyList()), repo.profilesForVerifiedAccount(identity))
@@ -125,8 +131,9 @@ class FirebaseSyncEmulatorTest {
                         "updatedAt" to FieldValue.serverTimestamp())).await()
                 }
 
-                identity.signOut()
-                auth.signInWithEmailAndPassword(firstEmail, password).await()
+                account.signOut()
+                account.signIn(firstEmail, password)
+                assertEquals(AccountSession.EMAIL_VERIFIED, account.currentSession)
                 val restored = checkNotNull(identity.currentLease())
                 assertEquals(first.uid, restored.uid)
                 assertNotEquals(first.generation, restored.generation)
@@ -136,9 +143,10 @@ class FirebaseSyncEmulatorTest {
                 )
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
                 assertTrue(checkNotNull(remote.read(restored, tombstone)).tombstone)
+                account.sendPasswordReset(firstEmail)
             } finally {
                 db.close()
-                identity.signOut()
+                account.signOut()
                 identity.close()
                 firestore.terminate().await()
                 app.delete()
@@ -147,7 +155,6 @@ class FirebaseSyncEmulatorTest {
     }
 
     private suspend fun verifyEmail(auth: FirebaseAuth, email: String) {
-        checkNotNull(auth.currentUser).sendEmailVerification().await()
         val code = withContext(Dispatchers.IO) {
             val connection = URL("http://$emulatorHost:9099/emulator/v1/projects/$projectId/oobCodes")
                 .openConnection() as HttpURLConnection
@@ -161,7 +168,6 @@ class FirebaseSyncEmulatorTest {
             } finally { connection.disconnect() }
         }
         auth.applyActionCode(code).await()
-        checkNotNull(auth.currentUser).getIdToken(true).await()
     }
 
     private suspend fun expectFirestoreError(code: FirebaseFirestoreException.Code, operation: suspend () -> Unit) {

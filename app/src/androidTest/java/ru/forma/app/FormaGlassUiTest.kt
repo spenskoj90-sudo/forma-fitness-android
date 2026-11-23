@@ -88,4 +88,40 @@ class FormaGlassUiTest {
    .performScrollTo().performClick()
   rule.runOnIdle { org.junit.Assert.assertFalse(high) }
  }
+
+ @Test fun narrowAccountScreenAcceptsCredentialsAndOffersVerificationAndSignOut() {
+  var session by mutableStateOf(AccountSession.SIGNED_OUT)
+  rule.setContent {
+   val density=LocalDensity.current
+   CompositionLocalProvider(LocalDensity provides Density(density.density,2f)) {
+    MaterialTheme {
+     Column(Modifier.width(260.dp)) {
+      AccountScreen(AccountScreenState(session),{ action, email, password ->
+       session=when(action) {
+        AccountAction.SIGN_IN -> {
+         org.junit.Assert.assertEquals("demo@example.test",email)
+         org.junit.Assert.assertEquals("Synthetic-password",password)
+         AccountSession.EMAIL_UNVERIFIED
+        }
+        AccountAction.REFRESH -> AccountSession.EMAIL_VERIFIED
+        AccountAction.SIGN_OUT -> AccountSession.SIGNED_OUT
+        else -> error("Unexpected action: $action")
+       }
+      },{})
+     }
+    }
+   }
+  }
+  rule.onNodeWithText("Войти").performScrollTo().assertIsNotEnabled()
+  rule.onNode(hasSetTextAction() and hasText("Электронная почта"))
+   .performScrollTo().performTextInput("demo@example.test")
+  rule.onNode(hasSetTextAction() and hasText("Пароль"))
+   .performScrollTo().performTextInput("Synthetic-password")
+  rule.onNodeWithText("Войти").performScrollTo().assertIsEnabled().performClick()
+  rule.onNodeWithText("Проверить подтверждение").performScrollTo().performClick()
+  rule.onNodeWithText("Почта подтверждена.",substring=true).assertExists()
+  rule.onNodeWithText("Выйти из аккаунта").performScrollTo().performClick()
+  rule.onNodeWithText("Войти").performScrollTo().assertIsNotEnabled()
+  rule.onNodeWithText("demo@example.test").assertDoesNotExist()
+ }
 }

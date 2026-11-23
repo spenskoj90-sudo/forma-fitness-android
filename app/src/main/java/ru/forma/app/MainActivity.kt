@@ -90,6 +90,8 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  val error by vm.error.collectAsState();val notice by vm.notice.collectAsState()
  val profileSaving by vm.profileSaveInProgress.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
+ var accountOpen by rememberSaveable{mutableStateOf(false)}
+ val showAccount=accountOpen && vm.accountAvailable && p?.active==null
  // Dark is the unconfigured default; System follows the Android theme.
  val keyboardFocus=LocalFocusManager.current;val rootKeyboard=LocalSoftwareKeyboardController.current
  LaunchedEffect(creating,editing,p?.id){if(!creating&&!editing&&p!=null){keyboardFocus.clearFocus(force=true);rootKeyboard?.hide()}}
@@ -109,7 +111,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  )) {
  MaterialTheme(colorScheme=themeColors,shapes=Shapes(medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp))){
   val titles=listOf("Главная","Тренировки","Статистика","Профиль");val destinations=listOf(0,1,3,4);val icons=listOf(Icons.Outlined.Home,Icons.Outlined.FitnessCenter,Icons.Outlined.BarChart,Icons.Outlined.Person)
-  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
+  Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible&&!showAccount)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
     Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
      if(p?.active!=null){
@@ -129,10 +131,26 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
      !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
       Text(if(profilesSnapshot.status==LocalLoadStatus.FAILED||settingsSnapshot.status==LocalLoadStatus.FAILED)
        "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
+     showAccount -> {
+      val account by vm.account.collectAsState()
+      AccountScreen(account,vm::accountAction){accountOpen=false}
+     }
+     profiles.isEmpty()&&vm.accountAvailable -> {
+      TextButton({accountOpen=true},Modifier.heightIn(min=48.dp),enabled=!profileSaving){
+       Text("Аккаунт FORMA")
+      }
+      restoredScreens.SaveableStateProvider("onboarding-with-account") {
+       ProfileEditor(null,{vm.saveProfile(it){
+        restoredScreens.removeState("onboarding-with-account")
+        creating=false
+        editing=false
+       }},{},false,profileSaving,{vm.noteProfileSaveTouch(it)})
+      }
+     }
      creating||editing||profiles.isEmpty()->ProfileEditor(if(creating||profiles.isEmpty())null else p,{vm.saveProfile(it){creating=false;editing=false}},{creating=false;editing=false},profiles.isNotEmpty(),profileSaving,{vm.noteProfileSaveTouch(it)})
      p?.active!=null->Runner(p!!.active!!,vm){tab=3}
      p==null->Text("Загрузка…")
-     else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true})}
+     else->when(tab){0->Home(p!!,settings.trainingPlace,vm,{tab=1},{tab=4},{tab=2},{tab=3});1->restoredScreens.SaveableStateProvider("training:${p!!.id}"){TrainingScreen(p!!,settings.trainingPlace,vm)};2->restoredScreens.SaveableStateProvider("body:${p!!.id}"){BodyScreen(p!!,vm)};3->ProgressScreen(p!!);else->ProfileScreen(p!!,profiles,settings,vm,{editing=true},{creating=true}){accountOpen=true}}
     }
    }
   }
@@ -603,7 +621,7 @@ private val editableProfileSaver=Saver<Profile,String>(
  }
  }
 }
-@Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit){
+@Composable fun ProfileScreen(p:Profile,profiles:List<Profile>,settings:Preferences,vm:FormaViewModel,edit:()->Unit,create:()->Unit,openAccount:()->Unit){
  var profileSection by remember{mutableIntStateOf(0)}
  var profileSearch by remember{mutableStateOf("")}
  Page("Профиль",p.primary.label){
@@ -627,6 +645,7 @@ private val editableProfileSaver=Saver<Profile,String>(
     }
     if(matches.size>40)Text("Показаны первые 40. Уточните поиск.",style=MaterialTheme.typography.bodySmall)
     Action("Добавить пользователя",create)
+    if(vm.accountAvailable)Action("Аккаунт FORMA",openAccount)
     Text("Это локальные профили. До подключения защищённой синхронизации переносите данные между телефонами через резервные копии.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
    }
  Panel("${p.name} · ${p.age} лет"){Text("${p.heightCm} см · ${p.weightKg} кг");Text("${p.experience.label} · восстановление ${p.recovery}/5");Action("Изменить профиль и цели",edit)}

@@ -2,13 +2,18 @@
 
 The Android SDK transport reads server snapshots and compares the target and
 its parent inside a Firestore transaction. Existing Room consent and outbox
-code supply records. The application currently does not enable account login,
-transport scheduling, inbound sync or access to the production project.
+code supply records. When a build supplies the default Firebase app configuration,
+the account screen supports email registration, sign-in, confirmation, password reset
+and sign-out through the Android Auth SDK. Local profiles continue to use the guest
+workout journey. The screen has no Room binding or upload action. The repository
+ships without a default Firebase app configuration. Transport scheduling,
+inbound sync and production connectivity remain open.
 
 - Run `npm run test:rules` for the Rules suite. Android CI runs
   `npm run test:android-sync` on API 34 with both emulators, using synthetic
-  email verification, local consent, offline replay, tombstones and account
-  switching. Both commands use `demo-forma-rules` and loopback endpoints.
+  registration, email verification, password reset request, sign-in, local
+  consent, offline replay, tombstones and account switching. Both commands
+  use `demo-forma-rules` and loopback endpoints.
 - No \`.firebaserc\`, credential, \`google-services.json\`, production project ID
   or real user data is required. All profile/workout/measurement values are synthetic.
 - Firestore requires a verified email claim and an exact `request.auth.uid`
@@ -40,7 +45,7 @@ transport scheduling, inbound sync or access to the production project.
   \`forma-ee2e9\`, whose \`(default)\` Firestore region remains pending at
   \`europe-west3\` (Frankfurt). **Do not deploy to this project from this PR.**
 
-Issue #8 tracks account UI, local UID isolation, user consent, inbound sync,
-conflict resolution, real provider checks, export, deletion and physical device
-verification. Auth identity processing in US data centers remains part of the
-PROJECTS privacy gate.
+Issue #8 tracks account-scoped workout access, the consent UI, inbound sync,
+conflict resolution, real provider checks, export, deletion and physical
+device verification. Auth identity processing in US data centers remains
+part of the PROJECTS privacy gate.

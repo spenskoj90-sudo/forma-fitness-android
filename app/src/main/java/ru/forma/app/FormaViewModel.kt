@@ -6,6 +6,10 @@ import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.FirebaseTooManyRequestsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -37,6 +41,60 @@ enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
 internal data class SaveTouchEvidence(val presses:Int=0,val releases:Int=0,val cancels:Int=0)
 class FormaViewModel(application:Application):AndroidViewModel(application){
  private val app=application as FormaApp
+ internal val accountAvailable get()=app.firebaseAccount!=null
+ private val mutableAccount=MutableStateFlow(AccountScreenState(
+  session=app.firebaseAccount?.currentSession?:AccountSession.SIGNED_OUT
+ ))
+ internal val account=mutableAccount.asStateFlow()
+ init {
+  app.firebaseAccount?.let { client ->
+   viewModelScope.launch {
+    client.sessions.collect { session -> mutableAccount.update { it.copy(session=session) } }
+   }
+  }
+ }
+
+ internal fun accountAction(action:AccountAction,email:String="",password:String="") {
+  val client=app.firebaseAccount?:return
+  if(mutableAccount.value.working)return
+  mutableAccount.update{it.copy(working=true,message=null,isError=false)}
+  viewModelScope.launch {
+   val resetNotice="Если адрес зарегистрирован, письмо для сброса отправлено."
+   var message:String?=null
+   var failed=false
+   try {
+    message=when(action){
+     AccountAction.SIGN_IN -> {client.signIn(email,password);null}
+     AccountAction.REGISTER -> {client.register(email,password);"Письмо с подтверждением отправлено."}
+     AccountAction.REFRESH -> {
+      client.refreshVerification()
+      if(client.currentSession==AccountSession.EMAIL_UNVERIFIED)"Подтверждение почты пока не получено." else null
+     }
+     AccountAction.RESEND -> {client.resendVerification();"Письмо с подтверждением отправлено."}
+     AccountAction.RESET_PASSWORD -> {client.sendPasswordReset(email);resetNotice}
+     AccountAction.SIGN_OUT -> {client.signOut();null}
+    }
+   }catch(e:CancellationException){
+    throw e
+   }catch(e:Exception){
+    val hiddenResetResult=action==AccountAction.RESET_PASSWORD&&e is FirebaseAuthInvalidUserException
+    failed=!hiddenResetResult
+    message=when(e){
+     is FirebaseNetworkException -> "Нет связи с сервером. Проверь интернет и повтори."
+     is FirebaseTooManyRequestsException -> "Слишком много попыток. Повтори позже."
+     is FirebaseAuthWeakPasswordException -> "Пароль не соответствует требованиям безопасности."
+     else -> when(action){
+      AccountAction.SIGN_IN -> "Не удалось войти. Проверь адрес и пароль."
+      AccountAction.REGISTER -> "Не удалось завершить регистрацию. Проверь адрес или попробуй войти."
+      AccountAction.RESET_PASSWORD -> if(hiddenResetResult)resetNotice else "Не удалось запустить сброс пароля. Проверь адрес и повтори."
+      else -> "Не удалось выполнить действие. Попробуй ещё раз."
+     }
+    }
+   }finally{
+    mutableAccount.value=AccountScreenState(client.currentSession,false,message,failed)
+   }
+  }
+ }
  val error=app.serviceError
  val notice=MutableStateFlow<String?>(null)
  // No names/IDs: identify whether the user Save touch reached the VM on API26.

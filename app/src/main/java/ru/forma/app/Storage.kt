@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -223,6 +224,9 @@ class FormaApp:Application(){
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
  val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
+ internal val firebaseAccount by lazy {
+  FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let(::FirebaseAccount)
+ }
  // Guest UI and the foreground service access only unbound profiles.
  val repository by lazy{ProfileRepository.forGuest(database)}
  val settings by lazy{SettingsRepository(this)}
