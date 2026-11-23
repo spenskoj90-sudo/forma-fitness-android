@@ -1,6 +1,7 @@
 package ru.forma.app
 
 import androidx.room.Room
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.Assert.*
@@ -16,6 +17,31 @@ class SyncOutboxTest {
  // A fixed synthetic lease is test evidence, NEVER a production Firebase login.
  private fun fixtureIdentity(uid:String)=object:VerifiedSyncIdentity {
   override suspend fun currentLease()=VerifiedSyncLease(uid,1L)
+ }
+ @Test fun guestRepositoryCannotReadExportOrReplaceAnAccountProfile():Unit=runBlocking{
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try{
+   val guest=ProfileRepository.forGuest(db)
+   val privateProfile=Profile(id="account-profile",name="Synthetic account owner")
+   val local=Profile(id="local-profile",name="Synthetic guest")
+   guest.saveProfile(privateProfile)
+   guest.saveProfile(local)
+   assertEquals(setOf(privateProfile.id,local.id),guest.profiles.first().map{it.id}.toSet())
+   guest.bindAndQueueInitialSnapshotForVerifiedConsent(privateProfile.id,fixtureIdentity("uid-A"),100L)
+   guest.bindAndQueueInitialSnapshotForVerifiedConsent(privateProfile.id,fixtureIdentity("uid-A"),100L)
+   assertEquals(1,db.sync().totalRows())
+
+   assertEquals(listOf(local),guest.profiles.first())
+   assertNull(guest.load(privateProfile.id))
+   assertEquals(listOf(local),decodeBackup(guest.exportBackup()).profiles)
+   assertTrue(runCatching{guest.exportBackup(privateProfile.id)}.isFailure)
+   assertTrue(runCatching{guest.mutate(privateProfile.id){it.copy(name="Changed")}}.isFailure)
+   assertTrue(runCatching{guest.saveProfile(privateProfile.copy(name="Replaced"))}.isFailure)
+   assertTrue(runCatching{guest.start(privateProfile.id,generateProgram(privateProfile).first(),200L)}.isFailure)
+   assertEquals(privateProfile,ProfileRepository(db).load(privateProfile.id))
+   assertEquals(1,db.sync().totalRows())
+   assertEquals(local.id,guest.start(local.id,generateProgram(local).first(),200L).profileId)
+  }finally{db.close()}
  }
  @Test fun guestAndBackupImportNeverAutoBindOrQueue():Unit=runBlocking{
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()

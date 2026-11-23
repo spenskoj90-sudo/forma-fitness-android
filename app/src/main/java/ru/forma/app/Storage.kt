@@ -19,6 +19,12 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles ORDER BY name,id") fun observe():Flow<List<ProfileRow>>
  @Query("SELECT * FROM profiles WHERE id=:id") suspend fun get(id:String):ProfileRow?
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
+ @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id) ORDER BY p.name,p.id")
+ fun observeGuests():Flow<List<ProfileRow>>
+ @Query("SELECT p.* FROM profiles p WHERE p.id=:id AND NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
+ suspend fun guest(id:String):ProfileRow?
+ @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
+ suspend fun guests():List<ProfileRow>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
 // Add-only schema migration: never rewrite the v1 profiles table or its JSON.
@@ -36,12 +42,25 @@ abstract class FormaDatabase:RoomDatabase(){
  abstract fun profiles():ProfileDao
  abstract fun sync():SyncOutboxDao
 }
-class ProfileRepository(private val db:FormaDatabase) {
+class ProfileRepository private constructor(private val db:FormaDatabase,private val guestOnly:Boolean) {
+ internal constructor(db:FormaDatabase):this(db,false)
+ internal companion object {
+  fun forGuest(db:FormaDatabase)=ProfileRepository(db,true)
+ }
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
- val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
- suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
- suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
+ val profiles=(if(guestOnly)db.profiles().observeGuests() else db.profiles().observe()).map{rows->rows.map(::decode)}
+ suspend fun load(id:String)=(if(guestOnly)db.profiles().guest(id) else db.profiles().get(id))?.let(::decode)
+ private suspend fun visibleProfiles()=if(guestOnly)db.profiles().guests() else db.profiles().all()
+ suspend fun saveProfile(p:Profile) {
+  require(p.valid())
+  db.withTransaction {
+   require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"}
+   // A hidden profile still owns its UUID and must never be overwritten by REPLACE.
+   require(db.profiles().get(p.id)==null)
+   put(p)
+  }
+ }
  /**
   * Local persistence primitive for a future Firebase-verified, explicitly
   * consented profile binding. NO production Auth/consent caller exists yet.
@@ -60,7 +79,7 @@ class ProfileRepository(private val db:FormaDatabase) {
    ?:error("A verified account session is required")
   db.withTransaction {
    require(identity.currentLease()==lease){"Account session changed during consent"}
-   val profile=load(profileId)?:error("Profile missing")
+   val profile=db.profiles().get(profileId)?.let(::decode)?:error("Profile missing")
    val prior=db.sync().binding(profileId)
    if(prior!=null){
     require(prior.accountUid==lease.uid){"Local profile is already bound to a different account"}
@@ -75,7 +94,7 @@ class ProfileRepository(private val db:FormaDatabase) {
   }
  }
  suspend fun start(id:String,day:TrainingDay,now:Long,processRunId:String?=null):Session=db.withTransaction {
-  require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
+  require(visibleProfiles().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
   require(p.limitations.isBlank()&&p.recovery>1)
   val session=startSession(id,day,now).copy(processRunId=processRunId)
@@ -103,16 +122,15 @@ class ProfileRepository(private val db:FormaDatabase) {
   * explicit in UI, since different local profiles may belong to other people.
   */
  suspend fun exportBackup(profileId:String?=null):String=db.withTransaction {
-  val selected=if(profileId==null)db.profiles().all().map(::decode)
+  val selected=if(profileId==null)visibleProfiles().map(::decode)
    else listOf(load(profileId)?:error("Профиль не найден"))
   encodeBackup(Backup(profiles=selected))
  }
  suspend fun importBackup(text:String):List<String> {
   val backup=decodeBackup(text)
   return db.withTransaction {
-   val existing=db.profiles().all().map(::decode)
-   require(existing.none{it.active!=null}){"Завершите занятие перед импортом"}
-   require(existing.size+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
+   require(visibleProfiles().map(::decode).none{it.active!=null}){"Завершите занятие перед импортом"}
+   require(db.profiles().all().size+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }
@@ -168,6 +186,7 @@ class FormaApp:Application(){
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
  val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
- val repository by lazy{ProfileRepository(database)}
+ // Guest UI and the foreground service access only unbound profiles.
+ val repository by lazy{ProfileRepository.forGuest(database)}
  val settings by lazy{SettingsRepository(this)}
 }
