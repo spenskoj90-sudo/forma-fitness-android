@@ -74,11 +74,12 @@ class ProfileRepository(private val db:FormaDatabase) {
    require(identity.currentLease()==lease){"Account session changed during consent"}
   }
  }
- suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
+ suspend fun start(id:String,day:TrainingDay,now:Long,processRunId:String?=null):Session=db.withTransaction {
   require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
   require(p.limitations.isBlank()&&p.recovery>1)
-  val session=startSession(id,day,now);put(p.copy(active=session));session
+  val session=startSession(id,day,now).copy(processRunId=processRunId)
+  put(p.copy(active=session));session
  }
  suspend fun mutateSession(id:String,sessionId:String,stage:String?=null,op:(Session)->Session)=db.withTransaction {
   val p=load(id)?:return@withTransaction
@@ -151,12 +152,19 @@ class FormaApp:Application(){
  internal val audioFocusEpoch=AudioFocusEpoch()
  internal val serviceInterruptions=ServiceInterruptionTracker()
  internal val applicationScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+ private val processRunId=java.util.UUID.randomUUID().toString()
+ internal suspend fun startWorkout(profileId:String,day:TrainingDay):Session =
+  repository.start(profileId,day,workoutNow(),processRunId)
  internal suspend fun mutateWorkoutSession(
   profileId:String,sessionId:String,stage:String?=null,op:(Session)->Session
- )=mutateWithServiceInterruption(repository,serviceInterruptions,profileId,sessionId,stage,::workoutNow,op)
+ )=mutateWithServiceInterruption(repository,serviceInterruptions,profileId,sessionId,stage,::workoutNow){active->
+  // Recover and apply the command in the same Room transaction. A delayed
+  // startup callback then sees this process marker and leaves a Resume intact.
+  op(recoverIfPreviousProcess(active,processRunId,workoutNow()))
+ }
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
  val serviceError=MutableStateFlow<String?>(null)
- val processStartedMs=System.currentTimeMillis()
+ private val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
  val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}

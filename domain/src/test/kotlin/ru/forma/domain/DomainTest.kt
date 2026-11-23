@@ -51,28 +51,38 @@ class DomainTest {
   val profile=Profile(id="resume",name="User")
   val old=skipStage(startSession(profile.id,generateProgram(profile).first(),1000),1000)
   val paused=pauseSession(old,1500)
-  val newProcessStarted=5000L
-  val freshlyResumed=resumeSession(paused,5100)
+  val process="new-process"
+  val recovered=recoverIfPreviousProcess(paused,process,5100)
+  val freshlyResumed=resumeSession(recovered,5100)
   assertFalse(freshlyResumed.paused)
-  assertEquals(freshlyResumed,recoverIfPreviousProcess(freshlyResumed,newProcessStarted,5200))
-  assertTrue(recoverIfPreviousProcess(paused,newProcessStarted,5200).paused)
+  assertEquals(freshlyResumed,recoverIfPreviousProcess(freshlyResumed,process,5200))
+  assertTrue(recoverIfPreviousProcess(paused,process,5200).paused)
  }
  @Test fun immediateColdStartActionsCannotCountTimeWhileProcessWasAbsent(){
   val before=startSession(p.id,generateProgram(p).first(),1000L)
-  val processStarted=100_000L
+  val process="new-process"
   val tapAt=110_000L
   // UI may still show the old unpaused snapshot while async recovery starts.
-  val resumed=resumeSession(recoverIfPreviousProcess(before,processStarted,tapAt),tapAt)
+  val resumed=resumeSession(recoverIfPreviousProcess(before,process,tapAt),tapAt)
   assertFalse(resumed.paused)
   assertEquals(before.activeSeconds,resumed.activeSeconds)
   assertEquals(300_000L,resumed.deadlineMs-tapAt)
   assertEquals(tapAt,resumed.lastTickMs)
-  val stopped=stopSession(recoverIfPreviousProcess(before,processStarted,tapAt),false,tapAt)
+  val stopped=stopSession(recoverIfPreviousProcess(before,process,tapAt),false,tapAt)
   assertEquals(Phase.STOPPED,stopped.phase)
   assertEquals(before.activeSeconds,stopped.activeSeconds)
-  val paused=pauseSession(recoverIfPreviousProcess(before,processStarted,tapAt),tapAt)
+  val paused=pauseSession(recoverIfPreviousProcess(before,process,tapAt),tapAt)
   assertTrue(paused.paused)
   assertEquals(before.activeSeconds,paused.activeSeconds)
+ }
+ @Test fun coldStartPausesASessionWhoseLastTickIsAheadOfTheNewClock(){
+  val started=startSession(p.id,generateProgram(p).first(),10_000L).copy(processRunId="previous-process")
+  val before=advanceTimed(started,12_400L)
+  val recovered=recoverIfPreviousProcess(before,"next-process",5_001L)
+  assertTrue(recovered.paused)
+  assertEquals(before.activeSeconds,recovered.activeSeconds)
+  assertEquals(before.deadlineMs-before.lastTickMs,recovered.pausedRemainingMs)
+  assertEquals("next-process",recovered.processRunId)
  }
  @Test fun cardioIntervalEndsCorrectly() {val s=skipStage(startSession(p.id,TrainingDay(2,"Интервалы",cardio=CardioKind.INTERVAL,durationSec=300),0),0);assertEquals(Phase.CARDIO,advanceTimed(s,299000).phase);assertEquals(Phase.DONE,advanceTimed(s,300000).phase)}
 }

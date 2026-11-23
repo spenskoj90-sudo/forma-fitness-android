@@ -2,7 +2,7 @@ package ru.forma.domain
 import kotlinx.serialization.Serializable
 import java.util.UUID
 @Serializable enum class Phase{WARMUP,WORK,REST,CARDIO,DONE,STOPPED}
-@Serializable data class Session(val id:String=UUID.randomUUID().toString(),val profileId:String,val day:TrainingDay,val startedMs:Long,val phase:Phase=Phase.WARMUP,val exerciseIndex:Int=0,val setNumber:Int=1,val deadlineMs:Long=0,val paused:Boolean=false,val pausedRemainingSec:Int=0,val sets:List<SetResult> = emptyList(),val cardioIndex:Int=0,val cardioElapsedSec:Int=0,val painReported:Boolean=false,val activeSeconds:Int=0,val lastTickMs:Long=startedMs,val elapsedRemainderMs:Long=0,val pausedRemainingMs:Long=-1L){val current:Prescription? get()=day.exercises.getOrNull(exerciseIndex);val terminal:Boolean get()=phase==Phase.DONE||phase==Phase.STOPPED}
+@Serializable data class Session(val id:String=UUID.randomUUID().toString(),val profileId:String,val day:TrainingDay,val startedMs:Long,val phase:Phase=Phase.WARMUP,val exerciseIndex:Int=0,val setNumber:Int=1,val deadlineMs:Long=0,val paused:Boolean=false,val pausedRemainingSec:Int=0,val sets:List<SetResult> = emptyList(),val cardioIndex:Int=0,val cardioElapsedSec:Int=0,val painReported:Boolean=false,val activeSeconds:Int=0,val lastTickMs:Long=startedMs,val elapsedRemainderMs:Long=0,val pausedRemainingMs:Long=-1L,val processRunId:String?=null){val current:Prescription? get()=day.exercises.getOrNull(exerciseIndex);val terminal:Boolean get()=phase==Phase.DONE||phase==Phase.STOPPED}
 fun startSession(profileId:String,day:TrainingDay,now:Long):Session{require(day.exercises.isNotEmpty()||day.cardio!=null);require(day.durationSec in 60..7200&&day.intervals.size>=2&&day.intervals.all{it in 10..1800});return Session(profileId=profileId,day=day,startedMs=now,deadlineMs=now+300000)}
 fun remainingSeconds(s:Session,now:Long)=if(s.paused){
  ((if(s.pausedRemainingMs>=0) (s.pausedRemainingMs+999)/1000 else s.pausedRemainingSec.toLong())).coerceIn(0,7200).toInt()
@@ -22,9 +22,9 @@ fun resumeSession(s:Session,now:Long)=if(!s.paused||s.terminal)s else s.copy(pau
  deadlineMs=now+(if(s.pausedRemainingMs>=0)s.pausedRemainingMs else s.pausedRemainingSec*1000L),
  lastTickMs=now,pausedRemainingMs=-1L)
 fun recoverSession(s:Session,now:Long):Session = if(s.terminal)s else pauseSession(s,s.lastTickMs).copy(lastTickMs=now)
-/** Never re-pause a session already resumed in the current Android process. */
-fun recoverIfPreviousProcess(s:Session,processStartedMs:Long,now:Long):Session =
- if(s.terminal||s.lastTickMs>=processStartedMs)s else recoverSession(s,now)
+/** Legacy sessions without a process marker also require recovery. */
+fun recoverIfPreviousProcess(s:Session,processRunId:String,now:Long):Session =
+ if(s.terminal||s.processRunId==processRunId)s else recoverSession(s,now).copy(processRunId=processRunId)
 fun stopSession(s:Session,pain:Boolean=false,now:Long=s.lastTickMs):Session {
  if(s.terminal)return s
  val v=creditTime(s,now)
@@ -58,7 +58,12 @@ fun logSet(s:Session,weight:Double,reps:Int,effort:Int,pain:Boolean,now:Long):Se
  if(s.phase!=Phase.WORK||s.paused||s.terminal)return s
  require(weight.isFinite()&&weight in 0.0..500.0&&reps in 1..100&&effort in 1..10)
 
- val current=s.current?:return s;val result=SetResult(current.exercise.id,reps,if(recordsExternalKilograms(current.exercise.equipment))weight else 0.0,effort,false,now);val v=creditTime(s,now).copy(sets=s.sets+result)
+ val current=s.current?:return s
+ // Timer recovery can rebase to an earlier wall clock. History still needs
+ // every new set to fall within the workout and follow the earlier sets.
+ val recordedAt=maxOf(now,s.startedMs,s.sets.maxOfOrNull{it.timeMs}?:s.startedMs)
+ val result=SetResult(current.exercise.id,reps,if(recordsExternalKilograms(current.exercise.equipment))weight else 0.0,effort,false,recordedAt)
+ val v=creditTime(s,now).copy(sets=s.sets+result)
  return if(s.exerciseIndex==s.day.exercises.lastIndex&&s.setNumber==current.sets)v.copy(phase=completionPhase(v),deadlineMs=0)else v.copy(phase=Phase.REST,deadlineMs=now+current.restSec*1000L)
 }
 fun skipStage(s:Session,now:Long):Session { val v=advanceTimed(s,now);if(v.phase!=s.phase)return v;return skipCredited(v,now) }

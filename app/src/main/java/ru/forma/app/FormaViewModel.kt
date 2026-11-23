@@ -72,7 +72,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  // Recovery applies only to sessions last ticked by an older process.
  // A late init coroutine must never re-pause a workout the Owner just resumed.
  init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->
-  app.repository.mutateSession(profile.id,profile.active!!.id){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
+  app.mutateWorkoutSession(profile.id,profile.active!!.id){it}
  }}}
  private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
  fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
@@ -91,7 +91,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }finally{profileSaveInProgress.value=false}
   }
  }
- fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.repository.start(p.id,day,app.workoutNow());app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
+ fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.startWorkout(p.id,day);app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
  private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
  private suspend fun startServiceOrPause(id:String,session:String){
   val epoch=app.audioFocusEpoch.snapshot()
@@ -112,12 +112,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   action{
    try{
     // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
-    app.mutateWorkoutSession(p.id,expected){
-     val now=app.workoutNow()
-     // A cold-start Resume may beat the asynchronous ViewModel recovery.
-     // Recover first, then resume atomically so the offline gap is never credited.
-     resumeSession(recoverIfPreviousProcess(it,app.processStartedMs,now),now)
-    }
+    app.mutateWorkoutSession(p.id,expected){resumeSession(it,app.workoutNow())}
     val active=app.repository.load(p.id)?.active
     traceResume("persisted matches=${active?.id==expected} paused=${active?.paused} terminal=${active?.terminal}")
     if(active?.id==expected&&!active.terminal&&!active.paused){
@@ -141,11 +136,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
   if(invalidateFocus)app.audioFocusEpoch.invalidate()
   action{
-   app.mutateWorkoutSession(p.id,expected,if(stageBound)sessionStage(s) else null){
-    // STOP/PAUSE can be tapped before the cold-start init coroutine completes.
-    // Both recovery and the command must see the same Room transaction.
-    op(recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow()))
-   }
+   app.mutateWorkoutSession(p.id,expected,if(stageBound)sessionStage(s) else null,op)
   }
  }
  fun finish(expected:String,onSaved:()->Unit={}){

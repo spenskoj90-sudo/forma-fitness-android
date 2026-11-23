@@ -146,13 +146,16 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      lastStage=""
      nextBeat=0L
     }
-    app.mutateWorkoutSession(id,expected){recoverIfPreviousProcess(it,app.processStartedMs,app.workoutNow())}
     profileId=id;sessionId=expected
     if(intent.action=="PAUSE"||intent.action=="STOP")app.audioFocusEpoch.invalidate()
-    when(intent.action){
-     "PAUSE"->{app.repository.mutateSession(id,expected){pauseSession(it,app.workoutNow())};silence()}
-     "STOP"->{app.repository.mutateSession(id,expected){stopSession(it,false,app.workoutNow())};silence()}
+    app.mutateWorkoutSession(id,expected){session->
+     when(intent.action){
+      "PAUSE"->pauseSession(session,app.workoutNow())
+      "STOP"->stopSession(session,false,app.workoutNow())
+      else->session
+     }
     }
+    if(intent.action=="PAUSE"||intent.action=="STOP")silence()
     if(intent.action=="STOP"){
      // A newer START can arrive while the cancelled loop is completing.
      job?.cancelAndJoin()

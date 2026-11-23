@@ -175,12 +175,12 @@ class StorageTest {
   try {
    val repo=ProfileRepository(db);val p=Profile(id="cold-start",name="User")
    repo.saveProfile(p)
-   val original=repo.start(p.id,generateProgram(p).first(),1000L)
+   val original=repo.start(p.id,generateProgram(p).first(),1000L,"previous-process")
    // The ViewModel recovery action has not yet run; STOP must recover
    // the old session inside the same transaction that persists STOPPED.
    repo.mutateSession(p.id,original.id){
     val now=110_000L
-    stopSession(recoverIfPreviousProcess(it,100_000L,now),false,now)
+    stopSession(recoverIfPreviousProcess(it,"current-process",now),false,now)
    }
    val stopped=repo.load(p.id)!!.active!!
    assertEquals(Phase.STOPPED,stopped.phase)

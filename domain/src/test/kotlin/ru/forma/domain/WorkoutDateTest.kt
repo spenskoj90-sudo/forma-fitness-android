@@ -28,6 +28,16 @@ class WorkoutDateTest {
         assertEquals(12_500L, finishSession(profile, multiple, 11_000).history.single().finishedMs)
     }
 
+    @Test fun recordingAfterRecoveryAndClockRollbackKeepsWorkoutExportable() {
+        val work = skipStage(startSession(profile.id, day, 10_000), 10_000)
+        val first = logSet(work, 0.0, 10, 5, false, 12_000)
+        val rebased = resumeSession(recoverSession(first, 5_000), 5_000)
+        val next = logSet(skipStage(rebased, 5_001), 0.0, 10, 5, false, 6_000)
+        val saved = finishSession(profile, stopSession(next), 7_000)
+        assertEquals(listOf(12_000L, 12_000L), saved.history.single().sets.map { it.timeMs })
+        assertBackupRoundTrip(saved)
+    }
+
     private fun assertBackupRoundTrip(saved: Profile) {
         val backup = Backup(profiles = listOf(saved))
         assertEquals(backup, decodeBackup(encodeBackup(backup)))
