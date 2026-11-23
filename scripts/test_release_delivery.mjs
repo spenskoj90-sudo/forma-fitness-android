@@ -1,11 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync,createHash} from 'node:crypto';
+import {generateKeyPairSync,createHash,sign} from 'node:crypto';
 import {mkdtempSync,writeFileSync,readFileSync,symlinkSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {prepareUpdatePayload,packUpdateEnvelope} from './release_update_manifest.mjs';
 
 let delivery;
 try { delivery=await import('./release_delivery.mjs'); } catch(error) { if(error.code==='ERR_MODULE_NOT_FOUND')delivery=null;else throw error; }
@@ -19,6 +20,41 @@ const meta={package:'ru.forma.fitness',versionCode:3,versionName:'0.3.0',signerS
 const binding={schema:'forma.release-binding.v1',ledgerGeneration:1,ledgerCommit:'d'.repeat(40),signerSha256:'a'.repeat(64),sourceSha:'b'.repeat(40),runId:'12345678901',runAttempt:1,versionCode:3,versionName:'0.3.0',recipientSha256:fp,expiresAt:NOW+3600};
 const requireImpl=()=>assert.ok(delivery,'delivery implementation missing');
 const expected=buffer=>({...binding,...meta,capsuleSha256:createHash('sha256').update(buffer).digest('hex')});
+
+const updateOptions = {
+ previousVersion: 2, expectedSigner: meta.signerSha256,
+ feedUrl: 'https://updates.example.test/forma/latest.json',
+ apkUrl: 'https://updates.example.test/forma/forma-0.3.0.apk', notes: 'Сохранение тренировок',
+};
+
+test('update envelope preserves the exact signed bytes and the checked APK identity', () => {
+ const payload = prepareUpdatePayload(meta, data, updateOptions);
+ assert.deepEqual(JSON.parse(payload), {
+  channel: 'stable', sourceUrl: updateOptions.feedUrl, applicationId: meta.package,
+  versionCode: meta.versionCode, versionName: meta.versionName, apkUrl: updateOptions.apkUrl,
+  sha256: meta.apkSha256, certificateSha256: meta.signerSha256, sizeBytes: data.length,
+  releaseNotes: updateOptions.notes,
+ });
+ const pin = pair.publicKey.export({type: 'spki', format: 'der'}).toString('base64');
+ const signature = sign('sha256', payload, pair.privateKey);
+ const envelope = JSON.parse(packUpdateEnvelope(payload, signature, pin));
+ assert.deepEqual(Buffer.from(envelope.payload, 'base64'), payload);
+ assert.deepEqual(Buffer.from(envelope.signature, 'base64'), signature);
+ assert.throws(() => packUpdateEnvelope(Buffer.concat([payload, Buffer.from(' ')]), signature, pin));
+ assert.throws(() => packUpdateEnvelope(payload, signature, Buffer.from(priv).toString('base64')));
+});
+
+test('update preparation rejects substituted APKs, nonincreasing versions and untrusted URLs', () => {
+ assert.throws(() => prepareUpdatePayload(meta, Buffer.alloc(data.length), updateOptions));
+ assert.throws(() => prepareUpdatePayload({...meta, signerSha256: 'b'.repeat(64)}, data, updateOptions));
+ assert.throws(() => prepareUpdatePayload({...meta, package: 'other.app'}, data, updateOptions));
+ assert.throws(() => prepareUpdatePayload(meta, data, {...updateOptions, previousVersion: 3}));
+ for (const url of ['http://updates.example.test/release.apk', 'https://other.example.test/release.apk',
+  'https://user@updates.example.test/release.apk', 'https://updates.example.test:8443/release.apk',
+  'https://updates.example.test/release.apk#fragment']) {
+  assert.throws(() => prepareUpdatePayload(meta, data, {...updateOptions, apkUrl: url}));
+ }
+});
 
 test('RSA recipient canonical fingerprint and private-key rejection',()=>{
  requireImpl();assert.equal(delivery.recipientFingerprint(pub),fp);

@@ -227,3 +227,11 @@ same host/no redirects, package, increasing versionCode, installed certificate,
 APK SHA-256, announced byte length and actual APK signer. User installation
 still requires Android confirmation. The live feed, publishing custody and
 both physical same-cert upgrades remain NOT_RUN.
+
+`scripts/release_update_manifest.mjs payload` prepares the exact signed bytes
+from the verified APK identity, matching APK bytes, previous version, approved
+certificate, feed URL, download URL and release notes. After an authorized
+publisher signs those bytes externally, the `envelope` command verifies the
+detached signature against the app's public SPKI pin and writes the feed JSON.
+Both commands operate locally and require an absent output path. The script
+uses no private key, performs no upload and grants no release authorization.
