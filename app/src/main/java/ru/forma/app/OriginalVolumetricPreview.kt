@@ -26,6 +26,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import ru.forma.domain.Exercise
+import ru.forma.domain.VolumePoint
 import ru.forma.domain.VolumeTriangles
 import ru.forma.domain.originalVolumeAt
 import ru.forma.domain.originalVolumeTriangles
@@ -34,13 +35,38 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.atan
+import kotlin.math.tan
+
+private data class VolumeFraming(val center:VolumePoint,val radius:Float)
+
+/** Fit the authored movement and equipment once so orbit and playback share a stable camera. */
+private fun frameExercise(exercise:Exercise):VolumeFraming {
+ var lower:VolumePoint?=null
+ var upper:VolumePoint?=null
+ fun include(point:VolumePoint,radius:Float) {
+  val extent=VolumePoint(radius,radius,radius)
+  val low=point-extent
+  val high=point+extent
+  lower=lower?.let{VolumePoint(minOf(it.x,low.x),minOf(it.y,low.y),minOf(it.z,low.z))}?:low
+  upper=upper?.let{VolumePoint(maxOf(it.x,high.x),maxOf(it.y,high.y),maxOf(it.z,high.z))}?:high
+ }
+ for(phase in listOf(0f,0.25f,0.5f,0.75f,1f)) {
+  val scene=checkNotNull(originalVolumeAt(exercise,phase))
+  scene.links.forEach{include(it.a,it.radius);include(it.b,it.radius)}
+  scene.joints.forEach{include(it.position,it.radius)}
+ }
+ val minimum=checkNotNull(lower)
+ val maximum=checkNotNull(upper)
+ return VolumeFraming((minimum+maximum)*0.5f,(maximum-minimum).length()*0.5f)
+}
 
 /**
  * A real 3-D triangle renderer, not a 2-D Canvas projection or copied model.
  * Source geometry is generated offline for an exact exercise/equipment pair.
  * SOURCE_ONLY until medically grounded qualified technique review per exercise.
  */
-private class Original3DRenderer : GLSurfaceView.Renderer {
+private class Original3DRenderer(private val framing:VolumeFraming) : GLSurfaceView.Renderer {
  @Volatile var triangles: FloatArray = floatArrayOf()
  @Volatile var cameraAngle: Float = 25f
  private var width=1
@@ -124,10 +150,15 @@ private class Original3DRenderer : GLSurfaceView.Renderer {
   val projection=FloatArray(16)
   val view=FloatArray(16)
   val matrix=FloatArray(16)
-  Matrix.perspectiveM(projection,0,45f,width.toFloat()/height,0.1f,100f)
+  val aspect=width.toFloat()/height
   val angle=Math.toRadians(cameraAngle.toDouble())
-  Matrix.setLookAtM(view,0,(sin(angle)*19.0).toFloat(),7.2f,(cos(angle)*19.0).toFloat(),
-   0f,5.0f,0f,0f,1f,0f)
+  val halfVerticalFov=Math.PI/8
+  val halfHorizontalFov=atan(tan(halfVerticalFov)*aspect)
+  val distance=(framing.radius*1.12/sin(minOf(halfVerticalFov,halfHorizontalFov))).toFloat()
+  val center=framing.center
+  Matrix.perspectiveM(projection,0,45f,aspect,0.1f,maxOf(100f,distance+2f*framing.radius))
+  Matrix.setLookAtM(view,0,center.x+sin(angle).toFloat()*distance,center.y+distance*0.12f,
+   center.z+cos(angle).toFloat()*distance,center.x,center.y,center.z,0f,1f,0f)
   Matrix.multiplyMM(matrix,0,projection,0,view,0)
   GLES20.glUseProgram(program)
   GLES20.glUniformMatrix4fv(matrixUniform,1,false,matrix,0)
@@ -149,8 +180,8 @@ private class Original3DRenderer : GLSurfaceView.Renderer {
 }
 
 /** On-demand GLSurfaceView: paused 3-D never burns a continuous rendering loop. */
-private class Original3DSurface(context:Context):GLSurfaceView(context) {
- private val shapeRenderer=Original3DRenderer()
+private class Original3DSurface(context:Context,framing:VolumeFraming):GLSurfaceView(context) {
+ private val shapeRenderer=Original3DRenderer(framing)
  init {
   setEGLContextClientVersion(2)
   setRenderer(shapeRenderer)
@@ -189,7 +220,8 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
    val phase=remember { Animatable(0f) }
    val scope=rememberCoroutineScope()
    val lifecycle=LocalLifecycleOwner.current
-   val view=remember(context){Original3DSurface(context)}
+   val framing=remember(exercise.id,exercise.equipment){frameExercise(exercise)}
+   val view=remember(context,framing){Original3DSurface(context,framing)}
    DisposableEffect(lifecycle,view){
     val observer=LifecycleEventObserver{_,event ->
      when(event){

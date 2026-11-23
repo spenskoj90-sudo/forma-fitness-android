@@ -74,12 +74,22 @@ class OriginalVolumetricPreviewTest {
   var lit=0
   for(y in 0 until bitmap.height step 4)
    for(x in 0 until bitmap.width step 4) {
-    val c=bitmap.getPixel(x,y)
-    // Renderer clear color is RGB(6,13,17). Bright mesh pixels must
-    // appear; a single black/clear Surface does not constitute 3D.
-    if(Color.red(c)>38 || Color.green(c)>52 || Color.blue(c)>52)lit++
+    if(isMeshPixel(bitmap.getPixel(x,y)))lit++
    }
   return lit
+ }
+
+ // Renderer clear color is RGB(6,13,17). Bright pixels identify the actual mesh.
+ private fun isMeshPixel(color:Int)=Color.red(color)>38||Color.green(color)>52||Color.blue(color)>52
+
+ private fun assertReadableFraming(bitmap:Bitmap) {
+  val meshRows=(0 until bitmap.height step 4).filter{y->
+   (0 until bitmap.width step 4).any{x->isMeshPixel(bitmap.getPixel(x,y))}
+  }
+  assertTrue("3D mesh should fill most of the preview height",
+   meshRows.last()-meshRows.first()>=bitmap.height*0.60f)
+  assertTrue("3D mesh should retain top and bottom margins",
+   meshRows.first()>bitmap.height*0.02f&&meshRows.last()<bitmap.height*0.98f)
  }
 
  private fun differingSamples(a:Bitmap,b:Bitmap):Int {
@@ -148,6 +158,7 @@ class OriginalVolumetricPreviewTest {
   }
   val gl=checkNotNull(findGl(root.get()))
   val first=awaitRenderedMesh(gl)
+  assertReadableFraming(first)
   saveSyntheticFrame(first,"volume-gl-start.png")
 
   // Use the same manual controls that a user has: no autoplay, no network.
