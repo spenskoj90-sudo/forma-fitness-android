@@ -35,3 +35,24 @@ dependencies {
  debugImplementation(libs.androidx.ui.test.manifest)
 }
 
+
+// Package the audited, byte-reproducible GLB without checking an opaque binary into Git.
+// Python is already required by the mandatory release-workflow and media-provenance gates.
+val formaConceptAssets = layout.buildDirectory.dir("generated/forma-concept/assets")
+val generateFormaConceptAsset by tasks.registering(Exec::class) {
+    val output = formaConceptAssets.get().file("forma/concepts/20261123T103931_b06a115a.glb").asFile
+    inputs.file(rootProject.file("scripts/forma_concept_repro.py"))
+    outputs.file(output)
+    commandLine(
+        "python3",
+        rootProject.file("scripts/forma_concept_repro.py").absolutePath,
+        "--output", output.absolutePath
+    )
+}
+android.sourceSets.getByName("main").assets.srcDir(formaConceptAssets)
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(generateFormaConceptAsset)
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(generateFormaConceptAsset)
+}
