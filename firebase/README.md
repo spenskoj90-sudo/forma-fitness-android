@@ -1,14 +1,18 @@
-# FORMA F4 — local-only Firestore authorization contract
+# FORMA — Firebase authorization and Android transport
 
-This is a **security rules + emulator test** unit, not a Firebase deployment,
-Android sign-in, account import or a working cloud synchronization client.
+The Android SDK transport reads server snapshots and compares the target and
+its parent inside a Firestore transaction. Existing Room consent and outbox
+code supply records. The application currently does not enable account login,
+transport scheduling, inbound sync or access to the production project.
 
-- Use only \`npm run test:rules\` from this directory. The npm script pins
-  \`--project demo-forma-rules\`, uses the Firestore emulator and has **no deploy**
-  command. \`firebase.json\` explicitly loads \`firestore.rules\`; tests load it again.
+- Run `npm run test:rules` for the Rules suite. Android CI runs
+  `npm run test:android-sync` on API 34 with both emulators, using synthetic
+  email verification, local consent, offline replay, tombstones and account
+  switching. Both commands use `demo-forma-rules` and loopback endpoints.
 - No \`.firebaserc\`, credential, \`google-services.json\`, production project ID
   or real user data is required. All profile/workout/measurement values are synthetic.
-- Only Firebase-verified \`request.auth.uid\` controls document-path ownership:
+- Firestore requires a verified email claim and an exact `request.auth.uid`
+  match for document-path ownership:
   \`accounts/{uid}/profiles/{profileId}\`, then \`measurements/{measurementId}\`
   and \`workouts/{workoutId}\`. Parent account documents and other collections
   remain denied. Identifiers are stable local UUID-compatible strings.
@@ -36,9 +40,7 @@ Android sign-in, account import or a working cloud synchronization client.
   \`forma-ee2e9\`, whose \`(default)\` Firestore region remains pending at
   \`europe-west3\` (Frankfurt). **Do not deploy to this project from this PR.**
 
-This initial Rules contract is deliberately incomplete as a product:
-Room-first durable outbox, user consent, client auth, real two-user provider
-tests, rate/size strategy, export/deletion and physical device checks remain
-OPEN in existing GitHub Issue #8. Auth identity processing in US data centers
-is already recorded in the PROJECTS privacy gate; EU Firestore does not make
-the whole system EU-only.
+Issue #8 tracks account UI, local UID isolation, user consent, inbound sync,
+conflict resolution, real provider checks, export, deletion and physical device
+verification. Auth identity processing in US data centers remains part of the
+PROJECTS privacy gate.

@@ -106,3 +106,14 @@ grep -F "OK (1 test)" "verification/room-migration-api${api}.txt"
 # Synthetic test-only MP4 exercises actual decoder, lifecycle and honest offline fallback.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.TechniqueMediaTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-media-api${api}.txt"
 grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"
+
+# Run the native SDK against two disposable Firebase emulators after the
+# offline journeys. One Android API is enough to exercise the transport.
+if [[ "$api" == "34" ]]; then
+  (
+    cd firebase
+    export JAVA_HOME="${JAVA_HOME_21_X64:?Firestore emulator requires Java 21}"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    npm run test:android-sync
+  )
+fi

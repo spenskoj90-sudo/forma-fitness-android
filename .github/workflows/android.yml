@@ -143,6 +143,14 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        if: matrix.api == 34
+        with:
+          node-version: '22'
+      - name: Install demo Firebase emulator tools
+        if: matrix.api == 34
+        working-directory: firebase
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Reserve emulator disk
         run: |
           # Hosted runners vary in free space. These preinstalled toolchains are
@@ -188,6 +196,7 @@ jobs:
             verification/report-consent-api${{ matrix.api }}.txt
             verification/profile-edit-exit-api${{ matrix.api }}.txt
             verification/body-history-api${{ matrix.api }}.txt
+            verification/firebase-sync-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

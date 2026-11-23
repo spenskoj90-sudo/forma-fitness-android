@@ -4,7 +4,8 @@ service cloud.firestore {
     // This is the F4 *client* contract, never an Admin SDK authorization rule.
     // All identity is request.auth.uid, NEVER an owner ID supplied by a client.
     function owner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+      return request.auth != null && request.auth.uid == uid &&
+        request.auth.token.get('email_verified', false) == true;
     }
     function stableId(id) {
       return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$');

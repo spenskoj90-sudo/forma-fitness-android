@@ -24,7 +24,7 @@ function workoutRef(db, uid = "alice", profileId = "p-one", id = "w-one") {
   return doc(db, "accounts", uid, "profiles", profileId, "workouts", id);
 }
 function client(uid) {
-  return uid ? env.authenticatedContext(uid).firestore()
+  return uid ? env.authenticatedContext(uid, { email_verified: true }).firestore()
              : env.unauthenticatedContext().firestore();
 }
 function profile(name = "Synthetic athlete") {
@@ -84,6 +84,16 @@ test("anonymous clients cannot get, list, create or enumerate any account", asyn
   await assertFails(getDoc(doc(db, "accounts", "alice")));
 });
 
+test("an unverified email cannot access data even at its own UID path", async () => {
+  await seedProfile();
+  for (const claims of [{}, { email_verified: false }]) {
+    const db = env.authenticatedContext("alice", claims).firestore();
+    await assertFails(getDoc(profileRef(db)));
+    await assertFails(setDoc(profileRef(db, "alice", "p-two"),
+      envelope("alice", "p-two", "p-two", profile())));
+  }
+});
+
 test("the verified UID reads and lists only its own profiles", async () => {
   await seedProfile();
   const a = client("alice");
@@ -100,7 +110,7 @@ test("the verified UID reads and lists only its own profiles", async () => {
 
 test("a client cannot spoof a path UID, document ID, owner field, or admin claim", async () => {
   const a = client("alice");
-  const b = env.authenticatedContext("bob", { role: "admin" }).firestore();
+  const b = env.authenticatedContext("bob", { role: "admin", email_verified: true }).firestore();
   await assertFails(setDoc(profileRef(b, "alice"),
     envelope("alice", "p-one", "p-one", profile())));
   await assertFails(setDoc(profileRef(a), envelope("bob", "p-one", "p-one", profile())));
