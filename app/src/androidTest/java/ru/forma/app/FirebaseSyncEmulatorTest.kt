@@ -1,6 +1,11 @@
 package ru.forma.app
 
+import android.content.Intent
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.core.content.ContextCompat
 import androidx.room.Room
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.firebase.FirebaseApp
@@ -14,12 +19,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import ru.forma.domain.Measurement
@@ -27,6 +34,119 @@ import ru.forma.domain.Profile
 
 @RunWith(AndroidJUnit4::class)
 class FirebaseSyncEmulatorTest {
+    @get:Rule val compose = createEmptyComposeRule()
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun accountWorkoutScopeSurvivesReentryAndRejectsOldCommands() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val forma = context.applicationContext as FormaApp
+        check(FirebaseApp.getApps(context).none { it.name == FirebaseApp.DEFAULT_APP_NAME })
+        val firebase = checkNotNull(FirebaseApp.initializeApp(context, FirebaseOptions.Builder()
+            .setProjectId(projectId)
+            .setApplicationId("1:123456789012:android:1234567890123456")
+            .setApiKey("demo-forma-emulator-key")
+            .build()))
+        val auth = FirebaseAuth.getInstance(firebase).apply { useEmulator(emulatorHost, 9099) }
+        val account = checkNotNull(forma.firebaseAccount)
+        val identity = account.identity
+        val password = UUID.randomUUID().toString()
+        val firstEmail = "${UUID.randomUUID()}@example.test"
+        val secondEmail = "${UUID.randomUUID()}@example.test"
+        val a = Profile(name = "Профиль первого аккаунта")
+        val b = Profile(name = "Профиль второго аккаунта")
+        val guest = Profile(name = "Локальный профиль")
+
+        try {
+            listOf(a, b, guest).forEach { forma.repository.saveProfile(it) }
+            forma.settings.select(a.id)
+            suspend fun bind(email: String, profile: Profile) {
+                account.register(email, password)
+                verifyEmail(auth, email)
+                account.refreshVerification()
+                forma.repository.bindAndQueueInitialSnapshotForVerifiedConsent(profile.id, identity, 1L)
+                account.signOut()
+            }
+            account.register(firstEmail, password)
+            verifyEmail(auth, firstEmail)
+            account.refreshVerification()
+            account.signOut()
+            bind(secondEmail, b)
+            account.signIn(firstEmail, password)
+
+            ActivityScenario.launch(MainActivity::class.java).use { activity ->
+                compose.waitUntilExactlyOneExists(hasText("Профиль"), 15_000)
+                compose.onNodeWithText("Профиль").performClick()
+                compose.onNodeWithText("Аккаунт FORMA").performScrollTo().performClick()
+                compose.onNodeWithText("Связать выбранный профиль").performScrollTo().performClick()
+                compose.onNodeWithText(firstEmail, substring = true).assertExists()
+                compose.onNodeWithText("Отмена").performClick()
+                assertNotNull(forma.repository.load(a.id))
+                assertNull(forma.database.sync().binding(a.id))
+                compose.onNodeWithText("Связать выбранный профиль").performScrollTo().performClick()
+                compose.onNodeWithText("Согласен и связываю профиль").performClick()
+                compose.waitUntil(15_000) { runBlocking { forma.database.sync().binding(a.id) != null } }
+                assertNull(forma.repository.load(a.id))
+
+                fun enterScope(): AccountWorkoutScope {
+                    compose.waitUntilExactlyOneExists(hasText("Профили аккаунта") and hasClickAction(), 15_000)
+                    compose.onNodeWithText("Профили аккаунта").performScrollTo().performClick()
+                    compose.waitUntil(15_000) { forma.accountWorkouts.value != null }
+                    return checkNotNull(forma.accountWorkouts.value)
+                }
+
+                val old = enterScope()
+                compose.waitUntilExactlyOneExists(hasText("✓ ${a.name}"), 15_000)
+                compose.onNodeWithText(b.name, substring = true).assertDoesNotExist()
+                compose.onNodeWithText(guest.name).assertDoesNotExist()
+                compose.onNodeWithText("Тренировки").performScrollTo().performClick()
+                compose.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick()
+                compose.waitUntil(15_000) { forma.serviceRunning }
+                val session = checkNotNull(old.repository.load(a.id)?.active)
+                val oldRequest = Intent(forma, WorkoutService::class.java).setAction("STOP")
+                    .putExtra("profile", a.id).putExtra("session", session.id)
+                    .putExtra("workoutScope", old.id)
+
+                account.signOut()
+                compose.waitUntil(15_000) { forma.accountWorkouts.value == null && !forma.serviceRunning }
+                compose.onNodeWithText(a.name, substring = true).assertDoesNotExist()
+                account.signIn(secondEmail, password)
+                val second = enterScope()
+                compose.waitUntilExactlyOneExists(hasText("✓ ${b.name}"), 15_000)
+                assertEquals(listOf(b), second.repository.profiles.first())
+                assertNull(second.repository.load(a.id))
+                assertNull(forma.resolveWorkoutRepository(old.id))
+                assertTrue(runCatching { old.repository.load(a.id) }.exceptionOrNull() is LocalWorkoutAccessRevoked)
+                activity.onActivity { ContextCompat.startForegroundService(it, oldRequest) }
+                compose.waitForIdle()
+                compose.onNodeWithText(a.name, substring = true).assertDoesNotExist()
+
+                account.signOut()
+                compose.waitUntil(15_000) { forma.accountWorkouts.value == null }
+                account.signIn(firstEmail, password)
+                val reopened = enterScope()
+                assertNotEquals(old.id, reopened.id)
+                assertNull(forma.resolveWorkoutRepository(old.id))
+                compose.waitUntilExactlyOneExists(hasText("Продолжить сопровождение"), 15_000)
+                val paused = checkNotNull(reopened.repository.load(a.id)?.active)
+                assertEquals(session.id, paused.id)
+                assertTrue(paused.paused)
+                compose.onNodeWithText("Остановить тренировку").performScrollTo().performClick()
+                compose.onNodeWithText("Подтвердить остановку").performClick()
+                compose.waitUntilExactlyOneExists(hasText("Сохранить и открыть историю"), 15_000)
+                compose.onNodeWithText("Сохранить и открыть историю").performScrollTo().performClick()
+                compose.waitUntil(15_000) {
+                    runBlocking { reopened.repository.load(a.id)?.history?.singleOrNull()?.id == session.id }
+                }
+                assertNull(forma.repository.load(a.id))
+            }
+        } finally {
+            account.signOut()
+            forma.accountWorkouts.value?.let { forma.closeAccountWorkouts(it.id) }
+            identity.close()
+            firebase.delete()
+        }
+    }
+
     @Test fun verifiedAccountsDeliverWithoutLeakingAcrossSignOutOrAccountSwitch() = runBlocking {
         withTimeout(90_000) {
             val context = InstrumentationRegistry.getInstrumentation().targetContext

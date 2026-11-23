@@ -12,4 +12,4 @@ evidence=../verification/firebase-sync-api34.txt
 timeout --signal=TERM --kill-after=15s 4m adb shell am instrument -w \
   -e class ru.forma.app.FirebaseSyncEmulatorTest \
   ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "$evidence"
-grep -F 'OK (1 test)' "$evidence"
+grep -F 'OK (2 tests)' "$evidence"

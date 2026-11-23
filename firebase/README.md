@@ -4,15 +4,21 @@ The Android SDK transport reads server snapshots and compares the target and
 its parent inside a Firestore transaction. Existing Room consent and outbox
 code supply records. When a build supplies the default Firebase app configuration,
 the account screen supports email registration, sign-in, confirmation, password reset
-and sign-out through the Android Auth SDK. Local profiles continue to use the guest
-workout journey. The screen has no Room binding or upload action. The repository
-ships without a default Firebase app configuration. Transport scheduling,
-inbound sync and production connectivity remain open.
+and sign-out through the Android Auth SDK. A verified account can explicitly link
+the selected guest profile. The account address and profile name are shown before
+consent. The local binding and initial outbox commit in one Room transaction.
+The corresponding account space uses its own profile list, workout commands and
+history. A workspace identifier expires when the space closes, the account changes,
+or the app process dies. Reopening an unfinished workout pauses it before rendering
+and preserves the last recorded sets and duration. Guest profiles keep their existing
+workflow. The repository ships without a default Firebase app configuration.
+Transport scheduling, inbound sync, and production connectivity remain open.
 
 - Run `npm run test:rules` for the Rules suite. Android CI runs
   `npm run test:android-sync` on API 34 with both emulators, using synthetic
   registration, email verification, password reset request, sign-in, local
-  consent, offline replay, tombstones and account switching. Both commands
+  consent, offline replay, tombstones, account switching and revocation of
+  workout commands sent from an old workspace. Both commands
   use `demo-forma-rules` and loopback endpoints.
 - No \`.firebaserc\`, credential, \`google-services.json\`, production project ID
   or real user data is required. All profile/workout/measurement values are synthetic.

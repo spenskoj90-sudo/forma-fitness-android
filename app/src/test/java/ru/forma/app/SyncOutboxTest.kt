@@ -19,6 +19,44 @@ class SyncOutboxTest {
   override suspend fun currentLease()=VerifiedSyncLease(uid,1L)
  }
 
+ @Test fun closingLocalAccountScopePreventsPendingWorkoutSave():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val guest=ProfileRepository.forGuest(db)
+   val owner=Profile(name="Scoped workout")
+   val local=Profile(name="Guest")
+   guest.saveProfile(owner)
+   guest.saveProfile(local)
+   val identity=fixtureIdentity("uid-A")
+   val lease=identity.currentLease()
+   val stale=runCatching {
+    guest.bindAndQueueInitialSnapshotForVerifiedConsent(owner.id,identity,1L,lease.copy(generation=2L))
+   }
+   assertTrue(stale.exceptionOrNull() is LocalWorkoutAccessRevoked)
+   assertNull(db.sync().binding(owner.id))
+   guest.bindAndQueueInitialSnapshotForVerifiedConsent(owner.id,identity,1L,lease)
+
+   var accessOpen=true
+   val scoped=ProfileRepository.forAccount(db,LocalWorkoutAccess(lease){accessOpen})
+   assertEquals(listOf(owner),scoped.profiles.first())
+   assertNull(scoped.load(local.id))
+   val started=scoped.start(owner.id,generateProgram(owner).first(),1000L,"scope-A")
+   val initial=db.sync().pendingForAccount(lease.uid)
+   val save=runCatching {
+    scoped.mutate(owner.id){profile->
+     accessOpen=false
+     finishSession(profile,stopSession(started,now=1200L),1500L)
+    }
+   }
+   assertTrue(save.exceptionOrNull() is LocalWorkoutAccessRevoked)
+   assertEquals(initial,db.sync().pendingForAccount(lease.uid))
+   assertTrue(runCatching{scoped.profiles.first()}.exceptionOrNull() is LocalWorkoutAccessRevoked)
+   val reopened=ProfileRepository.forAccount(db,LocalWorkoutAccess(lease){true})
+   assertEquals(started,reopened.load(owner.id)?.active)
+   assertTrue(reopened.load(owner.id)!!.history.isEmpty())
+  } finally { db.close() }
+ }
+
  @Test fun accountGenerationChangeDiscardsReadsAndRollsBackEditsWithTheirOutbox():Unit=runBlocking {
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try {

@@ -15,7 +15,7 @@ import ru.forma.domain.*
 class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
  private val audioFocusGate by lazy{AudioFocusLeaseGate(app.audioFocusEpoch)}
- private var job:Job?=null
+ @Volatile private var job:Job?=null
  // Android may dispatch a new START before the previous workout loop exits.
  private val commandMutex=Mutex()
  private var tts:TextToSpeech?=null
@@ -29,9 +29,11 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  private var wake:PowerManager.WakeLock?=null
  private var profileId:String?=null
  private var sessionId:String?=null
+ @Volatile private var workoutScopeId:String?=null
  // onStartCommand is serialized on the main thread. Keep the latest Android
  // start id, so a completed session can stop after PAUSE/STOP commands too.
  @Volatile private var lastRequestedSession:String?=null
+ @Volatile private var lastRequestedScope:String?=null
  @Volatile private var lastStartId:Int=0
  @Volatile private var acceptedCommandEpoch:Long=-1L
  private var lastStage=""
@@ -55,17 +57,18 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   if(!focusGranted)return
   focusGranted=false
   silence()
-  val id=profileId;val session=sessionId
+  val id=profileId;val session=sessionId;val access=workoutScopeId
   if(id!=null&&session!=null){
    focusLossPending=true
    scope.launch{
     try{
-     app.repository.mutateSession(id,session){active->
+     app.resolveWorkoutRepository(access)?.mutateSession(id,session){active->
       // Check while holding the Room transaction: a later Resume or new
       // request invalidates queued losses before they can re-pause the session.
       if(audioFocusGate.isCurrent(lease))pauseSession(active,app.workoutNow()) else active
      }
     }catch(e:CancellationException){throw e}
+    catch(_:LocalWorkoutAccessRevoked){Unit}
     catch(e:Exception){app.coachStatus.value="Не удалось сохранить паузу после потери звука. Проверьте тренировку."}
     finally{focusLossPending=false}
    }
@@ -83,8 +86,21 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
   val id=intent?.getStringExtra("profile")
   val expected=intent?.getStringExtra("session")
+  val access=intent?.getStringExtra("workoutScope")
+  val repository=app.resolveWorkoutRepository(access)
+  if(repository==null){
+   if(job?.isActive==true){
+    lastStartId=startId
+   }else{
+    // A queued foreground launch may outlive account revocation.
+    runCatching{startForeground(1,notification("Подготовка тренировки",null))}
+    stopSelf(startId)
+   }
+   return START_NOT_STICKY
+  }
   // Keep each Android startId: an old loop must never stop a newer START.
   lastRequestedSession=expected
+  lastRequestedScope=access
   lastStartId=startId
   acceptedCommandEpoch=app.audioFocusEpoch.snapshot()
   try{startForeground(1,notification("Подготовка тренировки",null))}
@@ -96,12 +112,12 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
     try{
      if(id!=null&&expected!=null){
       if(intent?.action=="STOP"){
-       app.repository.mutateSession(id,expected){s->
+       repository.mutateSession(id,expected){s->
         val now=app.workoutNow()
         stopSession(recoverSession(s,now),false,now)
        }
       }else{
-       app.repository.pauseWhenServiceUnavailable(id,expected,app.workoutNow()){
+       repository.pauseWhenServiceUnavailable(id,expected,app.workoutNow()){
         lastStartId==startId&&lastRequestedSession==expected&&
          app.audioFocusEpoch.isCurrent(failureEpoch)
        }
@@ -109,6 +125,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      }
      app.serviceError.value="Не удалось включить фоновое сопровождение. Тренировка сохранена; проверьте её состояние."
     }catch(cancel:CancellationException){throw cancel}
+    catch(_:LocalWorkoutAccessRevoked){Unit}
     catch(error:Exception){
      app.serviceError.value="Не удалось включить фоновое сопровождение и подтвердить сохранение паузы. Проверьте тренировку."
     }finally{
@@ -130,15 +147,16 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
    return START_NOT_STICKY
   }
   scope.launch{
+   try{
    commandMutex.withLock{
-    val active=app.repository.load(id)?.active
+    val active=repository.load(id)?.active
     if(active==null||active.id!=expected||active.terminal){
      // A stale PendingIntent cannot supersede the real running session.
-     if(job?.isActive==true)lastRequestedSession=sessionId
+     if(job?.isActive==true){lastRequestedSession=sessionId;lastRequestedScope=workoutScopeId}
      else stopSelf(startId)
      return@withLock
     }
-    if(sessionId!=null&&sessionId!=expected){
+    if(sessionId!=null&&(sessionId!=expected||workoutScopeId!=access)){
      // Await resource cleanup (TTS, focus, wakelock) before starting a
      // replacement session. A stale notification cannot mutate this one.
      job?.cancelAndJoin()
@@ -146,9 +164,9 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      lastStage=""
      nextBeat=0L
     }
-    profileId=id;sessionId=expected
+    profileId=id;sessionId=expected;workoutScopeId=access
     if(intent.action=="PAUSE"||intent.action=="STOP")app.audioFocusEpoch.invalidate()
-    app.mutateWorkoutSession(id,expected){session->
+    app.mutateWorkoutSession(id,expected,scopeId=access){session->
      when(intent.action){
       "PAUSE"->pauseSession(session,app.workoutNow())
       "STOP"->stopSession(session,false,app.workoutNow())
@@ -164,17 +182,20 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      stopSelf(startId)
     }else if(job?.isActive!=true){
      app.serviceRunning=true
-     job=scope.launch{runWorkout(id,expected)}
+     job=scope.launch{runWorkout(id,expected,access,repository)}
     }
+   }
+   }catch(_:LocalWorkoutAccessRevoked){
+    if(lastStartId==startId)stopSelf(startId)
    }
   }
   return START_NOT_STICKY
  }
- private suspend fun runWorkout(id:String,expected:String){
+ private suspend fun runWorkout(id:String,expected:String,access:String?,repository:ProfileRepository){
   wake=(getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout")
   try{while(currentCoroutineContext().isActive){
-   app.mutateWorkoutSession(id,expected){advanceTimed(it,app.workoutNow())}
-   val s=app.repository.load(id)?.active?.takeIf{it.id==expected}?:break
+   app.mutateWorkoutSession(id,expected,scopeId=access){advanceTimed(it,app.workoutNow())}
+   val s=repository.load(id)?.active?.takeIf{it.id==expected}?:break
    if(s.terminal){silence();break}
    val prefs=app.settings.settings.first()
    if(s.paused){silence();releaseFocus();if(wake?.isHeld==true)wake?.release()}
@@ -187,21 +208,22 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
     if((prefs.sound||prefs.voice)&&!focusGranted&&!focusLossPending){releaseFocus();requestFocus()}
     if(toneVolume!=prefs.volume){tone?.release();tone=runCatching{ToneGenerator(AudioManager.STREAM_MUSIC,prefs.volume)}.getOrNull();toneVolume=prefs.volume}
    }
+   if(app.resolveWorkoutRepository(access)==null)break
    val stage=sessionStage(s);val title=if(s.paused)"Пауза"else stageLabel(s)
    if(stage!=lastStage){lastStage=stage;nextBeat=0;if(!s.paused)cue(title,prefs)}
    if(!prefs.voice)tts?.stop()
    if(!prefs.sound)tone?.stopTone()
-   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(1,notification(title,s))
+   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(1,notification(title,s,access))
    val now=SystemClock.elapsedRealtime()
    if(prefs.metronome&&prefs.sound&&focusGranted&&!s.paused&&s.phase==Phase.WORK&&now>=nextBeat){tone?.startTone(ToneGenerator.TONE_PROP_BEEP,65);nextBeat=now+60000L/prefs.bpm}
    delay(100)
-  }}catch(e:CancellationException){throw e}catch(e:Exception){
-   runCatching{app.repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}}
+  }}catch(e:CancellationException){throw e}catch(_:LocalWorkoutAccessRevoked){Unit}catch(e:Exception){
+   runCatching{repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}}
    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2,notification("Сбой сопровождения. Откройте FORMA.",null))
   }finally{
    silence();releaseFocus();if(wake?.isHeld==true)wake?.release()
    // Do not tear down a service whose newer start targets another workout.
-   if(lastRequestedSession==expected)stopSelf(lastStartId)
+   if(lastRequestedSession==expected&&lastRequestedScope==access)stopSelf(lastStartId)
   }
  }
  private fun silence(){tts?.stop();tone?.stopTone();nextBeat=0}
@@ -214,11 +236,11 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   manager.abandonAudioFocusRequest(request)
  }
  private fun cue(text:String,p:Preferences){if(!focusGranted)return;if(p.sound)tone?.startTone(ToneGenerator.TONE_PROP_ACK,160);if(p.voice&&ready){tts?.setSpeechRate(p.speechRate);tts?.speak(text,TextToSpeech.QUEUE_FLUSH,Bundle().apply{putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME,p.volume/100f)},"forma-stage")}}
- private fun notification(text:String,s:Session?):Notification{
+ private fun notification(text:String,s:Session?,access:String?=null):Notification{
   val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-  val builder=NotificationCompat.Builder(this,"workout").setSmallIcon(R.drawable.ic_notification).setContentTitle("FORMA · тренировка").setContentText(text).setContentIntent(open).setOngoing(s!=null)
+  val builder=NotificationCompat.Builder(this,"workout").setSmallIcon(R.drawable.ic_notification).setContentTitle("FORMA · тренировка").setContentText(if(access==null)text else if(s?.paused==true)"Пауза" else "Сопровождение активно").setContentIntent(open).setOngoing(s!=null)
   if(s!=null){
-   fun command(action:String,code:Int)=PendingIntent.getService(this,code,Intent(this,WorkoutService::class.java).setAction(action).setData(android.net.Uri.parse("forma://workout/${s.id}/$action")).putExtra("profile",s.profileId).putExtra("session",s.id),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+   fun command(action:String,code:Int)=PendingIntent.getService(this,code,Intent(this,WorkoutService::class.java).setAction(action).setData(android.net.Uri.parse("forma://workout/${s.id}/$action/${access.orEmpty()}")).putExtra("profile",s.profileId).putExtra("session",s.id).putExtra("workoutScope",access),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
    if(!s.paused)builder.addAction(0,"Пауза",command("PAUSE",1))
    builder.addAction(0,"Стоп",command("STOP",2))
   }
@@ -227,6 +249,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  override fun onDestroy(){
   val id=profileId
   val expected=sessionId
+  val access=workoutScopeId
   // This callback is not delivered after a full process kill. Process-death
   // recovery handles that case; this covers same-process service teardown.
   // Ignore an old instance if a newer user command invalidated its epoch.
@@ -236,8 +259,9 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
    // The in-memory mark also makes an immediate Resume/STOP/next tick recover
    // before it can credit any time after service supervision was lost.
    app.applicationScope.launch{
-    try{app.mutateWorkoutSession(id,expected){it}}
+    try{app.mutateWorkoutSession(id,expected,scopeId=access){it}}
     catch(e:CancellationException){throw e}
+    catch(_:LocalWorkoutAccessRevoked){Unit}
     catch(e:Exception){app.serviceError.value="Сопровождение завершилось. Не удалось подтвердить паузу — проверьте тренировку."}
    }
   }

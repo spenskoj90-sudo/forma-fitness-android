@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -31,6 +34,11 @@ import ru.forma.domain.*
   WHERE b.accountUid = :uid AND b.consentAtMs > 0 ORDER BY p.name, p.id
  """)
  suspend fun accountProfiles(uid:String):List<ProfileRow>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE b.accountUid = :uid AND b.consentAtMs > 0 ORDER BY p.name, p.id
+ """)
+ fun observeAccountProfiles(uid:String):Flow<List<ProfileRow>>
  @Query("""
   SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
   WHERE p.id = :id AND b.accountUid = :uid AND b.consentAtMs > 0
@@ -55,17 +63,38 @@ abstract class FormaDatabase:RoomDatabase(){
 }
 internal data class VerifiedAccountProfiles(val lease:VerifiedSyncLease,val profiles:List<Profile>)
 
-class ProfileRepository private constructor(private val db:FormaDatabase,private val guestOnly:Boolean) {
+class ProfileRepository private constructor(
+ private val db:FormaDatabase,
+ private val guestOnly:Boolean,
+ private val account:LocalWorkoutAccess?=null
+) {
  internal constructor(db:FormaDatabase):this(db,false)
  internal companion object {
   fun forGuest(db:FormaDatabase)=ProfileRepository(db,true)
+  fun forAccount(db:FormaDatabase,access:LocalWorkoutAccess)=ProfileRepository(db,true,access)
  }
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
- val profiles=(if(guestOnly)db.profiles().observeGuests() else db.profiles().observe()).map{rows->rows.map(::decode)}
- suspend fun load(id:String)=(if(guestOnly)db.profiles().guest(id) else db.profiles().get(id))?.let(::decode)
- private suspend fun visibleProfiles()=if(guestOnly)db.profiles().guests() else db.profiles().all()
+ val profiles=when {
+  account!=null -> db.profiles().observeAccountProfiles(account.lease.uid)
+  guestOnly -> db.profiles().observeGuests()
+  else -> db.profiles().observe()
+ }.map{rows->rows.map(::decode).also{account?.requireCurrent()}}
+ suspend fun load(id:String):Profile? {
+  account?.requireCurrent()
+  return when {
+   account!=null -> db.profiles().accountProfile(id,account.lease.uid)
+   guestOnly -> db.profiles().guest(id)
+   else -> db.profiles().get(id)
+  }?.let(::decode).also{account?.requireCurrent()}
+ }
+ private suspend fun visibleProfiles()=when {
+  account!=null -> db.profiles().accountProfiles(account.lease.uid)
+  guestOnly -> db.profiles().guests()
+  else -> db.profiles().all()
+ }
  suspend fun saveProfile(p:Profile) {
+  check(account==null)
   require(p.valid())
   db.withTransaction {
    require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"}
@@ -75,24 +104,28 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
   }
  }
  /**
-  * Local persistence primitive for a future Firebase-verified, explicitly
-  * consented profile binding. NO production Auth/consent caller exists yet.
+  * Local persistence primitive for a Firebase-verified, explicitly
+  * consented profile binding.
   * Binding plus the complete existing snapshot commit atomically: a crash
   * cannot leave a bound historical profile with an empty initial outbox.
   * Repeated consent for the same UID is idempotent; rehoming to another UID
   * is forbidden until a separately reviewed ownership/recovery flow exists.
   */
  internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
-  profileId:String,identity:VerifiedSyncIdentity,consentAtMs:Long
+  profileId:String,identity:VerifiedSyncIdentity,consentAtMs:Long,
+  expectedLease:VerifiedSyncLease?=null
  ) {
+  check(account==null)
   // A user-entered or stored UID is never authority to bind personal history.
   // A verified Auth lease must be the same before and after this transaction.
   require(consentAtMs>0){"Explicit consent is required"}
   val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}
    ?:error("A verified account session is required")
+  if(expectedLease!=null&&expectedLease!=lease)throw LocalWorkoutAccessRevoked()
   db.withTransaction {
    require(identity.currentLease()==lease){"Account session changed during consent"}
    val profile=db.profiles().get(profileId)?.let(::decode)?:error("Profile missing")
+   if(expectedLease!=null)require(profile.active==null){"Сначала завершите локальную тренировку"}
    val prior=db.sync().binding(profileId)
    if(prior!=null){
     require(prior.accountUid==lease.uid){"Local profile is already bound to a different account"}
@@ -107,11 +140,14 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
   }
  }
  suspend fun start(id:String,day:TrainingDay,now:Long,processRunId:String?=null):Session=db.withTransaction {
+  account?.requireCurrent()
   require(visibleProfiles().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
   require(p.limitations.isBlank()&&p.recovery>1)
   val session=startSession(id,day,now).copy(processRunId=processRunId)
-  put(p.copy(active=session));session
+  put(p.copy(active=session))
+  account?.requireCurrent()
+  session
  }
  suspend fun mutateSession(id:String,sessionId:String,stage:String?=null,op:(Session)->Session)=db.withTransaction {
   val p=load(id)?:return@withTransaction
@@ -120,6 +156,7 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
   val next=op(active);require(next.id==active.id && next.profileId==id)
   // Paused ticks and stale callbacks must not rewrite an unchanged profile.
   if(next!=active)put(p.copy(active=next))
+  account?.requireCurrent()
  }
  /**
   * The service never established reliable foreground supervision. Preserve
@@ -135,11 +172,13 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
   * explicit in UI, since different local profiles may belong to other people.
   */
  suspend fun exportBackup(profileId:String?=null):String=db.withTransaction {
+  check(account==null)
   val selected=if(profileId==null)visibleProfiles().map(::decode)
    else listOf(load(profileId)?:error("Профиль не найден"))
   encodeBackup(Backup(profiles=selected))
  }
  suspend fun importBackup(text:String):List<String> {
+  check(account==null)
   val backup=decodeBackup(text)
   return db.withTransaction {
    require(visibleProfiles().map(::decode).none{it.active!=null}){"Завершите занятие перед импортом"}
@@ -157,6 +196,7 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
  suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {
   val old=load(id)?:error("Профиль не найден")
   applyProfileChange(old,op)
+  account?.requireCurrent()
  }
 
  internal suspend fun profilesForVerifiedAccount(identity:VerifiedSyncIdentity):VerifiedAccountProfiles? {
@@ -209,14 +249,55 @@ class FormaApp:Application(){
  internal val serviceInterruptions=ServiceInterruptionTracker()
  internal val applicationScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
  private val processRunId=java.util.UUID.randomUUID().toString()
- internal suspend fun startWorkout(profileId:String,day:TrainingDay):Session =
-  repository.start(profileId,day,workoutNow(),processRunId)
+ private val workoutScopeMutex=Mutex()
+ private val mutableAccountWorkouts=MutableStateFlow<AccountWorkoutScope?>(null)
+ internal val accountWorkouts=mutableAccountWorkouts.asStateFlow()
+ internal suspend fun openAccountWorkouts()=workoutScopeMutex.withLock {
+  val identity=firebaseAccount?.identity?:throw LocalWorkoutAccessRevoked()
+  val lease=identity.localLease()?:throw LocalWorkoutAccessRevoked()
+  val current=mutableAccountWorkouts.value
+  if(current?.lease==lease)return@withLock
+  if(current!=null)throw LocalWorkoutAccessRevoked()
+  require(repository.profiles.first().none{it.active!=null}){"Сначала завершите локальную тренировку"}
+  if(identity.localLease()!=lease)throw LocalWorkoutAccessRevoked()
+  val id=java.util.UUID.randomUUID().toString()
+  val access=LocalWorkoutAccess(lease){
+   mutableAccountWorkouts.value?.id==id && identity.localLease()==lease
+  }
+  mutableAccountWorkouts.value=AccountWorkoutScope(id,lease,ProfileRepository.forAccount(database,access))
+ }
+ internal suspend fun closeAccountWorkouts(expectedId:String)=workoutScopeMutex.withLock {
+  if(mutableAccountWorkouts.value?.id==expectedId){
+   mutableAccountWorkouts.value=null
+   audioFocusEpoch.invalidate()
+   stopService(android.content.Intent(this,WorkoutService::class.java))
+  }
+ }
+ internal suspend fun bindGuestProfile(profileId:String,expected:VerifiedSyncLease)=workoutScopeMutex.withLock {
+  val identity=firebaseAccount?.identity?:throw LocalWorkoutAccessRevoked()
+  if(identity.localLease()!=expected)throw LocalWorkoutAccessRevoked()
+  require(mutableAccountWorkouts.value==null&&repository.load(profileId)!=null){"Локальный профиль недоступен"}
+  require(repository.profiles.first().none{it.active!=null}){"Сначала завершите локальную тренировку"}
+  repository.bindAndQueueInitialSnapshotForVerifiedConsent(profileId,identity,System.currentTimeMillis(),expected)
+ }
+ internal fun resolveWorkoutRepository(scopeId:String?):ProfileRepository? {
+  val account=mutableAccountWorkouts.value
+  return if(scopeId==null) repository.takeIf{account==null}
+  else account?.takeIf{it.id==scopeId && it.lease==firebaseAccount?.identity?.localLease()}?.repository
+ }
+ internal suspend fun startWorkout(profileId:String,day:TrainingDay,scopeId:String?=null):Session =
+  workoutScopeMutex.withLock {
+   val profiles=resolveWorkoutRepository(scopeId)?:throw LocalWorkoutAccessRevoked()
+   profiles.start(profileId,day,workoutNow(),scopeId?:processRunId)
+  }
  internal suspend fun mutateWorkoutSession(
-  profileId:String,sessionId:String,stage:String?=null,op:(Session)->Session
- )=mutateWithServiceInterruption(repository,serviceInterruptions,profileId,sessionId,stage,::workoutNow){active->
-  // Recover and apply the command in the same Room transaction. A delayed
-  // startup callback then sees this process marker and leaves a Resume intact.
-  op(recoverIfPreviousProcess(active,processRunId,workoutNow()))
+  profileId:String,sessionId:String,stage:String?=null,scopeId:String?=null,op:(Session)->Session
+ ) {
+  val profiles=resolveWorkoutRepository(scopeId)?:throw LocalWorkoutAccessRevoked()
+  mutateWithServiceInterruption(profiles,serviceInterruptions,profileId,sessionId,stage,::workoutNow){active->
+   // A reopened account scope is a recovery boundary even in the same OS process.
+   op(recoverIfPreviousProcess(active,scopeId?:processRunId,workoutNow()))
+  }
  }
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
  val serviceError=MutableStateFlow<String?>(null)
@@ -225,9 +306,18 @@ class FormaApp:Application(){
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
  val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
  internal val firebaseAccount by lazy {
-  FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let(::FirebaseAccount)
+  FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let{configured->
+   FirebaseAccount(configured).also{account->
+    applicationScope.launch{
+     account.localLeases.collect{
+      val current=mutableAccountWorkouts.value
+      if(current!=null && current.lease!=account.identity.localLease())closeAccountWorkouts(current.id)
+     }
+    }
+   }
+  }
  }
- // Guest UI and the foreground service access only unbound profiles.
+ // Guest UI and guest service actions access only unbound profiles.
  val repository by lazy{ProfileRepository.forGuest(database)}
  val settings by lazy{SettingsRepository(this)}
 }

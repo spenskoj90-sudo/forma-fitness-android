@@ -7,8 +7,7 @@ import kotlinx.serialization.json.Json
 import ru.forma.domain.*
 import java.util.UUID
 
-// No production binding writer exists until verified Firebase Auth + explicit
-// local-to-cloud consent are connected. Tests may seed synthetic bindings.
+// Profile bindings are created by explicit consent for a verified Firebase UID.
 @Entity(tableName="sync_bindings", indices=[Index(value=["accountUid"])])
 data class SyncBindingRow(
  @PrimaryKey val profileId:String,
@@ -45,7 +44,7 @@ data class SyncOutboxCounts(
 
  @Query("SELECT * FROM sync_bindings WHERE profileId=:profileId")
  suspend fun binding(profileId:String):SyncBindingRow?
- // Only used by synthetic tests until explicit, verified Auth consent exists.
+ // The repository writes this together with the initial outbox snapshot.
  @Insert(onConflict=OnConflictStrategy.ABORT)
  suspend fun bindForVerifiedConsent(row:SyncBindingRow)
  // Diagnostics may count all records, but cannot read another account's payload.

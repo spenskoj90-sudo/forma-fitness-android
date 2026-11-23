@@ -23,6 +23,17 @@ internal class FirebaseAccount(app: FirebaseApp) {
         awaitClose { auth.removeIdTokenListener(listener) }
     }.distinctUntilChanged()
 
+    val localLeases = callbackFlow {
+        val listener = FirebaseAuth.IdTokenListener { trySend(identity.localLease()) }
+        auth.addIdTokenListener(listener)
+        awaitClose { auth.removeIdTokenListener(listener) }
+    }.distinctUntilChanged()
+
+    fun verifiedEmail(lease: VerifiedSyncLease): String? {
+        if (identity.localLease() != lease) return null
+        return auth.currentUser?.takeIf { it.uid == lease.uid }?.email
+    }
+
     suspend fun signIn(email: String, password: String) {
         auth.signInWithEmailAndPassword(email.trim(), password).await()
     }

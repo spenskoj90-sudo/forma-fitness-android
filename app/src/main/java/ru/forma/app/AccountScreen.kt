@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -34,11 +35,33 @@ internal data class AccountScreenState(
     val isError: Boolean = false,
 )
 
+internal data class AccountConsentDraft(
+    val profileId: String,
+    val profileName: String,
+    val email: String,
+    val lease: VerifiedSyncLease,
+)
+
+@Composable
+internal fun AccountConsentDialog(
+    draft: AccountConsentDraft,
+    confirm: () -> Unit,
+    dismiss: () -> Unit,
+) = AlertDialog(
+    onDismissRequest = dismiss,
+    title = { Text("Связать профиль с аккаунтом?") },
+    text = { Text("Профиль «${draft.profileName}», история тренировок и замеры будут связаны с ${draft.email}. Записи будут отправлены, когда облачная синхронизация доступна. Для доступа к профилю понадобится этот аккаунт.") },
+    confirmButton = { TextButton(confirm) { Text("Согласен и связываю профиль") } },
+    dismissButton = { TextButton(dismiss) { Text("Отмена") } },
+)
+
 @Composable
 internal fun AccountScreen(
     state: AccountScreenState,
     onAction: (AccountAction, String, String) -> Unit,
     onBack: () -> Unit,
+    openWorkouts: (() -> Unit)? = null,
+    linkGuest: (() -> Unit)? = null,
 ) {
     val focus = LocalFocusManager.current
     // Credentials live only in the active screen and are cleared on submit.
@@ -100,6 +123,8 @@ internal fun AccountScreen(
             }
             AccountSession.EMAIL_VERIFIED -> {
                 Text("Почта подтверждена. Тренировки и замеры доступны в локальном профиле.")
+                openWorkouts?.let { Action("Профили аккаунта", it, !state.working) }
+                linkGuest?.let { Action("Связать выбранный профиль", it, !state.working) }
                 Action("Выйти из аккаунта", { submit(AccountAction.SIGN_OUT) }, !state.working)
             }
         }

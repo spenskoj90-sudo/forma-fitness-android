@@ -28,6 +28,14 @@ internal class FirebaseSyncIdentity(app: FirebaseApp) : VerifiedSyncIdentity, Cl
         return lease.takeIf { it == observeSession() }
     }
 
+    /** The SDK's cached verified user may access local Room data while offline. */
+    @Synchronized fun localLease(): VerifiedSyncLease? {
+        val lease = observeSession() ?: return null
+        return lease.takeIf { auth.currentUser?.let { user ->
+            user.uid == lease.uid && user.isEmailVerified && !user.isAnonymous
+        } == true }
+    }
+
     /** Invalidate the application lease before the SDK can deliver a late callback. */
     @Synchronized fun signOut() {
         generation++

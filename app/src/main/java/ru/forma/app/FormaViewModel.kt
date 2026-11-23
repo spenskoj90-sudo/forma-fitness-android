@@ -28,28 +28,66 @@ internal data class SettingsSnapshot(
  val status:LocalLoadStatus,
  val settings:Preferences = Preferences()
 )
+internal fun selectedProfile(profiles:List<Profile>,id:String):Profile? =
+ profiles.firstOrNull{it.active!=null}?:profiles.firstOrNull{it.id==id}?:profiles.firstOrNull()
+
 internal fun canRenderProfileUi(
  profiles:ProfileSnapshot,settings:SettingsSnapshot,current:Profile?
 ):Boolean {
  if(profiles.status!=LocalLoadStatus.READY||settings.status!=LocalLoadStatus.READY)return false
- val expected=profiles.profiles.firstOrNull{it.id==settings.settings.selected}
-  ?:profiles.profiles.firstOrNull()
+ val expected=selectedProfile(profiles.profiles,settings.settings.selected)
  return current?.id==expected?.id
 }
 // Non-identifying in-memory gesture diagnostics for IME/Save regressions.
 enum class SaveTouchStage { PRESS, RELEASE, CANCEL }
 internal data class SaveTouchEvidence(val presses:Int=0,val releases:Int=0,val cancels:Int=0)
-class FormaViewModel(application:Application):AndroidViewModel(application){
+class FormaViewModel internal constructor(
+ application:Application,
+ private val workoutScope:AccountWorkoutScope?
+):AndroidViewModel(application){
+ constructor(application:Application):this(application,null)
  private val app=application as FormaApp
+ private val profileRepository=workoutScope?.repository?:app.repository
+ private val scopeId=workoutScope?.id
+ private val accountSelection=MutableStateFlow("")
+ private val accountPlace=MutableStateFlow(TrainingPlace.HOME)
+ internal val accountWorkouts=app.accountWorkouts
+ internal fun openAccountWorkouts(){action{app.openAccountWorkouts()}}
+ internal fun closeAccountWorkouts(id:String){action{app.closeAccountWorkouts(id)}}
+ internal val accountConsent=MutableStateFlow<AccountConsentDraft?>(null)
+ internal fun requestAccountConsent(){
+  val client=app.firebaseAccount?:return
+  val profile=current.value?.takeIf{it.active==null}?:return
+  val lease=client.identity.localLease()?:return
+  val email=client.verifiedEmail(lease)?:return
+  accountConsent.value=AccountConsentDraft(profile.id,profile.name,email,lease)
+ }
+ internal fun confirmAccountConsent(draft:AccountConsentDraft){
+  if(!accountConsent.compareAndSet(draft,null)||mutableAccount.value.working)return
+  mutableAccount.update{it.copy(working=true,message=null,isError=false)}
+  action{
+   try{
+    app.bindGuestProfile(draft.profileId,draft.lease)
+    notice.value="Профиль теперь доступен в выбранном аккаунте. Данные подготовлены к синхронизации."
+   }finally{
+    mutableAccount.update{it.copy(working=false)}
+   }
+  }
+ }
  internal val accountAvailable get()=app.firebaseAccount!=null
  private val mutableAccount=MutableStateFlow(AccountScreenState(
   session=app.firebaseAccount?.currentSession?:AccountSession.SIGNED_OUT
  ))
  internal val account=mutableAccount.asStateFlow()
  init {
-  app.firebaseAccount?.let { client ->
+  app.firebaseAccount?.takeIf{workoutScope==null}?.let { client ->
    viewModelScope.launch {
     client.sessions.collect { session -> mutableAccount.update { it.copy(session=session) } }
+   }
+   viewModelScope.launch{
+    client.localLeases.collect{
+     accountConsent.update{draft->draft?.takeIf{it.lease==client.identity.localLease()}}
+    }
    }
   }
  }
@@ -72,7 +110,11 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
      }
      AccountAction.RESEND -> {client.resendVerification();"Письмо с подтверждением отправлено."}
      AccountAction.RESET_PASSWORD -> {client.sendPasswordReset(email);resetNotice}
-     AccountAction.SIGN_OUT -> {client.signOut();null}
+     AccountAction.SIGN_OUT -> {
+      client.signOut()
+      app.accountWorkouts.value?.let{app.closeAccountWorkouts(it.id)}
+      null
+     }
     }
    }catch(e:CancellationException){
     throw e
@@ -95,7 +137,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
    }
   }
  }
- val error=app.serviceError
+ val error=if(workoutScope==null)app.serviceError else MutableStateFlow<String?>(null)
  val notice=MutableStateFlow<String?>(null)
  // No names/IDs: identify whether the user Save touch reached the VM on API26.
  internal val profileSaveRequests=MutableStateFlow(0)
@@ -112,11 +154,15 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  // A profile save is one durable operation: do not enqueue overlapping taps.
  internal val profileSaveInProgress=MutableStateFlow(false)
  val coachStatus=app.coachStatus
- internal val profileSnapshot=app.repository.profiles
+ internal val profileSnapshot=profileRepository.profiles
+  .onStart{if(workoutScope!=null)recoverWorkouts()}
   .map{ProfileSnapshot(LocalLoadStatus.READY,it)}
-  .catch{error.value="Не удалось прочитать локальные данные";emit(ProfileSnapshot(LocalLoadStatus.FAILED))}
+  .catch{if(it !is LocalWorkoutAccessRevoked)error.value="Не удалось прочитать локальные данные";emit(ProfileSnapshot(LocalLoadStatus.FAILED))}
   .stateIn(viewModelScope,SharingStarted.Eagerly,ProfileSnapshot(LocalLoadStatus.LOADING))
- internal val settingsSnapshot=app.settings.settings
+ internal val settingsSnapshot=(if(workoutScope==null)app.settings.settings else
+  combine(app.settings.settings,accountSelection,accountPlace){settings,selected,place->
+   settings.copy(selected=selected,trainingPlace=place)
+  })
   .map{SettingsSnapshot(LocalLoadStatus.READY,it)}
   .catch{error.value="Не удалось прочитать настройки";emit(SettingsSnapshot(LocalLoadStatus.FAILED))}
   .stateIn(viewModelScope,SharingStarted.Eagerly,SettingsSnapshot(LocalLoadStatus.LOADING))
@@ -125,15 +171,29 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  val prefs=settingsSnapshot.map{it.settings}.stateIn(viewModelScope,SharingStarted.Eagerly,Preferences())
  val current=combine(profileSnapshot,settingsSnapshot){ps,s->
   if(ps.status!=LocalLoadStatus.READY||s.status!=LocalLoadStatus.READY)null
-  else ps.profiles.firstOrNull{it.id==s.settings.selected}?:ps.profiles.firstOrNull()
+  else selectedProfile(ps.profiles,s.settings.selected)
  }.stateIn(viewModelScope,SharingStarted.Eagerly,null)
  // Recovery applies only to sessions last ticked by an older process.
  // A late init coroutine must never re-pause a workout the Owner just resumed.
- init{action{if(!app.serviceRunning)app.repository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->
-  app.mutateWorkoutSession(profile.id,profile.active!!.id){it}
- }}}
- private fun action(block:suspend()->Unit){viewModelScope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}}}
- fun select(id:String){action{require(app.repository.profiles.first().none{it.active!=null}){"Сначала завершите тренировку"};app.settings.select(id)}}
+ init{if(workoutScope==null)action{if(!app.serviceRunning)recoverWorkouts()}}
+ private suspend fun recoverWorkouts(){
+  profileRepository.profiles.first().filter{it.active?.terminal==false}.forEach{profile->
+   app.mutateWorkoutSession(profile.id,profile.active!!.id,scopeId=scopeId){it}
+  }
+ }
+ private fun action(block:suspend()->Unit){viewModelScope.launch{
+  try{block()}
+  catch(e:CancellationException){throw e}
+  catch(_:LocalWorkoutAccessRevoked){
+   if(workoutScope==null)error.value="Доступ к тренировкам изменился. Откройте нужный профиль."
+  }
+  catch(e:Exception){error.value=e.message?:"Ошибка сохранения"}
+ }}
+ fun select(id:String){action{
+  val local=profileRepository.profiles.first()
+  require(local.any{it.id==id}&&local.none{it.active!=null}){"Выберите доступный профиль после завершения тренировки"}
+  if(workoutScope==null)app.settings.select(id) else accountSelection.value=id
+ }}
  fun saveProfile(p:Profile,onSaved:()->Unit={}){
   // One in-flight save per ViewModel; preserve retry after any Room/DataStore error.
   if(!profileSaveInProgress.compareAndSet(false,true))return
@@ -142,18 +202,22 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   action{
    try{
     require(p.valid()){ "Проверьте имя, возраст (18–100), рост и вес" }
-    if(app.repository.load(p.id)==null)app.repository.saveProfile(p)
-    else app.repository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)}
-    app.settings.select(p.id)
+    if(profileRepository.load(p.id)==null)profileRepository.saveProfile(p)
+    else profileRepository.mutate(p.id){p.copy(history=it.history,measurements=it.measurements,active=it.active)}
+    if(workoutScope==null)app.settings.select(p.id) else accountSelection.value=p.id
     onSaved()
    }finally{profileSaveInProgress.value=false}
   }
  }
- fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.startWorkout(p.id,day);app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
- private fun startService(id:String,session:String){ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java).putExtra("profile",id).putExtra("session",session))}
+ fun start(day:TrainingDay){workoutStartRequests.value++;val p=current.value?:return;action{val s=app.startWorkout(p.id,day,scopeId);app.audioFocusEpoch.invalidate();startServiceOrPause(p.id,s.id)}}
+ private fun startService(id:String,session:String){
+  if(app.resolveWorkoutRepository(scopeId)==null)throw LocalWorkoutAccessRevoked()
+  ContextCompat.startForegroundService(app,Intent(app,WorkoutService::class.java)
+   .putExtra("profile",id).putExtra("session",session).putExtra("workoutScope",scopeId))
+ }
  private suspend fun startServiceOrPause(id:String,session:String){
   val epoch=app.audioFocusEpoch.snapshot()
-  requestWorkoutServiceOrPause(app.repository,id,session,app::workoutNow,
+  requestWorkoutServiceOrPause(profileRepository,id,session,app::workoutNow,
    {app.audioFocusEpoch.isCurrent(epoch)}){startService(id,session)}
  }
  // Callbacks include the session actually rendered in Runner. A queued tap
@@ -170,8 +234,8 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   action{
    try{
     // Session identity is sufficient: a stage-bound stale snapshot can reject a real Resume tap.
-    app.mutateWorkoutSession(p.id,expected){resumeSession(it,app.workoutNow())}
-    val active=app.repository.load(p.id)?.active
+    app.mutateWorkoutSession(p.id,expected,scopeId=scopeId){resumeSession(it,app.workoutNow())}
+    val active=profileRepository.load(p.id)?.active
     traceResume("persisted matches=${active?.id==expected} paused=${active?.paused} terminal=${active?.terminal}")
     if(active?.id==expected&&!active.terminal&&!active.paused){
      startServiceOrPause(p.id,expected)
@@ -194,16 +258,16 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   val p=current.value?:return;val s=p.active?.takeIf{it.id==expected}?:return
   if(invalidateFocus)app.audioFocusEpoch.invalidate()
   action{
-   app.mutateWorkoutSession(p.id,expected,if(stageBound)sessionStage(s) else null,op)
+   app.mutateWorkoutSession(p.id,expected,if(stageBound)sessionStage(s) else null,scopeId,op)
   }
  }
  fun finish(expected:String,onSaved:()->Unit={}){
   val p=current.value?:return
   if(p.active?.id!=expected)return
   action{
-   app.repository.mutate(p.id){v->v.active?.takeIf{it.id==expected}?.let{finishSession(v,it,app.workoutNow())}?:v}
+   profileRepository.mutate(p.id){v->v.active?.takeIf{it.id==expected}?.let{finishSession(v,it,app.workoutNow())}?:v}
    // Navigate only after Room confirms this exact workout reached persisted history.
-   if(app.repository.load(p.id)?.history?.any{it.id==expected}==true)onSaved()
+   if(profileRepository.load(p.id)?.history?.any{it.id==expected}==true)onSaved()
   }
  }
  fun measurement(
@@ -214,7 +278,7 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
   action{
    val m=Measurement(id=id?:draftId?:java.util.UUID.randomUUID().toString(),
     dateMs=dateMs,values=values)
-   app.repository.mutate(profile){it.withMeasurement(m,editingId=id)}
+   profileRepository.mutate(profile){it.withMeasurement(m,editingId=id)}
    onSaved()
   }
  }
@@ -338,7 +402,10 @@ class FormaViewModel(application:Application):AndroidViewModel(application){
  fun toggleMetronome(){action{app.settings.toggleMetronome()}}
  fun coach(volume:Int,bpm:Int,rate:Float){action{app.settings.coach(volume,bpm,rate)}}
  fun dark(v:Boolean?){action{app.settings.dark(v)}}
- fun trainingPlace(place:TrainingPlace){action{app.settings.trainingPlace(place)}}
+ fun trainingPlace(place:TrainingPlace){
+  if(workoutScope==null)action{app.settings.trainingPlace(place)}
+  else accountPlace.value=place
+ }
  fun toggleHighContrast(){action{app.settings.toggleHighContrast()}}
  fun toggleReducedMotion(){action{app.settings.toggleReducedMotion()}}
  fun toggleSimplifiedEffects(){action{app.settings.toggleSimplifiedEffects()}}

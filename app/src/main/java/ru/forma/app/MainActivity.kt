@@ -91,7 +91,8 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
  val profileSaving by vm.profileSaveInProgress.collectAsState()
  var tab by rememberSaveable{mutableIntStateOf(0)};var editing by rememberSaveable{mutableStateOf(false)};var creating by rememberSaveable{mutableStateOf(false)}
  var accountOpen by rememberSaveable{mutableStateOf(false)}
- val showAccount=accountOpen && vm.accountAvailable && p?.active==null
+ val accountScope by vm.accountWorkouts.collectAsState()
+ val showAccount=accountScope!=null || (accountOpen && vm.accountAvailable && p?.active==null)
  // Dark is the unconfigured default; System follows the Android theme.
  val keyboardFocus=LocalFocusManager.current;val rootKeyboard=LocalSoftwareKeyboardController.current
  LaunchedEffect(creating,editing,p?.id){if(!creating&&!editing&&p!=null){keyboardFocus.clearFocus(force=true);rootKeyboard?.hide()}}
@@ -114,7 +115,9 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
   Scaffold(containerColor=colors.background,bottomBar={if(p!=null&&p?.active==null&&!editing&&!creating&&!keyboardVisible&&!showAccount)NavigationBar(containerColor=colors.surface.copy(alpha=0.98f)){titles.forEachIndexed{i,t->NavigationBarItem(tab==destinations[i]||(tab==2&&i==0),{tab=destinations[i]},icon={Icon(icons[i],t)},label={Text(t,style=MaterialTheme.typography.labelSmall)},alwaysShowLabel=true,colors=NavigationBarItemDefaults.colors(selectedIconColor=colors.primary,selectedTextColor=colors.primary,indicatorColor=colors.primary.copy(alpha=0.14f),unselectedIconColor=colors.onSurfaceVariant,unselectedTextColor=colors.onSurfaceVariant))}}}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=20.dp)){
     Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=9.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-     if(p?.active!=null){
+     if(accountScope!=null){
+      FormaBrandAndProfileHeader(null)
+     }else if(p?.active!=null){
       Text("Тренировка",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold,color=colors.onSurface)
       val active=p!!.active!!
       val exerciseCount=active.day.exercises.size
@@ -126,6 +129,7 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
     if(notice!=null)Panel("Данные сохранены"){Text(notice!!);TextButton({vm.notice.value=null}){Text("Понятно")}}
     if(error!=null)Panel("Не удалось выполнить действие"){Text(error!!);TextButton({vm.error.value=null}){Text("Понятно")}}
     when{
+     accountScope!=null -> AccountWorkouts(accountScope!!,vm::closeAccountWorkouts)
      // Never show new-profile onboarding or somebody else's first profile
      // while Room/DataStore still deliver their persisted initial values.
      !canRenderProfileUi(profilesSnapshot,settingsSnapshot,p)->
@@ -133,7 +137,14 @@ val dayNames=listOf("Пн","Вт","Ср","Чт","Пт","Сб","Вс")
        "Локальные профили или настройки недоступны. Данные не изменены." else "Загрузка…")
      showAccount -> {
       val account by vm.account.collectAsState()
-      AccountScreen(account,vm::accountAction){accountOpen=false}
+      val consent by vm.accountConsent.collectAsState()
+      AccountScreen(account,vm::accountAction,{
+       vm.accountConsent.value=null
+       accountOpen=false
+      },vm::openAccountWorkouts,p?.let{{vm.requestAccountConsent()}})
+      consent?.let{draft->
+       AccountConsentDialog(draft,{vm.confirmAccountConsent(draft)},{vm.accountConsent.value=null})
+      }
      }
      profiles.isEmpty()&&vm.accountAvailable -> {
       TextButton({accountOpen=true},Modifier.heightIn(min=48.dp),enabled=!profileSaving){
