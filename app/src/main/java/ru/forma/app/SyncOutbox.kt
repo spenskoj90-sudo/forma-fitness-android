@@ -4,6 +4,7 @@ import androidx.room.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.flow.Flow
 import ru.forma.domain.*
 import java.util.UUID
 
@@ -39,6 +40,8 @@ data class SyncOutboxCounts(
 )
 
 @Dao interface SyncOutboxDao {
+ @Query("SELECT MAX(rowid) FROM sync_outbox WHERE accountUid=:uid AND state='PENDING'")
+ fun outboxInsertWatermark(uid:String):Flow<Long?>
  @Query("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN state='PENDING' THEN 1 ELSE 0 END), 0) AS pending, COALESCE(SUM(CASE WHEN state='CONFLICT' THEN 1 ELSE 0 END), 0) AS conflicts, COALESCE(SUM(CASE WHEN state='ACKED' THEN 1 ELSE 0 END), 0) AS acknowledged FROM sync_outbox WHERE accountUid=:uid")
  suspend fun countsForVerifiedAccount(uid:String):SyncOutboxCounts
 
@@ -62,10 +65,9 @@ data class SyncOutboxCounts(
  suspend fun pendingForAccount(uid:String):List<SyncOutboxRow>
  @Query("SELECT * FROM sync_outbox AS current WHERE current.state='PENDING' AND current.accountUid=:uid AND NOT EXISTS (SELECT 1 FROM sync_outbox AS older WHERE older.accountUid=current.accountUid AND older.profileId=current.profileId AND older.kind=current.kind AND older.recordId=current.recordId AND older.revision<current.revision AND older.state='CONFLICT') AND (current.kind='profile' OR NOT EXISTS (SELECT 1 FROM sync_outbox AS blockedProfile WHERE blockedProfile.accountUid=current.accountUid AND blockedProfile.profileId=current.profileId AND blockedProfile.kind='profile' AND blockedProfile.state='CONFLICT')) ORDER BY current.profileId,CASE WHEN current.kind='profile' AND current.tombstone=0 THEN 0 WHEN current.kind='profile' THEN 2 ELSE 1 END,current.kind,current.recordId,current.revision LIMIT 1")
  suspend fun nextPendingForAccount(uid:String):SyncOutboxRow?
- // ACK is permitted only AFTER a future authenticated adapter has read back
+ // ACK is permitted only AFTER the authenticated adapter has read back
  // an exact remote opId/revision/payload/tombstone for this verified UID.
- // This is merely an optimistic Room transition, NOT proof of server delivery;
- // no production adapter/caller is enabled at this stage.
+ // This Room transition records the locally verified server echo.
  @Query("UPDATE sync_outbox SET state='ACKED' WHERE state='PENDING' AND accountUid=:uid AND opId=:opId AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision AND snapshot=:snapshot AND tombstone=:tombstone")
  suspend fun acknowledgeExactRemoteEcho(
   uid:String,opId:String,profileId:String,kind:String,recordId:String,
@@ -75,6 +77,8 @@ data class SyncOutboxCounts(
  // treating a different account/device revision as its own confirmed history.
  @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision LIMIT 1")
  suspend fun revisionForAccount(uid:String,profileId:String,kind:String,recordId:String,revision:Int):SyncOutboxRow?
+ @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId ORDER BY revision DESC LIMIT 1")
+ suspend fun headForAccount(uid:String,profileId:String,kind:String,recordId:String):SyncOutboxRow?
  // Conflicts preserve the exact local snapshot/opId and survive process death.
  // No remote conflicting payload is stored until reviewed by an authenticated
  // conflict UI. Only a future explicit review flow may resolve this state.
@@ -110,13 +114,14 @@ data class SyncOutboxCounts(
 // A legacy odd ID remains safe in Room; explicit binding fails atomically
 // rather than silently rewriting historical UUIDs or losing queued data.
 internal val cloudDocumentId=Regex("^[A-Za-z0-9_-]{1,128}$")
-private fun Profile.cloudPayload()=CloudProfilePayload(
+internal const val MAX_CLOUD_REVISION = Int.MAX_VALUE - 1
+internal fun Profile.cloudPayload()=CloudProfilePayload(
  name,age,heightCm,weightKg,experience.name,
  equipment.map{it.name}.sorted(),limitations,primary.name,secondary?.name,
  priorities.map{it.name}.sorted(),days.sorted(),recovery
 )
-private fun Measurement.cloudPayload()=CloudMeasurementPayload(dateMs,values.toSortedMap())
-private fun Workout.cloudPayload():CloudWorkoutPayload {
+internal fun Measurement.cloudPayload()=CloudMeasurementPayload(dateMs,values.toSortedMap())
+internal fun Workout.cloudPayload():CloudWorkoutPayload {
  require(status==Phase.DONE||status==Phase.STOPPED){"No unfinished workout uploads"}
  return CloudWorkoutPayload(day,startedMs,finishedMs,sets,status.name,activeSeconds,painReported)
 }
@@ -135,7 +140,7 @@ internal suspend fun enqueueBoundChanges(db:FormaDatabase,before:Profile?,after:
  suspend fun queue(kind:String,id:String,payload:String,tombstone:Boolean=false){
   require(cloudDocumentId.matches(id)){"Record ID cannot be represented in Firestore"}
   val last=db.sync().latestRevision(binding.accountUid,after.id,kind,id)?:0
-  require(last<Int.MAX_VALUE){"Sync revision exhausted"}
+  require(last<MAX_CLOUD_REVISION){"Sync revision exhausted"}
   db.sync().enqueue(SyncOutboxRow(
    opId=UUID.randomUUID().toString(),accountUid=binding.accountUid,
    profileId=after.id,kind=kind,recordId=id,revision=last+1,

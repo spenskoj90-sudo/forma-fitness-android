@@ -49,6 +49,53 @@ class FormaViewModel internal constructor(
  private val app=application as FormaApp
  private val profileRepository=workoutScope?.repository?:app.repository
  private val scopeId=workoutScope?.id
+ private val mutableCloudRestoreUi=MutableStateFlow(CloudRestoreUi())
+ internal val cloudRestoreUi=mutableCloudRestoreUi.asStateFlow()
+ internal val cloudSyncAvailable get()=workoutScope!=null&&app.cloudSync!=null
+ private fun cloudAction(block:suspend (CloudSyncRuntime,VerifiedSyncLease,()->Boolean)->Unit){
+  val scope=workoutScope?:return
+  val runtime=app.cloudSync?:return
+  val old=mutableCloudRestoreUi.value
+  if(old.busy||!mutableCloudRestoreUi.compareAndSet(old,old.copy(busy=true,message=null)))return
+  viewModelScope.launch{
+   val stillOpen={app.resolveWorkoutRepository(scope.id)===scope.repository}
+   try{
+    if(!stillOpen())throw LocalWorkoutAccessRevoked()
+    block(runtime,scope.lease,stillOpen)
+    val status=runtime.status(scope.lease,stillOpen)
+    if(stillOpen())mutableCloudRestoreUi.update{it.copy(summary=status)}
+   }catch(cancel:CancellationException){
+    throw cancel
+   }catch(_:LocalWorkoutAccessRevoked){
+    mutableCloudRestoreUi.value=CloudRestoreUi()
+   }catch(_:Exception){
+    if(stillOpen())mutableCloudRestoreUi.update{it.copy(
+     message="Не удалось выполнить облачную операцию. Проверьте сеть и повторите."
+    )}
+   }finally{
+    mutableCloudRestoreUi.update{it.copy(busy=false)}
+   }
+  }
+ }
+ internal fun refreshCloudStatus(){cloudAction{_,_,_->}}
+ internal fun scheduleCloudSync(){cloudAction{runtime,_,_->
+  runtime.enqueue()
+  mutableCloudRestoreUi.update{it.copy(message="Очередь поставлена на отправку.")}
+ }}
+ internal fun listCloudProfiles(){cloudAction{runtime,lease,stillOpen->
+  mutableCloudRestoreUi.update{it.copy(profiles=null)}
+  val profiles=runtime.list(lease,stillOpen)
+  if(stillOpen())mutableCloudRestoreUi.update{it.copy(profiles=profiles)}
+ }}
+ internal fun restoreCloudProfile(id:String){
+  if(mutableCloudRestoreUi.value.profiles?.none{it.id==id}!=false)return
+  cloudAction{runtime,lease,stillOpen->
+   val result=runtime.restore(lease,id,stillOpen)
+   if(stillOpen())mutableCloudRestoreUi.update{it.copy(
+    message="Восстановлено записей — ${result.restored}. Требуют разбора — ${result.conflicts}."
+   )}
+  }
+ }
  private val accountSelection=MutableStateFlow("")
  private val accountPlace=MutableStateFlow(TrainingPlace.HOME)
  internal val accountWorkouts=app.accountWorkouts
@@ -291,7 +338,8 @@ class FormaViewModel internal constructor(
  ){
   if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
   val selected=if(allProfiles)null else expectedProfileId
-  if ((!allProfiles && (selected.isNullOrBlank() || current.value?.id!=selected)) ||
+  if ((allProfiles && workoutScope!=null) ||
+   (!allProfiles && (selected.isNullOrBlank() || current.value?.id!=selected)) ||
    (allProfiles && expectedProfileIds.isNullOrEmpty())) {
    password.fill('\u0000');encryptedBackupBusy.value=false
    error.value="Состав или выбор профилей изменился. Повторите создание копии."
@@ -302,11 +350,11 @@ class FormaViewModel internal constructor(
     withContext(Dispatchers.IO){
      suspend fun verifyScope()=requireBackupExportScope(
       allProfiles,expectedProfileId,expectedProfileIds,current.value?.id,
-      app.settings.settings.first().selected,
-      app.repository.profiles.first().map{it.id}.toSet()
+      if(workoutScope==null)app.settings.settings.first().selected else accountSelection.value,
+      profileRepository.profiles.first().map{it.id}.toSet()
      )
      verifyScope()
-     val plaintext=app.repository.exportBackup(selected)
+     val plaintext=profileRepository.exportBackup(selected)
      val contents=encryptPortableBackup(plaintext,password)
      try{
       // SAF selection may outlive a profile switch or creation/deletion.
@@ -323,6 +371,7 @@ class FormaViewModel internal constructor(
         "Защищённую копию не удалось проверить после записи. Не полагайтесь на этот файл; выберите другое хранилище.",e
        )
       }
+      verifyScope()
      }finally{contents.fill(0)}
     }
     notice.value=if(allProfiles)
@@ -332,6 +381,7 @@ class FormaViewModel internal constructor(
   }
  }
  fun importEncryptedBackup(uri:Uri,password:CharArray){
+  if(workoutScope!=null){password.fill('\u0000');return}
   if(!encryptedBackupBusy.compareAndSet(false,true)){password.fill('\u0000');return}
   action{
    try{

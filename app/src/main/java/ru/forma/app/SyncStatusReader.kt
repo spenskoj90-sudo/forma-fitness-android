@@ -31,13 +31,10 @@ internal data class LocalSyncSummary(
 }
 
 /**
- * Read-only scoped status for a future verified account/consent UI.
+ * Read-only scoped status for the current verified account.
  * Never accept a UID from a profile, UI field, stored binding or caller.
  * An auth sign-out, account switch or generation change during the Room
  * read invalidates the entire result, including aggregate counts.
- *
- * No production Firebase/Auth provider is connected. Tests inject leases;
- * exposing this class does NOT authorize a real account or remote operation.
  */
 internal class SyncStatusReader(
  private val db:FormaDatabase,

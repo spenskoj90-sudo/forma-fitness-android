@@ -26,7 +26,6 @@ internal data class SyncRemoteEcho(
 }
 
 /**
- * Not implemented in production until Firebase Auth, consent and Rules are verified.
  * read() must operate inside the token-bound UID scope; compareAndCommit() must
  * perform an atomic Firestore transaction whose precondition is *the entire*
  * previous echo (or absence), never a blind set()/last-write-wins update.
@@ -60,8 +59,7 @@ internal enum class SyncDeliveryStep {
 }
 
 /**
- * Fail-closed one-record protocol for future opt-in, authenticated delivery.
- * It is deliberately NOT connected to a production transport or an app screen.
+ * Fail-closed one-record protocol for authenticated delivery of opted-in data.
  * Exceptions (including offline and cancellation) leave the local outbox intact.
  */
 internal class SyncDeliveryCoordinator(

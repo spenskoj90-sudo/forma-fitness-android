@@ -51,6 +51,7 @@ internal fun ColumnScope.AccountWorkouts(
     val settings by model.settingsSnapshot.collectAsState()
     val current by model.current.collectAsState()
     val error by model.error.collectAsState()
+    val notice by model.notice.collectAsState()
     var section by remember { mutableStateOf(Section.PROFILES) }
     fun back() {
         if (current?.active != null || section == Section.PROFILES) onClose(scope.id)
@@ -66,6 +67,12 @@ internal fun ColumnScope.AccountWorkouts(
             TextButton({ model.error.value = null }) { Text("Понятно") }
         }
     }
+    notice?.let {
+        Panel("Данные сохранены") {
+            Text(it)
+            TextButton({ model.notice.value = null }) { Text("Понятно") }
+        }
+    }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         val profile = current
         val active = profile?.active
@@ -77,20 +84,22 @@ internal fun ColumnScope.AccountWorkouts(
                 else "Загрузка профилей аккаунта…"
             )
             active != null -> Runner(active, model) { section = Section.HISTORY }
-            profile == null -> Page("Профили аккаунта") {
-                Text("На этом устройстве ещё нет профилей, связанных с аккаунтом.")
-            }
-            section == Section.TRAINING -> TrainingScreen(profile, settings.settings.trainingPlace, model)
-            section == Section.HISTORY -> ProgressScreen(profile)
+            profile != null && section == Section.TRAINING -> TrainingScreen(profile, settings.settings.trainingPlace, model)
+            profile != null && section == Section.HISTORY -> ProgressScreen(profile)
             else -> Page("Профили аккаунта") {
+                if (profile == null) Text("На этом устройстве ещё нет профилей, связанных с аккаунтом.")
                 profiles.profiles.forEach { candidate ->
                     OutlinedButton(
                         { model.select(candidate.id) },
                         Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { Text(if (candidate.id == profile.id) "✓ ${candidate.name}" else candidate.name) }
+                    ) { Text(if (candidate.id == profile?.id) "✓ ${candidate.name}" else candidate.name) }
                 }
-                Action("Тренировки", { section = Section.TRAINING })
-                Action("История и прогресс", { section = Section.HISTORY })
+                if (profile != null) {
+                    Action("Тренировки", { section = Section.TRAINING })
+                    Action("История и прогресс", { section = Section.HISTORY })
+                    EncryptedBackupPanel(model, selectedOnly = true)
+                }
+                if (model.cloudSyncAvailable) CloudSyncPanel(model)
             }
         }
     }

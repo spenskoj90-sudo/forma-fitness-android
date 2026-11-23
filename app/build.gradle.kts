@@ -2,6 +2,8 @@ plugins {alias(libs.plugins.android.application);alias(libs.plugins.kotlin.andro
 android {
  namespace="ru.forma.app";compileSdk=35
  defaultConfig {applicationId="ru.forma.fitness";minSdk=26;targetSdk=35;versionCode=providers.gradleProperty("formaVersionCode").orNull?.toInt()?:2;versionName=providers.gradleProperty("formaVersionName").orNull?:"0.2.0";testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner";manifestPlaceholders["formaAppLabel"]="FORMA";resValue("string","forma_update_feed_url",providers.gradleProperty("formaUpdateFeedUrl").orNull?:"");resValue("string","forma_update_manifest_public_key",providers.gradleProperty("formaUpdateManifestPubKey").orNull?:"")}
+ defaultConfig.resValue("bool","forma_cloud_sync_enabled",
+  (providers.gradleProperty("formaCloudSyncEnabled").orNull=="true").toString())
  compileOptions {sourceCompatibility=JavaVersion.VERSION_17;targetCompatibility=JavaVersion.VERSION_17}
  kotlinOptions {jvmTarget="17"}
  signingConfigs {
@@ -33,9 +35,11 @@ dependencies {
  implementation(platform(libs.firebase.bom))
  implementation(libs.firebase.auth)
  implementation(libs.firebase.firestore)
+ implementation(libs.androidx.work.runtime)
  implementation(libs.kotlinx.coroutines.play.services)
- testImplementation(libs.junit);testImplementation(libs.robolectric)
+ testImplementation(libs.junit);testImplementation(libs.robolectric);testImplementation(libs.androidx.work.testing)
  androidTestImplementation(libs.androidx.junit);androidTestImplementation(libs.androidx.espresso.core);androidTestImplementation(libs.androidx.test.rules);androidTestImplementation(platform(libs.androidx.compose.bom));androidTestImplementation(libs.androidx.ui.test.junit4)
+ androidTestImplementation(libs.androidx.work.testing)
  debugImplementation(libs.androidx.ui.test.manifest)
 }
 

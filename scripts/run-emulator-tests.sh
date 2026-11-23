@@ -110,6 +110,10 @@ grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"
 # Run the native SDK against two disposable Firebase emulators after the
 # offline journeys. One Android API is enough to exercise the transport.
 if [[ "$api" == "34" ]]; then
+  # Exercise the real scheduler and screen against the demo provider.
+  ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PformaCloudSyncEnabled=true --console=plain
+  adb install -r app/build/outputs/apk/debug/app-debug.apk
+  adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
   (
     cd firebase
     export JAVA_HOME="${JAVA_HOME_21_X64:?Firestore emulator requires Java 21}"

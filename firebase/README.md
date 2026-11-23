@@ -12,13 +12,29 @@ history. A workspace identifier expires when the space closes, the account chang
 or the app process dies. Reopening an unfinished workout pauses it before rendering
 and preserves the last recorded sets and duration. Guest profiles keep their existing
 workflow. The repository ships without a default Firebase app configuration.
-Transport scheduling, inbound sync, and production connectivity remain open.
+WorkManager and the cloud panel also require the build opt-in
+`-PformaCloudSyncEnabled=true`. Live provider activation and App Check remain behind
+the applicable production gates.
+
+- The outgoing queue uses unique connected-network work on new pending records
+  and an hourly fallback. Room holds the payload. Each bounded batch pins one
+  verified account and keeps pending records through retries and process exit.
+- The account panel reads the verified user's own profiles from the server.
+  Restoring a selected profile requires confirmation. A Room transaction preserves
+  UUIDs and imports exact server revision receipts. Local divergent records and
+  rows awaiting delivery are kept. A cloud tombstone is never restored as a live
+  record and does not silently delete an existing local record. The panel
+  reports conflicts to the owner for separate resolution.
+- An account workspace can create a verified encrypted backup of the selected
+  profile using the same offline format as the guest export. Scope is rechecked
+  before and after file I/O.
 
 - Run `npm run test:rules` for the Rules suite. Android CI runs
   `npm run test:android-sync` on API 34 with both emulators, using synthetic
   registration, email verification, password reset request, sign-in, local
-  consent, offline replay, tombstones, account switching and revocation of
-  workout commands sent from an old workspace. Both commands
+  consent, offline replay, tombstones, account switching, revocation of
+  workout commands from an old workspace, and restore into a separate Room
+  database with conflicting edits. Both commands
   use `demo-forma-rules` and loopback endpoints.
 - No \`.firebaserc\`, credential, \`google-services.json\`, production project ID
   or real user data is required. All profile/workout/measurement values are synthetic.

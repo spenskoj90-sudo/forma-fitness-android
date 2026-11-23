@@ -11,9 +11,10 @@ import kotlinx.coroutines.tasks.await
 internal enum class AccountSession { SIGNED_OUT, EMAIL_UNVERIFIED, EMAIL_VERIFIED }
 
 /** The backend is the Firebase app supplied by build configuration. */
-internal class FirebaseAccount(app: FirebaseApp) {
+internal class FirebaseAccount(private val app: FirebaseApp) {
     private val auth = FirebaseAuth.getInstance(app)
     internal val identity = FirebaseSyncIdentity(app)
+    fun firestoreTransport() = FirestoreSyncRemote(app, identity)
 
     val currentSession: AccountSession get() = auth.currentUser.toAccountSession()
 

@@ -8,6 +8,11 @@ import androidx.room.Room
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.Configuration
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.WorkManagerTestInitHelper
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
@@ -20,6 +25,7 @@ import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -31,6 +37,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import ru.forma.domain.Measurement
 import ru.forma.domain.Profile
+import ru.forma.domain.finishSession
+import ru.forma.domain.generateProgram
+import ru.forma.domain.startSession
+import ru.forma.domain.stopSession
 
 @RunWith(AndroidJUnit4::class)
 class FirebaseSyncEmulatorTest {
@@ -47,6 +57,10 @@ class FirebaseSyncEmulatorTest {
             .setApiKey("demo-forma-emulator-key")
             .build()))
         val auth = FirebaseAuth.getInstance(firebase).apply { useEmulator(emulatorHost, 9099) }
+        val firestore = FirebaseFirestore.getInstance(firebase).apply { useEmulator(emulatorHost, 8080) }
+        check(forma.resources.getBoolean(R.bool.forma_cloud_sync_enabled))
+        WorkManagerTestInitHelper.initializeTestWorkManager(forma,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).build())
         val account = checkNotNull(forma.firebaseAccount)
         val identity = account.identity
         val password = UUID.randomUUID().toString()
@@ -98,6 +112,13 @@ class FirebaseSyncEmulatorTest {
                 compose.waitUntilExactlyOneExists(hasText("✓ ${a.name}"), 15_000)
                 compose.onNodeWithText(b.name, substring = true).assertDoesNotExist()
                 compose.onNodeWithText(guest.name).assertDoesNotExist()
+                compose.onNodeWithText("Сохранить защищённую копию профиля").assertExists()
+                verifyScheduledCloudAccess(forma, firestore, old)
+                compose.onNodeWithText("Показать облачные профили").performScrollTo().performClick()
+                compose.waitUntilExactlyOneExists(hasText("Восстановить «${a.name}»") and hasClickAction(), 15_000)
+                compose.onNodeWithText("Восстановить «${a.name}»").performScrollTo().performClick()
+                compose.onNodeWithText("Согласен и восстанавливаю").performClick()
+                compose.waitUntilExactlyOneExists(hasText("Восстановлено записей — 0. Требуют разбора — 0."), 15_000)
                 compose.onNodeWithText("Тренировки").performScrollTo().performClick()
                 compose.onAllNodesWithText("Начать тренировку").onFirst().performScrollTo().performClick()
                 compose.waitUntil(15_000) { forma.serviceRunning }
@@ -147,6 +168,23 @@ class FirebaseSyncEmulatorTest {
         }
     }
 
+    private suspend fun verifyScheduledCloudAccess(
+        forma: FormaApp, firestore: FirebaseFirestore, scope: AccountWorkoutScope,
+    ) {
+        val manager = WorkManager.getInstance(forma)
+        val request = withTimeout(15_000) {
+            manager.getWorkInfosForUniqueWorkFlow(CloudDeliveryScheduler.IMMEDIATE)
+                .mapNotNull { requests -> requests.firstOrNull { !it.state.isFinished } }.first()
+        }
+        checkNotNull(WorkManagerTestInitHelper.getTestDriver(forma)).setAllConstraintsMet(request.id)
+        val result = withTimeout(30_000) { manager.getWorkInfoByIdFlow(request.id).first { it?.state?.isFinished == true } }
+        assertEquals(WorkInfo.State.SUCCEEDED, result?.state)
+        val profile = scope.repository.profiles.first().single()
+        val uploaded = firestore.document("accounts/${scope.lease.uid}/profiles/${profile.id}").get(Source.SERVER).await()
+        assertTrue(uploaded.exists())
+        assertNull(forma.database.sync().nextPendingForAccount(scope.lease.uid))
+    }
+
     @Test fun verifiedAccountsDeliverWithoutLeakingAcrossSignOutOrAccountSwitch() = runBlocking {
         withTimeout(90_000) {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -193,14 +231,15 @@ class FirebaseSyncEmulatorTest {
                 assertTrue(firstEcho.matches(profileRow))
 
                 val measurementRow = checkNotNull(db.sync().nextPendingForAccount(first.uid))
+                val batch = CloudDeliveryBatch(db, identity, remote)
                 firestore.disableNetwork().await()
                 try {
-                    expectFirestoreError(FirebaseFirestoreException.Code.UNAVAILABLE) { coordinator.deliverOne() }
+                    assertEquals(DeliveryBatchResult.RETRY, batch.run())
                     assertEquals(measurementRow, db.sync().nextPendingForAccount(first.uid))
                 } finally {
                     firestore.enableNetwork().await()
                 }
-                assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
+                assertEquals(DeliveryBatchResult.COMPLETE, batch.run())
                 assertTrue(checkNotNull(remote.read(first, measurementRow)).matches(measurementRow))
 
                 repo.mutateForVerifiedAccount(profile.id, accountProfiles.lease, identity) {
@@ -242,6 +281,10 @@ class FirebaseSyncEmulatorTest {
                     assertEquals("Профиль не найден", error.message)
                 }
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
+                val cloudRestore = CloudProfileRestorer(db, identity, remote)
+                assertTrue(cloudRestore.list(second).isEmpty())
+                assertTrue(runCatching { cloudRestore.restore(first, profile.id) }.exceptionOrNull()
+                    is LocalWorkoutAccessRevoked)
                 expectFirestoreError(FirebaseFirestoreException.Code.PERMISSION_DENIED) {
                     firstDocument.get(Source.SERVER).await()
                 }
@@ -263,6 +306,7 @@ class FirebaseSyncEmulatorTest {
                 )
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
                 assertTrue(checkNotNull(remote.read(restored, tombstone)).tombstone)
+                verifyCloudRestore(context, restored, profile, db, identity, remote)
                 account.sendPasswordReset(firstEmail)
             } finally {
                 db.close()
@@ -271,6 +315,50 @@ class FirebaseSyncEmulatorTest {
                 firestore.terminate().await()
                 app.delete()
             }
+        }
+    }
+
+    private suspend fun verifyCloudRestore(
+        context: android.content.Context, lease: VerifiedSyncLease, original: Profile, db: FormaDatabase,
+        identity: FirebaseSyncIdentity, remote: FirestoreSyncRemote,
+    ) {
+        val repo = ProfileRepository(db)
+        val measurement = Measurement(dateMs = 2_000L, values = mapOf("weight" to 76.0))
+        val session = startSession(original.id, generateProgram(original).first(), 2_000L)
+        repo.mutateForVerifiedAccount(original.id, lease, identity) {
+            finishSession(it.copy(measurements = listOf(measurement)), stopSession(session, now = 3_000L), 3_000L)
+        }
+        assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(db, identity, remote).run())
+        val fresh = Room.inMemoryDatabaseBuilder(context, FormaDatabase::class.java).build()
+        try {
+            val restorer = CloudProfileRestorer(fresh, identity, remote)
+            assertEquals(listOf(CloudProfileChoice(original.id, original.name)), restorer.list(lease))
+            assertEquals(CloudRestoreResult(restored = 3), restorer.restore(lease, original.id))
+            val newRepository = ProfileRepository(fresh)
+            val downloaded = checkNotNull(newRepository.load(original.id))
+            assertEquals(listOf(measurement), downloaded.measurements)
+            assertEquals(session.id, downloaded.history.single().id)
+            assertNull(ProfileRepository.forGuest(fresh).load(original.id))
+            assertNull(fresh.sync().nextPendingForAccount(lease.uid))
+            assertEquals(CloudRestoreResult(), restorer.restore(lease, original.id))
+
+            // Two Room stores edit the same record from the restored revision.
+            val local = measurement.copy(values = mapOf("weight" to 75.0))
+            val otherDevice = measurement.copy(values = mapOf("weight" to 77.0))
+            repo.mutateForVerifiedAccount(original.id, lease, identity) { it.copy(measurements = listOf(local)) }
+            newRepository.mutateForVerifiedAccount(original.id, lease, identity) {
+                it.copy(measurements = listOf(otherDevice))
+            }
+            assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(fresh, identity, remote).run())
+            assertEquals(CloudRestoreResult(conflicts = 1),
+                CloudProfileRestorer(db, identity, remote).restore(lease, original.id))
+            assertEquals(listOf(local), repo.load(original.id)?.measurements)
+            assertEquals("PENDING", db.sync().headForAccount(lease.uid, original.id, "measurement", local.id)?.state)
+            // The usual sender also detects divergence and parks the local version durably.
+            assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(db, identity, remote).run())
+            assertEquals("CONFLICT", db.sync().headForAccount(lease.uid, original.id, "measurement", local.id)?.state)
+        } finally {
+            fresh.close()
         }
     }
 

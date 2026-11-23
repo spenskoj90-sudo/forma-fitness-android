@@ -25,7 +25,13 @@ internal object FirestoreSyncPayload {
 
     private fun canonical(kind: String, payload: JsonElement): JsonObject {
         val encoded = when (kind) {
-            "profile" -> json.encodeToJsonElement(json.decodeFromJsonElement<CloudProfilePayload>(payload))
+            "profile" -> {
+                val profile = json.decodeFromJsonElement<CloudProfilePayload>(payload)
+                json.encodeToJsonElement(profile.copy(
+                    equipment = profile.equipment.sorted(), priorities = profile.priorities.sorted(),
+                    days = profile.days.sorted(),
+                ))
+            }
             "measurement" -> {
                 val measurement = json.decodeFromJsonElement<CloudMeasurementPayload>(payload)
                 json.encodeToJsonElement(measurement.copy(values = measurement.values.toSortedMap()))

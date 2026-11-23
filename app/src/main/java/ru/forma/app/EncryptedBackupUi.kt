@@ -17,7 +17,7 @@ import java.time.LocalDate
  * DataStore, Room, saved-state Bundle, logcat or a network request. No password
  * can be recovered by FORMA. Legacy JSON remains a separate explicit action.
  */
-@Composable internal fun EncryptedBackupPanel(vm:FormaViewModel) {
+@Composable internal fun EncryptedBackupPanel(vm:FormaViewModel,selectedOnly:Boolean=false) {
  val busy by vm.encryptedBackupBusy.collectAsState()
  val selectedProfile by vm.current.collectAsState()
  val profileSnapshot by vm.profileSnapshot.collectAsState()
@@ -30,6 +30,7 @@ import java.time.LocalDate
  var stagedAll by remember{mutableStateOf(false)}
  var stagedProfileId by remember{mutableStateOf<String?>(null)}
  var stagedProfileIds by remember{mutableStateOf<Set<String>?>(null)}
+ DisposableEffect(Unit){onDispose{staged?.fill('\u0000')}}
 
  val export=rememberLauncherForActivityResult(
   ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -58,12 +59,14 @@ import java.time.LocalDate
  }
  Panel("Защищённая резервная копия"){
   Text("Пароль шифрует данные прямо на телефоне. Он не сохраняется в FORMA и не отправляется в сеть. Без него восстановление невозможно — храните пароль отдельно от файла.")
-  Action("Сохранить защищённую копию профиля",{mode=1},!busy)
-  TextButton({mode=2},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!busy){
-   Text("Защищённая копия всех профилей")
-  }
-  OutlinedButton({mode=3},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!busy){
-   Text("Восстановить защищённую копию")
+  Action("Сохранить защищённую копию профиля",{mode=1},!busy&&selectedProfile!=null)
+  if(!selectedOnly){
+   TextButton({mode=2},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!busy){
+    Text("Защищённая копия всех профилей")
+   }
+   OutlinedButton({mode=3},Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=!busy){
+    Text("Восстановить защищённую копию")
+   }
   }
   if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
   Text("После записи FORMA повторно прочитает зашифрованный файл и проверит его целостность. Это не заменяет независимую проверку восстановления. Ручной перенос не является облачной синхронизацией.",style=MaterialTheme.typography.bodySmall)

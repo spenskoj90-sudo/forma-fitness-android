@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -23,6 +24,7 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles ORDER BY name,id") fun observe():Flow<List<ProfileRow>>
  @Query("SELECT * FROM profiles WHERE id=:id") suspend fun get(id:String):ProfileRow?
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
+ @Query("SELECT COUNT(*) FROM profiles") suspend fun count():Int
  @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id) ORDER BY p.name,p.id")
  fun observeGuests():Flow<List<ProfileRow>>
  @Query("SELECT p.* FROM profiles p WHERE p.id=:id AND NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
@@ -97,7 +99,7 @@ class ProfileRepository private constructor(
   check(account==null)
   require(p.valid())
   db.withTransaction {
-   require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"}
+   require(db.profiles().count()<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"}
    // A hidden profile still owns its UUID and must never be overwritten by REPLACE.
    require(db.profiles().get(p.id)==null)
    put(p)
@@ -172,17 +174,18 @@ class ProfileRepository private constructor(
   * explicit in UI, since different local profiles may belong to other people.
   */
  suspend fun exportBackup(profileId:String?=null):String=db.withTransaction {
-  check(account==null)
+  require(account==null||profileId!=null)
+  account?.requireCurrent()
   val selected=if(profileId==null)visibleProfiles().map(::decode)
    else listOf(load(profileId)?:error("Профиль не найден"))
-  encodeBackup(Backup(profiles=selected))
+  encodeBackup(Backup(profiles=selected)).also{account?.requireCurrent()}
  }
  suspend fun importBackup(text:String):List<String> {
   check(account==null)
   val backup=decodeBackup(text)
   return db.withTransaction {
    require(visibleProfiles().map(::decode).none{it.active!=null}){"Завершите занятие перед импортом"}
-   require(db.profiles().all().size+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
+   require(db.profiles().count()+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }
@@ -244,6 +247,17 @@ class SettingsRepository(private val context:Context) {
  suspend fun toggleSimplifiedEffects(){context.store.edit{it[simplifiedEffectsKey]=!(it[simplifiedEffectsKey]?:false)}}
 }
 class FormaApp:Application(){
+ override fun onCreate(){
+  super.onCreate()
+  if(resources.getBoolean(R.bool.forma_cloud_sync_enabled)&&
+   FirebaseApp.getApps(this).any{it.name==FirebaseApp.DEFAULT_APP_NAME}){
+   applicationScope.launch{
+    try{cloudSync}
+    catch(cancel:CancellationException){throw cancel}
+    catch(_:Exception){android.util.Log.w("FORMA-SYNC","Cloud sync startup unavailable")}
+   }
+  }
+ }
  @Volatile var serviceRunning=false
  internal val audioFocusEpoch=AudioFocusEpoch()
  internal val serviceInterruptions=ServiceInterruptionTracker()
@@ -316,6 +330,17 @@ class FormaApp:Application(){
     }
    }
   }
+ }
+ internal val cloudSync by lazy {
+  if(resources.getBoolean(R.bool.forma_cloud_sync_enabled))
+   firebaseAccount?.let{CloudSyncRuntime(this,database,it)}?.also{runtime->
+    applicationScope.launch{
+     try{runtime.watch()}
+     catch(cancel:CancellationException){throw cancel}
+     catch(_:Exception){android.util.Log.w("FORMA-SYNC","Automatic sync scheduling unavailable")}
+    }
+   }
+  else null
  }
  // Guest UI and guest service actions access only unbound profiles.
  val repository by lazy{ProfileRepository.forGuest(database)}
