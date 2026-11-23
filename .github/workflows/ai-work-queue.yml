@@ -1,0 +1,246 @@
+name: FORMA AI work queue
+on:
+  pull_request:
+    paths:
+      - 'scripts/ai-pilot/scheduled_select.py'
+      - 'scripts/ai-pilot/test_scheduled_select.py'
+      - 'scripts/ai-pilot/verify_schedule_evidence.py'
+      - 'scripts/ai-pilot/test_schedule_evidence.py'
+      - 'scripts/pilot_task_state.py'
+      - 'scripts/test_pilot_task_state.py'
+      - 'scripts/pilot_demo.py'
+      - '.github/workflows/ai-work-queue.yml'
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Reviewed work package
+        type: choice
+        options: [smoke, backup-replay, workout-date]
+        default: backup-replay
+        required: true
+      expected_sha:
+        description: Exact commit SHA of main
+        type: string
+        required: true
+      batch:
+        description: Run the whole package or save a checkpoint after one attempt
+        type: choice
+        options: [all, one-attempt]
+        default: all
+        required: true
+      resume_run:
+        description: Optional completed queue run ID on the same commit
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-ai-work-queue
+  cancel-in-progress: false
+
+jobs:
+  scheduler-tests:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify scheduled selection
+        run: |
+          python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
+          python3 -m unittest discover -s scripts/ai-pilot -p test_schedule_evidence.py -v
+          python3 -m unittest discover -s scripts -p test_pilot_pr_snapshot_auth.py -v
+  pilot-ledger-tests:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify durable task ledger and simulated draft PR
+        run: python3 -m unittest discover -s scripts -p test_pilot_task_state.py -v
+      - name: Separate one-command Linux process proof (simulated only)
+        run: python3 scripts/pilot_demo.py
+  queue:
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event_name == 'schedule' && github.sha || inputs.expected_sha }}
+      PACKAGE: ${{ github.event_name == 'schedule' && 'smoke' || inputs.package }}
+      BATCH: ${{ github.event_name == 'schedule' && 'all' || inputs.batch }}
+    steps:
+      - name: Check reviewed entrypoint
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          case "$PACKAGE" in smoke|backup-replay|workout-date) ;; *) exit 2 ;; esac
+          case "$BATCH" in all|one-attempt) ;; *) exit 2 ;; esac
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Select reviewed scheduled work
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # GitHub-hosted anonymous REST traffic can return HTTP 403.
+          # This ephemeral token has read-only PR metadata scope and is never
+          # passed to the Qwen/llama.cpp process or into the evidence artifact.
+          gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            --jq 'if type == "array" then map({number, state, head_ref: .head.ref}) else error("invalid PR response") end' \
+            > "$RUNNER_TEMP/forma-open-prs.json"
+          python3 -m unittest discover -s scripts/ai-pilot -p test_scheduled_select.py -v
+          python3 scripts/ai-pilot/scheduled_select.py \
+            --revision "$EXPECTED_SHA" \
+            --prs "$RUNNER_TEMP/forma-open-prs.json" \
+            --output "$RUNNER_TEMP/forma-scheduled-plan.json"
+          package="$(jq -er '.package | select(. == "smoke" or . == "backup-replay" or . == "workout-date")' "$RUNNER_TEMP/forma-scheduled-plan.json")"
+          echo "PACKAGE=$package" >> "$GITHUB_ENV"
+          {
+            echo '## Scheduled work selection'
+            echo '```json'
+            cat "$RUNNER_TEMP/forma-scheduled-plan.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore exact-revision evidence
+        if: github.event_name == 'schedule' || inputs.resume_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME_RUN: ${{ inputs.resume_run }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            runs="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ai-work-queue.yml/runs" \
+              -f branch=main -f event=schedule -f status=completed -f head_sha="$GITHUB_SHA" -F per_page=8)"
+            while IFS=$'\t' read -r id attempt; do
+              artifacts="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts" \
+                -f name="forma-ai-queue-$id-$attempt")"
+              if jq -e --arg name "forma-ai-queue-$id-$attempt" \
+                '.artifacts | any(.name == $name and .expired == false)' <<< "$artifacts" >/dev/null; then
+                RESUME_RUN="$id"
+                break
+              fi
+            done < <(jq -r '.workflow_runs[] | [.id, .run_attempt] | @tsv' <<< "$runs")
+          fi
+          [[ -n "$RESUME_RUN" ]] || exit 0
+          [[ "$RESUME_RUN" =~ ^[0-9]{1,20}$ ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_RUN")"
+          workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ai-work-queue.yml" --jq .id)"
+          jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" --arg id "$workflow_id" \
+            --arg event "$GITHUB_EVENT_NAME" '
+            .head_sha == $sha and .head_repository.full_name == $repo and
+            .head_branch == "main" and .event == $event and
+            .status == "completed" and (.workflow_id | tostring) == $id
+          ' <<< "$run" >/dev/null
+          attempt="$(jq -er '.run_attempt' <<< "$run")"
+          EVIDENCE="$RUNNER_TEMP/forma-ai-queue"
+          download="$(mktemp -d)"
+          gh run download "$RESUME_RUN" -R "$GITHUB_REPOSITORY" \
+            -n "forma-ai-queue-$RESUME_RUN-$attempt" -D "$download"
+          for name in queue.json backup-pr15.patch clamp.patch clamp-followup.patch workout-date.patch; do
+            file="$download/$name"
+            if [[ -e "$file" ]]; then
+              if [[ ! -f "$file" || -L "$file" ]] || [[ "$(wc -c < "$file")" -gt 32768 ]]; then
+                echo 'Invalid checkpoint file.' >&2
+                if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then exit 0; fi
+                exit 1
+              fi
+            fi
+          done
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]] && ! python3 scripts/ai-pilot/queue_run.py \
+            --revision "$EXPECTED_SHA" --output "$download" --package "$PACKAGE" --validate-resumable; then
+            echo 'Starting fresh after invalid or terminally failed scheduled evidence.'
+            exit 0
+          fi
+          test -f "$download/queue.json"
+          for name in queue.json backup-pr15.patch clamp.patch clamp-followup.patch workout-date.patch; do
+            if [[ -f "$download/$name" ]]; then
+              install -D -m 600 "$download/$name" "$EVIDENCE/$name"
+            fi
+          done
+          echo "Restored checkpoint from run $RESUME_RUN."
+      - name: Run the reviewed queue
+        run: |
+          evidence="$RUNNER_TEMP/forma-ai-queue"
+          if [[ -f "$evidence/queue.json" ]] &&
+            jq -e --arg sha "$EXPECTED_SHA" '
+              .identity.base_sha == $sha and (.records | length > 0 and
+                all(.[]; .status == "PASS" and .checks == "PASS" and .review == "PASS"))
+            ' "$evidence/queue.json" >/dev/null; then
+            echo 'Revalidating completed checkpoint without starting model servers.'
+            python3 scripts/ai-pilot/queue_run.py --revision "$EXPECTED_SHA" --output "$evidence" \
+              --package "$PACKAGE"
+            exit
+          fi
+          args=()
+          if [[ "$BATCH" == one-attempt ]]; then args=(--steps 1 --allow-incomplete); fi
+          bash scripts/ai-pilot/run-queue.sh "$EXPECTED_SHA" "$evidence" "$PACKAGE" "${args[@]}"
+      - name: Show task outcomes
+        if: always()
+        run: |
+          EVIDENCE="$RUNNER_TEMP/forma-ai-queue"
+          if [[ -f "$EVIDENCE/queue.json" ]]; then
+            {
+              echo '## FORMA AI work queue'
+              echo '| Task | Outcome | Checks | Review | Next action |'
+              echo '| --- | --- | --- | --- | --- |'
+              jq -r '.records as $records | .identity.plan as $plan |
+                $records | to_entries[] |
+                . as $task |
+                (if .value.status == "PASS" then "Review patch"
+                 elif .value.status == "FAIL" then "Inspect attempts"
+                 elif any($plan[$task.key][]; $records[.].status != "PASS") then "Wait for dependency"
+                 else "Resume from checkpoint" end) as $next |
+                "| \(.key) | \(.value.status) | \(.value.checks) | \(.value.review) | \($next) |"' \
+                "$EVIDENCE/queue.json"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Independently check scheduled plan and queue artifacts
+        if: ${{ always() && github.event_name == 'schedule' }}
+        run: |
+          python3 scripts/ai-pilot/verify_schedule_evidence.py \
+            --event "$GITHUB_EVENT_NAME" --repo "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" --revision "$EXPECTED_SHA" \
+            --checkout "$(git rev-parse HEAD)" \
+            --plan "$RUNNER_TEMP/forma-scheduled-plan.json" \
+            --queue "$RUNNER_TEMP/forma-ai-queue/queue.json" \
+            --evidence-dir "$RUNNER_TEMP/forma-ai-queue" \
+            --output "$RUNNER_TEMP/forma-schedule-evidence.json"
+          {
+            echo '## Scheduled artifact integrity receipt'
+            echo 'This receipt checks local data integrity; GitHub run event/SHA must be checked independently.'
+            echo '```json'
+            cat "$RUNNER_TEMP/forma-schedule-evidence.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Save queue evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: forma-ai-queue-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/forma-ai-queue/queue.json
+            ${{ runner.temp }}/forma-ai-queue/*.patch
+            ${{ runner.temp }}/forma-scheduled-plan.json
+            ${{ runner.temp }}/forma-schedule-evidence.json
+          retention-days: 7
+          if-no-files-found: ignore

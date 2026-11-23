@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  repository_dispatch:
+    types: [pilot-draft-ci]
 permissions:
   contents: read
 concurrency:
@@ -15,6 +17,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Event payloads are untrusted. Validate against main-owned code, PR,
+      # durable checkpoint, exact schedule source and current GitHub refs.
+      - name: Verify PILOT dispatch against trusted main
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ai-pilot/verify_dispatch.py --event "$GITHUB_EVENT_PATH"
+      # Never checkout or execute draft code until provenance verification passes.
+      - name: Checkout exact validated PILOT draft commit
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.head_sha }}
+          persist-credentials: false
+      - name: Assert exact tested PILOT draft SHA
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED_PILOT_SHA: ${{ github.event.client_payload.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_PILOT_SHA"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -22,6 +45,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify one protected FORMA release route
         run: python3 scripts/check-release-workflows.py
+      - name: Verify original 3D asset provenance (read-only)
+        run: python3 scripts/visual_asset_gate.py
       - name: Check release CI verification logic
         run: |
           python3 -m unittest discover -s scripts -p "test*.py" -v
@@ -70,6 +95,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Event payloads are untrusted. Validate against main-owned code, PR,
+      # durable checkpoint, exact schedule source and current GitHub refs.
+      - name: Verify PILOT dispatch against trusted main
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ai-pilot/verify_dispatch.py --event "$GITHUB_EVENT_PATH"
+      # Never checkout or execute draft code until provenance verification passes.
+      - name: Checkout exact validated PILOT draft commit
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.head_sha }}
+          persist-credentials: false
+      - name: Assert exact tested PILOT draft SHA
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED_PILOT_SHA: ${{ github.event.client_payload.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_PILOT_SHA"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

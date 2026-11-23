@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  repository_dispatch:
+    types: [pilot-draft-ci]
 permissions:
   contents: read
 jobs:
@@ -29,6 +31,27 @@ jobs:
       FORMA_TEST_API_DSN: postgresql://forma_api:ephemeral_forma_ci_only@localhost:5432/forma_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Event payloads are untrusted. Validate against main-owned code, PR,
+      # durable checkpoint, exact schedule source and current GitHub refs.
+      - name: Verify PILOT dispatch against trusted main
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ai-pilot/verify_dispatch.py --event "$GITHUB_EVENT_PATH"
+      # Never checkout or execute draft code until provenance verification passes.
+      - name: Checkout exact validated PILOT draft commit
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.head_sha }}
+          persist-credentials: false
+      - name: Assert exact tested PILOT draft SHA
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED_PILOT_SHA: ${{ github.event.client_payload.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_PILOT_SHA"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
