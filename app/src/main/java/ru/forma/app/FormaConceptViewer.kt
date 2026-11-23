@@ -298,13 +298,13 @@ internal fun FormaConceptViewer() {
                 .semantics { contentDescription = "Экспериментальная 3D-фигура. Можно повернуть пальцем или кнопками." })
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { surface.rotateBy(-25f) },
-                modifier = Modifier.weight(1f).testTag("forma3d-rotate-left")) { Text("↶") }
+                modifier = Modifier.weight(1f).testTag("forma3d-rotate-left").semantics { contentDescription = "Повернуть влево" }) { Text("↶") }
             Button(onClick = { surface.rotateBy(25f) },
-                modifier = Modifier.weight(1f).testTag("forma3d-rotate-right")) { Text("↷") }
+                modifier = Modifier.weight(1f).testTag("forma3d-rotate-right").semantics { contentDescription = "Повернуть вправо" }) { Text("↷") }
             Button(onClick = { surface.zoomBy(-0.35f) },
-                modifier = Modifier.weight(1f).testTag("forma3d-zoom-in")) { Text("+") }
+                modifier = Modifier.weight(1f).testTag("forma3d-zoom-in").semantics { contentDescription = "Приблизить модель" }) { Text("+") }
             Button(onClick = { surface.zoomBy(0.35f) },
-                modifier = Modifier.weight(1f).testTag("forma3d-zoom-out")) { Text("−") }
+                modifier = Modifier.weight(1f).testTag("forma3d-zoom-out").semantics { contentDescription = "Отдалить модель" }) { Text("−") }
         }
     }
 }
