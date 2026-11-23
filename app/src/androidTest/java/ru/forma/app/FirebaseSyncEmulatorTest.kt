@@ -46,7 +46,7 @@ class FirebaseSyncEmulatorTest {
                 val firstEmail = "${UUID.randomUUID()}@example.test"
                 val password = UUID.randomUUID().toString()
                 val measurement = Measurement(dateMs = 0L, values = mapOf("weight" to 75.0))
-                val profile = Profile(name = "Synthetic profile", measurements = listOf(measurement))
+                val profile = Profile(name = "Synthetic profile", recovery = 4, measurements = listOf(measurement))
                 repo.saveProfile(profile)
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
 
@@ -76,8 +76,12 @@ class FirebaseSyncEmulatorTest {
                 assertTrue(checkNotNull(remote.read(first, measurementRow)).matches(measurementRow))
 
                 repo.mutate(profile.id) { it.copy(recovery = 3, measurements = emptyList()) }
+                val parentUpdate = checkNotNull(db.sync().nextPendingForAccount(first.uid))
+                assertEquals("profile", parentUpdate.kind)
+                assertEquals(2, parentUpdate.revision)
                 assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
                 val tombstone = checkNotNull(db.sync().nextPendingForAccount(first.uid))
+                assertTrue(tombstone.tombstone)
                 val predecessor = checkNotNull(remote.read(first, measurementRow))
                 assertFalse(remote.compareAndCommit(first, tombstone, predecessor, firstEcho))
                 assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
@@ -85,6 +89,7 @@ class FirebaseSyncEmulatorTest {
 
                 identity.signOut()
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
+                assertNull(ProfileRepository.forGuest(db).load(profile.id))
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 expectFirestoreError(FirebaseFirestoreException.Code.PERMISSION_DENIED) {
                     firstDocument.get(Source.SERVER).await()
