@@ -4,8 +4,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -20,6 +26,7 @@ import ru.forma.domain.bodyShape
 /** A responsive, measurement-driven diagram, not a clinical body scan. */
 @Composable
 fun BodyMannequin(profile: Profile, modifier: Modifier = Modifier) {
+    var conceptVisible by rememberSaveable(profile.id) { mutableStateOf(false) }
     val proportions = bodyShape(profile)
     val primary = MaterialTheme.colorScheme.primary
     val body = MaterialTheme.colorScheme.onSurfaceVariant
@@ -86,5 +93,15 @@ fun BodyMannequin(profile: Profile, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
+        // Separate optional preview: does not replace the profile-based 2D body diagram.
+        TextButton(
+            onClick = { conceptVisible = !conceptVisible },
+            modifier = Modifier.fillMaxWidth().testTag("forma3d-toggle")
+        ) {
+            Text(if (conceptVisible) "Закрыть 3D-концепт" else "Открыть 3D-концепт")
+        }
+        if (conceptVisible) {
+            FormaConceptViewer()
+        }
     }
 }
