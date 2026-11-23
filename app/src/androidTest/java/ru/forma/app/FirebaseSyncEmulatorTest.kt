@@ -48,6 +48,7 @@ class FirebaseSyncEmulatorTest {
                 val measurement = Measurement(dateMs = 0L, values = mapOf("weight" to 75.0))
                 val profile = Profile(name = "Synthetic profile", recovery = 4, measurements = listOf(measurement))
                 repo.saveProfile(profile)
+                assertNull(repo.profilesForVerifiedAccount(identity))
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
 
                 auth.createUserWithEmailAndPassword(firstEmail, password).await()
@@ -55,10 +56,13 @@ class FirebaseSyncEmulatorTest {
                 verifyEmail(auth, firstEmail)
                 val first = checkNotNull(identity.currentLease())
                 val firstDocument = firestore.document("accounts/${first.uid}/profiles/${profile.id}")
+                assertEquals(VerifiedAccountProfiles(first, emptyList()), repo.profilesForVerifiedAccount(identity))
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
                 assertFalse(firstDocument.get(Source.SERVER).await().exists())
 
                 repo.bindAndQueueInitialSnapshotForVerifiedConsent(profile.id, identity, 1L)
+                val accountProfiles = checkNotNull(repo.profilesForVerifiedAccount(identity))
+                assertEquals(VerifiedAccountProfiles(first, listOf(profile)), accountProfiles)
                 val profileRow = checkNotNull(db.sync().nextPendingForAccount(first.uid))
                 assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
                 val firstEcho = checkNotNull(remote.read(first, profileRow))
@@ -75,7 +79,9 @@ class FirebaseSyncEmulatorTest {
                 assertEquals(SyncDeliveryStep.ACKED, coordinator.deliverOne())
                 assertTrue(checkNotNull(remote.read(first, measurementRow)).matches(measurementRow))
 
-                repo.mutate(profile.id) { it.copy(recovery = 3, measurements = emptyList()) }
+                repo.mutateForVerifiedAccount(profile.id, accountProfiles.lease, identity) {
+                    it.copy(recovery = 3, measurements = emptyList())
+                }
                 val parentUpdate = checkNotNull(db.sync().nextPendingForAccount(first.uid))
                 assertEquals("profile", parentUpdate.kind)
                 assertEquals(2, parentUpdate.revision)
@@ -88,6 +94,7 @@ class FirebaseSyncEmulatorTest {
                 assertTrue(checkNotNull(remote.read(first, tombstone)).tombstone)
 
                 identity.signOut()
+                assertNull(repo.profilesForVerifiedAccount(identity))
                 assertEquals(SyncDeliveryStep.NO_AUTH, coordinator.deliverOne())
                 assertNull(ProfileRepository.forGuest(db).load(profile.id))
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
@@ -99,6 +106,15 @@ class FirebaseSyncEmulatorTest {
                 verifyEmail(auth, secondEmail)
                 val second = checkNotNull(identity.currentLease())
                 assertNotEquals(first.uid, second.uid)
+                assertEquals(VerifiedAccountProfiles(second, emptyList()), repo.profilesForVerifiedAccount(identity))
+                try {
+                    repo.mutateForVerifiedAccount(profile.id, second, identity) {
+                        throw AssertionError("A foreign profile reached the edit callback")
+                    }
+                    fail("Expected the foreign profile edit to be denied")
+                } catch (error: IllegalStateException) {
+                    assertEquals("Профиль не найден", error.message)
+                }
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
                 expectFirestoreError(FirebaseFirestoreException.Code.PERMISSION_DENIED) {
                     firstDocument.get(Source.SERVER).await()
@@ -114,6 +130,10 @@ class FirebaseSyncEmulatorTest {
                 val restored = checkNotNull(identity.currentLease())
                 assertEquals(first.uid, restored.uid)
                 assertNotEquals(first.generation, restored.generation)
+                assertEquals(
+                    VerifiedAccountProfiles(restored, listOf(profile.copy(recovery = 3, measurements = emptyList()))),
+                    repo.profilesForVerifiedAccount(identity)
+                )
                 assertEquals(SyncDeliveryStep.EMPTY, coordinator.deliverOne())
                 assertTrue(checkNotNull(remote.read(restored, tombstone)).tombstone)
             } finally {

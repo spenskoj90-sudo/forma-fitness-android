@@ -25,6 +25,16 @@ import ru.forma.domain.*
  suspend fun guest(id:String):ProfileRow?
  @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
  suspend fun guests():List<ProfileRow>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE b.accountUid = :uid AND b.consentAtMs > 0 ORDER BY p.name, p.id
+ """)
+ suspend fun accountProfiles(uid:String):List<ProfileRow>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE p.id = :id AND b.accountUid = :uid AND b.consentAtMs > 0
+ """)
+ suspend fun accountProfile(id:String,uid:String):ProfileRow?
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
 // Add-only schema migration: never rewrite the v1 profiles table or its JSON.
@@ -42,6 +52,8 @@ abstract class FormaDatabase:RoomDatabase(){
  abstract fun profiles():ProfileDao
  abstract fun sync():SyncOutboxDao
 }
+internal data class VerifiedAccountProfiles(val lease:VerifiedSyncLease,val profiles:List<Profile>)
+
 class ProfileRepository private constructor(private val db:FormaDatabase,private val guestOnly:Boolean) {
  internal constructor(db:FormaDatabase):this(db,false)
  internal companion object {
@@ -141,7 +153,32 @@ class ProfileRepository private constructor(private val db:FormaDatabase,private
   db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
   enqueueBoundChanges(db,before,p,json)
  }
- suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());if(next!=old)put(next)}
+ suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {
+  val old=load(id)?:error("Профиль не найден")
+  applyProfileChange(old,op)
+ }
+
+ internal suspend fun profilesForVerifiedAccount(identity:VerifiedSyncIdentity):VerifiedAccountProfiles? {
+  val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}?:return null
+  val profiles=db.profiles().accountProfiles(lease.uid).map(::decode)
+  return if(identity.currentLease()==lease) VerifiedAccountProfiles(lease,profiles) else null
+ }
+
+ /** Use the lease from the profile snapshot to reject actions from a stale account session. */
+ internal suspend fun mutateForVerifiedAccount(
+  id:String,lease:VerifiedSyncLease,identity:VerifiedSyncIdentity,op:(Profile)->Profile
+ )=db.withTransaction {
+  require(lease.uid.isNotBlank() && identity.currentLease()==lease){"A current verified session is required"}
+  val old=db.profiles().accountProfile(id,lease.uid)?.let(::decode)?:error("Профиль не найден")
+  applyProfileChange(old,op)
+  require(identity.currentLease()==lease){"Account session changed during the profile update"}
+ }
+
+ private suspend fun applyProfileChange(old:Profile,op:(Profile)->Profile) {
+  val next=op(old)
+  require(next.id==old.id && next.valid())
+  if(next!=old)put(next)
+ }
 }
 private val Context.store by preferencesDataStore(name="forma_preferences")
 data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME,val highContrast:Boolean=false,val reducedMotion:Boolean=false,val simplifiedEffects:Boolean=false)

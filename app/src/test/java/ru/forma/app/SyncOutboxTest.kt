@@ -18,6 +18,44 @@ class SyncOutboxTest {
  private fun fixtureIdentity(uid:String)=object:VerifiedSyncIdentity {
   override suspend fun currentLease()=VerifiedSyncLease(uid,1L)
  }
+
+ @Test fun accountGenerationChangeDiscardsReadsAndRollsBackEditsWithTheirOutbox():Unit=runBlocking {
+  val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
+  try {
+   val repo=ProfileRepository(db)
+   val existing=Profile(id="bound",name="Synthetic account profile")
+   repo.saveProfile(existing)
+   val original=VerifiedSyncLease("uid-A",1L)
+   val subsequent=original.copy(generation=2L)
+   var current=original
+   val identity=object:VerifiedSyncIdentity {
+    override suspend fun currentLease()=current
+   }
+   repo.bindAndQueueInitialSnapshotForVerifiedConsent(existing.id,identity,1L)
+   val initial=db.sync().pendingForAccount(original.uid)
+   assertEquals(1,initial.size)
+
+   var checks=0
+   val switchingIdentity=object:VerifiedSyncIdentity {
+    override suspend fun currentLease()=if(checks++==0) original else subsequent
+   }
+   assertNull(repo.profilesForVerifiedAccount(switchingIdentity))
+   val failure=runCatching {
+    repo.mutateForVerifiedAccount(existing.id,original,identity){profile->
+     current=subsequent
+     profile.copy(name="Never committed")
+    }
+   }.exceptionOrNull()
+   assertEquals("Account session changed during the profile update",failure?.message)
+   assertEquals(VerifiedAccountProfiles(subsequent,listOf(existing)),repo.profilesForVerifiedAccount(identity))
+   assertEquals(initial,db.sync().pendingForAccount(original.uid))
+   val staleEdit=runCatching {
+    repo.mutateForVerifiedAccount(existing.id,original,identity){throw AssertionError("Stale edit ran")}
+   }.exceptionOrNull()
+   assertTrue(staleEdit is IllegalArgumentException)
+  } finally { db.close() }
+ }
+
  @Test fun guestRepositoryCannotReadExportOrReplaceAnAccountProfile():Unit=runBlocking{
   val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),FormaDatabase::class.java).build()
   try{
