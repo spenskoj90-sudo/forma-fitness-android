@@ -57,3 +57,8 @@ grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
 # These are real Compose UI tests, not just Kotlin compilation.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormDraftRestorationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/draft-restoration-api${api}.txt"
 grep -F "OK (3 tests)" "verification/draft-restoration-api${api}.txt"
+
+# Explicit viewer test: runner enumerates classes, not all compiled instrumentations.
+# Requiring OK (1 test) prevents a source-only/compilation result masquerading as runtime.
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.FormaConceptViewerTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/forma-concept-api${api}.txt"
+grep -F "OK (1 test)" "verification/forma-concept-api${api}.txt"
