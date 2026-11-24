@@ -35,7 +35,7 @@ jobs:
           java-version: '21'
       - name: Install pinned Firebase emulator test tools
         run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Run deny-by-default two-UID Rules suite (demo project only)
+      - name: Run Rules and two-account provider smoke (demo project only)
         run: npm run test:rules
       - name: Save generated lockfile for reproducible follow-up
         if: always()

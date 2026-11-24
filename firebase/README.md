@@ -42,7 +42,7 @@ Live provider activation and App Check enforcement remain behind separate gates.
   profile using the same offline format as the guest export. Scope is rechecked
   before and after file I/O.
 
-- Run `npm run test:rules` for the Rules suite. Android CI runs
+- Run `npm run test:rules` for the Rules suite and the two-account REST smoke against the Auth and Firestore emulators. Android CI runs
   `npm run test:android-sync` on API 34 with both emulators, using synthetic
   registration, email verification, password reset request, sign-in, local
   consent, offline replay, tombstones, account switching, revocation of
@@ -80,6 +80,30 @@ Live provider activation and App Check enforcement remain behind separate gates.
   separate gates. PROJECTS owns the pre-approved isolated Spark project
   \`forma-ee2e9\`, whose \`(default)\` Firestore region remains pending at
   \`europe-west3\` (Frankfurt). **Do not deploy to this project from this PR.**
+
+## Two-account provider smoke
+
+The owner-approved live smoke targets only the existing isolated Spark project
+`forma-ee2e9`. Run `npm run test:provider:live` from this directory in a
+terminal with an authorized Google Cloud CLI session. It uses the existing
+Firebase browser API key and checks that the database region and the published
+rules match this checkout before creating fixtures. If the intended browser key
+has a custom display name, set `FORMA_FIREBASE_WEB_KEY_RESOURCE` to its Google
+Cloud resource name in this project. The CLI session needs to
+read the database, rules and existing key and manage the two synthetic Auth
+accounts. No service-account key file or real user data is needed.
+
+The probe signs in through the provider's Email/Password API and uses the
+returned Firebase ID tokens for Firestore requests. It verifies an unverified
+user is denied, both verified UIDs can write and read their own profiles and
+measurements, and each is denied access to the other's paths. It disables
+the two generated Auth users and verifies cleanup. Synthetic Firestore
+fixtures stay under those disabled UIDs. The evidence contains only the
+synthetic run ID, result labels and the rules digest.
+
+The live smoke covers the provider REST contract. Native Android, App Check
+and physical-device results require their separate checks. CI calls only the
+local emulators and supplies no live project credentials.
 
 ## Protected release configuration
 
