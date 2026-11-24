@@ -1,5 +1,7 @@
 package ru.forma.app
 
+import android.graphics.Rect
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +24,8 @@ import ru.forma.domain.*
 
 private val testApp get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as FormaApp
 private fun snapshotFile(app: FormaApp) = File(app.filesDir, "test-installer-snapshot.json")
+private fun confirmationFile(app: FormaApp) = File(app.filesDir, "test-installer-confirmation.txt")
+private val installerPackages = setOf("com.android.packageinstaller", "com.google.android.packageinstaller")
 
 @Serializable
 private data class UpdateSnapshot(val selected: String, val profiles: List<Profile>)
@@ -34,6 +38,19 @@ private suspend fun snapshot(app: FormaApp) = UpdateSnapshot(
 @Suppress("DEPRECATION")
 private fun installedCode(app: FormaApp) = app.packageManager.getPackageInfo(app.packageName, 0).versionCode
 
+private fun confirmationButton(root: AccessibilityNodeInfo?): Rect? {
+    if (root == null || root.packageName?.toString() !in installerPackages) return null
+    fun visibleText(text: String) = root.findAccessibilityNodeInfosByText(text).filter {
+        it.isVisibleToUser && it.packageName?.toString() == root.packageName?.toString() && it.text?.toString() == text
+    }
+    if (visibleText("FORMA").isEmpty() || visibleText("Do you want to update this app?").isEmpty()
+        || visibleText("Cancel").none { it.isEnabled && it.isClickable }) return null
+    val update = visibleText("Update").singleOrNull { it.isEnabled && it.isClickable } ?: return null
+    val bounds = Rect()
+    update.getBoundsInScreen(bounds)
+    return bounds.takeUnless { it.isEmpty }
+}
+
 /** Phase one leaves Android's confirmation on screen for the host test to accept. */
 @RunWith(AndroidJUnit4::class)
 class UpdateInstallerHandoffTest {
@@ -45,6 +62,7 @@ class UpdateInstallerHandoffTest {
         assertTrue("Fixture must be allowed to request system installation", app.packageManager.canRequestPackageInstalls())
         val file = snapshotFile(app)
         assertFalse("Stale install snapshot", file.exists())
+        assertFalse("Stale system confirmation", confirmationFile(app).exists())
         val sample = Profile(
             id = "system-update-fixture", name = "Тест установки", weightKg = 77.0,
             measurements = listOf(Measurement("system-update-weight", 1000, mapOf("weight" to 77.0))),
@@ -67,11 +85,14 @@ class UpdateInstallerHandoffTest {
         rule.onNodeWithText("Что нового: Synthetic HTTPS update fixture").assertExists()
         rule.onNodeWithText(installLabel).performScrollTo().assertIsDisplayed().performTouchInput { click() }
         val device = InstrumentationRegistry.getInstrumentation().uiAutomation
+        var bounds: Rect? = null
         rule.waitUntil(20_000) {
-            device.rootInActiveWindow?.packageName?.toString() in
-                setOf("com.android.packageinstaller", "com.google.android.packageinstaller")
+            bounds = confirmationButton(device.rootInActiveWindow)
+            bounds != null
         }
         assertEquals("The system must wait for confirmation", 2, installedCode(app))
+        val button = requireNotNull(bounds)
+        confirmationFile(app).writeText("${button.centerX()} ${button.centerY()}")
     }
 }
 
@@ -89,5 +110,6 @@ class AfterSystemUpdateTest {
         assertEquals(1, fixture.measurements.size)
         assertEquals(before, snapshot(app))
         assertTrue(file.delete())
+        assertTrue(confirmationFile(app).delete())
     }
 }

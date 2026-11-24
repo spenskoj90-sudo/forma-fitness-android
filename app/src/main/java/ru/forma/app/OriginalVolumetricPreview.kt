@@ -17,8 +17,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -38,6 +40,7 @@ import java.nio.FloatBuffer
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.atan
+import kotlin.math.roundToInt
 import kotlin.math.tan
 
 private data class VolumeFraming(val center:VolumePoint,val radius:Float)
@@ -275,14 +278,28 @@ internal fun OriginalVolumetricPreview(exercise:Exercise) {
         enabled=!visual.reducedMotion,
         label={Text("Без движения")},modifier=Modifier.heightIn(min=48.dp))
       }
-      Text("Фаза движения",style=MaterialTheme.typography.labelMedium)
-      Slider(value=phase.value.coerceIn(0f,1f),
+      val position=phase.value.coerceIn(0f,1f)
+      val phaseLabel="Фаза движения"
+      Text(phaseLabel,modifier=Modifier.clearAndSetSemantics {},style=MaterialTheme.typography.labelMedium)
+      Slider(value=position,
        onValueChange={v->playing=false;scope.launch{phase.snapTo(v)}},
-       modifier=Modifier.fillMaxWidth().testTag("volume-preview-scrub"))
+       modifier=Modifier.fillMaxWidth().testTag("volume-preview-scrub").semantics {
+        contentDescription=phaseLabel
+        stateDescription=when {
+         playing && !motionDisabled -> "Воспроизводится"
+         position==0f -> "Исходное положение"
+         position==1f -> "Крайнее положение модели"
+         else -> "${(position*100).roundToInt()} %"
+        }
+       })
      }
-     Text("Поворот объёмной модели",style=MaterialTheme.typography.labelMedium)
+     val orbitLabel="Поворот объёмной модели"
+     Text(orbitLabel,modifier=Modifier.clearAndSetSemantics {},style=MaterialTheme.typography.labelMedium)
      Slider(value=angle,onValueChange={angle=it},valueRange= -180f..180f,
-      modifier=Modifier.fillMaxWidth().testTag("volume-preview-orbit"))
+      modifier=Modifier.fillMaxWidth().testTag("volume-preview-orbit").semantics {
+       contentDescription=orbitLabel
+       stateDescription="${angle.roundToInt()}°"
+      })
      Text("Текстовые шаги и типичные ошибки находятся ниже. При боли прекратите упражнение.",
       style=MaterialTheme.typography.bodySmall)
     }

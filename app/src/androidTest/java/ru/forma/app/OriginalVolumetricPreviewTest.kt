@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -148,8 +149,12 @@ class OriginalVolumetricPreviewTest {
   rule.onNodeWithTag("volume-preview-toggle").assertExists().performScrollTo().performClick()
   rule.onNodeWithTag("volume-preview-surface").performScrollTo().assertIsDisplayed()
   rule.onNodeWithText("Независимая проверка техники ещё не завершена.",substring=true).assertExists()
-  rule.onNodeWithTag("volume-preview-orbit").assertExists()
-  rule.onNodeWithTag("volume-preview-scrub").assertExists()
+  val orbit=rule.onNodeWithTag("volume-preview-orbit")
+   .assertContentDescriptionEquals("Поворот объёмной модели")
+   .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"55°"))
+  val scrub=rule.onNodeWithTag("volume-preview-scrub")
+   .assertContentDescriptionEquals("Фаза движения")
+   .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Исходное положение"))
 
   rule.waitUntil(timeoutMillis=12000) {
    findGl(root.get())?.let{
@@ -162,11 +167,11 @@ class OriginalVolumetricPreviewTest {
   saveSyntheticFrame(first,"volume-gl-start.png")
 
   // Use the same manual controls that a user has: no autoplay, no network.
-  rule.onNodeWithTag("volume-preview-scrub")
-   .performSemanticsAction(SemanticsActions.SetProgress){it(1f)}
-  rule.onNodeWithTag("volume-preview-orbit")
-   .performSemanticsAction(SemanticsActions.SetProgress){it(-130f)}
+  scrub.performSemanticsAction(SemanticsActions.SetProgress){it(1f)}
+  orbit.performSemanticsAction(SemanticsActions.SetProgress){it(-130f)}
   rule.waitForIdle()
+  scrub.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Крайнее положение модели"))
+  orbit.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"-130°"))
   val rotated=awaitRenderedMesh(gl,first)
   saveSyntheticFrame(rotated,"volume-gl-orbit.png")
   first.recycle()
