@@ -116,13 +116,18 @@ with missing or malformed values fails Gradle configuration. The debug variant
 does not package these Firebase resources. Published repositories and CI logs
 must not contain the live values.
 
+The build derives the numeric Google Cloud project number from the registered
+Android app ID. Play Integrity App Check uses that number as the Firebase
+sender ID in its token request. The unsigned resource check in Android CI uses
+synthetic configuration.
+
 The opted-in release installs the Play Integrity App Check provider before the
-account transport becomes available. For direct APK distribution, configure
-the registered app for distribution outside Google Play and link the same Google
-Cloud project. The accepted signing certificate fingerprint and the actual device
-verdicts on Infinix and Poco must be verified before enforcement. Check App Check
-request metrics before enabling enforcement. Keep credentials for server or admin
-APIs outside Android builds. See [Firebase App Check for Android][app-check-doc].
+account transport becomes available. For direct APK distribution, link the same
+Google Cloud project. Firebase recommends leaving `PLAY_RECOGNIZED` and `LICENSED`
+unrequired and selecting Device integrity. Verify the accepted signing certificate
+fingerprint and actual device verdicts on Infinix and Poco before enforcement.
+Check App Check request metrics before enabling enforcement. Keep credentials for
+server or admin APIs outside Android builds. See [Firebase App Check for Android][app-check-doc].
 
 [app-check-doc]: https://firebase.google.com/docs/app-check/android/play-integrity-provider
 

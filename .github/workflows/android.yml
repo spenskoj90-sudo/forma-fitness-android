@@ -59,6 +59,28 @@ jobs:
       - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
       - name: Verify compiler-generated Room schema baselines
         run: python3 scripts/check-room-schema.py
+      - name: Verify App Check project number in unsigned release resources
+        env:
+          FORMA_CLOUD_RELEASE_ENABLED: 'true'
+          FORMA_FIREBASE_PROJECT_ID: demo-forma-release-check
+          FORMA_FIREBASE_ANDROID_APP_ID: '1:123456789012:android:0123456789abcdef'
+        run: |
+          set -euo pipefail
+          export FORMA_FIREBASE_ANDROID_API_KEY="AIza$(printf '%035d' 0)"
+          ./gradlew :app:generateReleaseResValues --console=plain
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          base = Path('app/build/generated/res/resValues')
+          def values(variant):
+              root = ElementTree.parse(base / variant / 'values/gradleResValues.xml').getroot()
+              return {element.attrib['name']: element.text for element in root if 'name' in element.attrib}
+          release = values('release')
+          assert release['google_app_id'] == '1:123456789012:android:0123456789abcdef'
+          assert release['gcm_defaultSenderId'] == '123456789012'
+          assert release['forma_use_play_integrity_app_check'] == 'true'
+          assert 'gcm_defaultSenderId' not in values('debug')
+          PY
       - name: APK identity and signature evidence
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk

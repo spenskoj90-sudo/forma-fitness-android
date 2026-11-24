@@ -39,8 +39,10 @@ android {
     require(Regex("[a-z][a-z0-9-]{4,28}[a-z0-9]").matches(projectId)) {
      "Cloud release requires a valid Firebase project ID"
     }
-    require(Regex("1:[0-9]+:android:[0-9a-fA-F]+").matches(appId)) {
-     "Cloud release requires a valid Firebase Android app ID"
+    val projectNumber = Regex("1:([0-9]+):android:[0-9a-fA-F]+").matchEntire(appId)
+     ?.groupValues?.get(1)?.toLongOrNull()
+    require(projectNumber != null && projectNumber > 0) {
+     "Cloud release requires a Firebase Android app ID with a valid Google Cloud project number"
     }
     require(Regex("AIza[A-Za-z0-9_-]{35}").matches(apiKey)) {
      "Cloud release requires a valid Firebase Android client API key"
@@ -48,6 +50,8 @@ android {
     resValue("string", "project_id", projectId)
     resValue("string", "google_app_id", appId)
     resValue("string", "google_api_key", apiKey)
+    // Play Integrity App Check reads FirebaseOptions.gcmSenderId for token requests.
+    resValue("string", "gcm_defaultSenderId", projectNumber.toString())
     resValue("bool", "forma_cloud_sync_enabled", "true")
     resValue("bool", "forma_use_play_integrity_app_check", "true")
    }
