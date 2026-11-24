@@ -12,9 +12,10 @@ history. A workspace identifier expires when the space closes, the account chang
 or the app process dies. Reopening an unfinished workout pauses it before rendering
 and preserves the last recorded sets and duration. Guest profiles keep their existing
 workflow. The repository ships without a default Firebase app configuration.
-WorkManager and the cloud panel also require the build opt-in
-`-PformaCloudSyncEnabled=true`. Live provider activation and App Check remain behind
-the applicable production gates.
+WorkManager and the cloud panel require a build opt-in. Debug uses
+`-PformaCloudSyncEnabled=true` for the emulator fixture. The protected signing job
+can supply Firebase client settings to the release variant after provider approval.
+Live provider activation and App Check enforcement remain behind separate gates.
 
 - The outgoing queue uses unique connected-network work on new pending records
   and an hourly fallback. Room holds the payload. Each bounded batch pins one
@@ -79,6 +80,27 @@ the applicable production gates.
   separate gates. PROJECTS owns the pre-approved isolated Spark project
   \`forma-ee2e9\`, whose \`(default)\` Firestore region remains pending at
   \`europe-west3\` (Frankfurt). **Do not deploy to this project from this PR.**
+
+## Protected release configuration
+
+The release build can opt in with `FORMA_CLOUD_RELEASE_ENABLED=true`. Pass the
+registered Android client's `FORMA_FIREBASE_PROJECT_ID`,
+`FORMA_FIREBASE_ANDROID_APP_ID` and `FORMA_FIREBASE_ANDROID_API_KEY`
+through the protected `forma-release` environment. The client API key must have
+provider-side restrictions appropriate to the Android client. A release opt-in
+with missing or malformed values fails Gradle configuration. The debug variant
+does not package these Firebase resources. Published repositories and CI logs
+must not contain the live values.
+
+The opted-in release installs the Play Integrity App Check provider before the
+account transport becomes available. For direct APK distribution, configure
+the registered app for distribution outside Google Play and link the same Google
+Cloud project. The accepted signing certificate fingerprint and the actual device
+verdicts on Infinix and Poco must be verified before enforcement. Check App Check
+request metrics before enabling enforcement. Keep credentials for server or admin
+APIs outside Android builds. See [Firebase App Check for Android][app-check-doc].
+
+[app-check-doc]: https://firebase.google.com/docs/app-check/android/play-integrity-provider
 
 Issue #8 tracks account-scoped workout access, the consent UI, inbound sync,
 conflict resolution, real provider checks, export, deletion and physical

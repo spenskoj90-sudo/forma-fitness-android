@@ -7,6 +7,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -330,6 +332,9 @@ class FormaApp:Application(){
  val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()}
  internal val firebaseAccount by lazy {
   FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let{configured->
+   if (resources.getBoolean(R.bool.forma_use_play_integrity_app_check) && !installAppCheck(configured)) {
+    return@let null
+   }
    FirebaseAccount(configured).also{account->
     applicationScope.launch{
      account.localLeases.collect{
@@ -350,6 +355,14 @@ class FormaApp:Application(){
     }
    }
   else null
+ }
+ private fun installAppCheck(configured: FirebaseApp): Boolean = try {
+  FirebaseAppCheck.getInstance(configured)
+   .installAppCheckProviderFactory(PlayIntegrityAppCheckProviderFactory.getInstance())
+  true
+ } catch (_: RuntimeException) {
+  android.util.Log.w("FORMA-SYNC", "Firebase App Check initialization unavailable")
+  false
  }
  // Guest UI and guest service actions access only unbound profiles.
  val repository by lazy{ProfileRepository.forGuest(database)}

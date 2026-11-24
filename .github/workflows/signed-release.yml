@@ -133,6 +133,10 @@ jobs:
           FORMA_RELEASE_KEY_PASSWORD: ${{ secrets.FORMA_RELEASE_KEY_PASSWORD }}
           FORMA_UPDATE_FEED_URL: ${{ vars.FORMA_UPDATE_FEED_URL }}
           FORMA_UPDATE_MANIFEST_PUBKEY: ${{ vars.FORMA_UPDATE_MANIFEST_PUBKEY }}
+          FORMA_CLOUD_RELEASE_ENABLED: ${{ vars.FORMA_CLOUD_RELEASE_ENABLED }}
+          FORMA_FIREBASE_PROJECT_ID: ${{ vars.FORMA_FIREBASE_PROJECT_ID }}
+          FORMA_FIREBASE_ANDROID_APP_ID: ${{ vars.FORMA_FIREBASE_ANDROID_APP_ID }}
+          FORMA_FIREBASE_ANDROID_API_KEY: ${{ secrets.FORMA_FIREBASE_ANDROID_API_KEY }}
         run: |
           set -euo pipefail
           set +x
@@ -153,7 +157,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache --no-scan :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleRelease \
             "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" "-PformaUpdateManifestPubKey=$FORMA_UPDATE_MANIFEST_PUBKEY" --console=plain
-      - name: Verify compiler-generated Room v1 schema baseline
+      - name: Verify compiler-generated Room schema baselines
         run: python3 scripts/check-room-schema.py
       - name: Verify immutable APK identity, signer and SHA-256
         shell: bash
