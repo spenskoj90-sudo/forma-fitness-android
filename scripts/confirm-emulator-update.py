@@ -3,15 +3,12 @@
 import re
 import subprocess
 import time
+from xml.etree import ElementTree
 
 
 PACKAGE = 'ru.forma.fitness'
-INSTALLER_FOCUS = re.compile(
-    r'^\s*mCurrentFocus=Window\{[^}\n]+ '
-    r'(?:com\.android\.packageinstaller|com\.google\.android\.packageinstaller)'
-    r'/(?:com\.android\.packageinstaller)?\.PackageInstallerActivity\s*\}',
-    re.M,
-)
+INSTALLER_PACKAGES = {'com.android.packageinstaller', 'com.google.android.packageinstaller'}
+DUMP = '/data/local/tmp/forma-test-install-dialog.xml'
 
 
 def adb(*args):
@@ -26,6 +23,49 @@ def installed_version():
     return int(match[0])
 
 
+def confirmation_center(xml):
+    nodes = list(ElementTree.fromstring(xml).iter('node'))
+    for package in INSTALLER_PACKAGES:
+        controls = [node for node in nodes if node.get('package') == package]
+        labels = {node.get('text') for node in controls}
+        if not {'FORMA', 'Do you want to update this app?'} <= labels:
+            continue
+        buttons = [node for node in controls
+                   if node.get('enabled') == 'true' and node.get('clickable') == 'true']
+        if not any(node.get('text') == 'Cancel' for node in buttons):
+            continue
+        update = [node for node in buttons if node.get('text') == 'Update']
+        if len(update) != 1:
+            continue
+        bounds = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', update[0].get('bounds', ''))
+        if bounds:
+            left, top, right, bottom = map(int, bounds.groups())
+            if left < right and top < bottom:
+                return (left + right) // 2, (top + bottom) // 2
+    return None
+
+
+def require_visible_confirmation(expected):
+    # ActivityScenario may temporarily bring its cleanup Activity to the front.
+    # Re-read the active accessibility tree after that transition. DUMP is
+    # removed before every read so a failed dump cannot reuse stale evidence.
+    deadline = time.monotonic() + 30
+    try:
+        while time.monotonic() < deadline:
+            adb('shell', 'rm', '-f', DUMP)
+            try:
+                adb('shell', 'uiautomator', 'dump', DUMP)
+                point = confirmation_center(adb('exec-out', 'cat', DUMP))
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ElementTree.ParseError):
+                point = None
+            if point == expected:
+                return
+            time.sleep(1)
+    finally:
+        adb('shell', 'rm', '-f', DUMP)
+    raise ValueError('The active FORMA update dialog did not match its observed Update button')
+
+
 def main():
     if (not adb('get-serialno').strip().startswith('emulator-')
             or adb('shell', 'getprop', 'ro.build.version.sdk').strip() != '34'):
@@ -36,10 +76,9 @@ def main():
     point = adb('shell', 'run-as', PACKAGE, 'cat', 'files/test-installer-confirmation.txt').strip()
     if not re.fullmatch(r'[1-9]\d{0,3} [1-9]\d{0,3}', point):
         raise ValueError('Invalid coordinates from the observed system Update button')
+    require_visible_confirmation(tuple(map(int, point.split())))
     if installed_version() != 2:
         raise ValueError('Version changed before system confirmation')
-    if not INSTALLER_FOCUS.search(adb('shell', 'dumpsys', 'window', 'windows')):
-        raise ValueError('The Android PackageInstaller confirmation window lost focus')
     print('PASS Android confirmation visible while versionCode is still 2', flush=True)
     adb('shell', 'input', 'tap', *point.split())
 
