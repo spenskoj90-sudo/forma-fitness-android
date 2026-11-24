@@ -121,6 +121,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |
@@ -131,12 +133,21 @@ jobs:
           FORMA_API: ${{ matrix.api }}
         run: |
           set -euo pipefail
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --stacktrace
+          build_test_apks() {
+            if ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --info --stacktrace "$@"; then
+              return 0
+            fi
+            # Gradle 8.10 can mask a resolver error while formatting failed tasks.
+            ./gradlew :app:dependencies --configuration debugRuntimeClasspath --console=plain "$@" || true
+            ./gradlew :app:dependencies --configuration debugAndroidTestRuntimeClasspath --console=plain "$@" || true
+            return 1
+          }
+          build_test_apks
           mkdir -p .forma-emulator/offline
           cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/offline/app.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/offline/test.apk
           if [[ "$FORMA_API" == "34" ]]; then
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PformaCloudSyncEnabled=true --console=plain --stacktrace
+            build_test_apks -PformaCloudSyncEnabled=true
             mkdir -p .forma-emulator/cloud
             cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/cloud/app.apk
             cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/cloud/test.apk
@@ -152,7 +163,7 @@ jobs:
           cp app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt legacy/app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt
           cd legacy
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --stacktrace
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --info --stacktrace
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
