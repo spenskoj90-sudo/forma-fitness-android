@@ -12,6 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
 import org.junit.Rule
 import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
@@ -413,8 +414,22 @@ class JourneyTest{
   }
   waitText("Продолжить сопровождение")
   composeRule.activityRule.scenario.recreate();waitText("Продолжить сопровождение");assertTrue(current().active!!.paused)
-  // Leave a real persisted paused workout for a separate force-stop/relaunch test.
   screenshot("paused-dark")
+  if(rebootRecoveryRequested()){
+   // API 34 must recover a running workout after a real emulator restart.
+   click("Продолжить сопровождение")
+   composeRule.waitUntil(20000){
+    current().active?.let{it.id==recoveryCardioId&&!it.paused&&it.phase==Phase.CARDIO}==true
+   }
+   val resumedAt=requireNotNull(current().active).lastTickMs
+   composeRule.waitUntil(20000){
+    app.serviceRunning&&current().active?.let{it.id==recoveryCardioId&&it.lastTickMs>resumedAt}==true
+   }
+   val running=current()
+   assertFalse(requireNotNull(running.active).paused)
+   val evidence=RebootRecoveryEvidence(androidBootCount(app),running)
+   rebootRecoverySnapshot(app).writeText(Json.encodeToString(RebootRecoveryEvidence.serializer(),evidence))
+  }
  }
 }
 private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.firstForTest():T=this.first()

@@ -53,15 +53,39 @@ else
   adb install -r "$offline/test.apk"
 fi
 adb logcat -c || true
-timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.JourneyTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/journey-api${api}.txt"
+recovery_args=()
+if [[ "$api" == "34" ]]; then
+  recovery_args=(-e formaRecoveryBoundary reboot)
+fi
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w "${recovery_args[@]}" -e class ru.forma.app.JourneyTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/journey-api${api}.txt"
 grep -F "OK (1 test)" "verification/journey-api${api}.txt"
+if [[ "$api" == "34" ]]; then
+  previous_boot=$(adb shell settings get global boot_count | tr -d '\r')
+  [[ "$previous_boot" =~ ^[0-9]+$ ]]
+  adb reboot
+  timeout --signal=TERM --kill-after=5s 2m bash -c '
+    previous_boot=$1
+    adb wait-for-device
+    while true; do
+      ready=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")
+      boot=$(adb shell settings get global boot_count 2>/dev/null | tr -d "\r")
+      if [[ "$ready" == 1 && "$boot" =~ ^[0-9]+$ ]] && (( boot > previous_boot )); then
+        printf "Android boot_count advanced: %s -> %s\n" "$previous_boot" "$boot"
+        break
+      fi
+      sleep 1
+    done
+  ' bash "$previous_boot" | tee verification/reboot-api34.txt
+  adb shell input keyevent KEYCODE_MENU
+else
+  adb shell am force-stop ru.forma.fitness
+fi
 pull_evidence
-adb shell am force-stop ru.forma.fitness
 adb shell settings put system font_scale 1.3
 if (( api >= 33 )); then
   adb shell pm revoke ru.forma.fitness android.permission.POST_NOTIFICATIONS
 fi
-timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RecoveryTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/recovery-api${api}.txt"
+timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w "${recovery_args[@]}" -e class ru.forma.app.RecoveryTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/recovery-api${api}.txt"
 grep -F "OK (1 test)" "verification/recovery-api${api}.txt"
 # Run the unsaved-input restoration regressions on all supported Android APIs.
 # These are real Compose UI tests, not just Kotlin compilation.

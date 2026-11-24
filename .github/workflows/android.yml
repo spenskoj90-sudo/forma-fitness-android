@@ -211,7 +211,9 @@ jobs:
             verification/screenshots-api${{ matrix.api }}/
             verification/journey-api${{ matrix.api }}.txt
             verification/recovery-api${{ matrix.api }}.txt
+            verification/reboot-api${{ matrix.api }}.txt
             verification/update-over-install-api${{ matrix.api }}.txt
+            verification/update-https-api${{ matrix.api }}.txt
             verification/technique-media-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
             verification/room-migration-api${{ matrix.api }}.txt

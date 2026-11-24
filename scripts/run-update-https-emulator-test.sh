@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+fail() { printf 'HTTPS fixture: %s\n' "$1" >&2; exit 1; }
+
+serial=$(adb get-serialno)
+api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+[[ "$serial" == emulator-* && "$api" == 34 ]] || fail 'expected the disposable API 34 emulator'
 apk=.forma-emulator/update/app-v3.apk
-test -s "$apk"
-apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
-report=$("$apksigner" verify --verbose --print-certs "$apk")
-grep -Fxq 'Verified using v2 scheme (APK Signature Scheme v2): true' <<< "$report"
+test -s "$apk" || fail 'signed test APK is missing'
+apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+test -x "$apksigner" || fail 'Android build-tools 34.0.0 is missing apksigner'
+report=$("$apksigner" verify --verbose --print-certs "$apk") || fail 'apksigner rejected the test APK'
+grep -Fxq 'Verified using v2 scheme (APK Signature Scheme v2): true' <<< "$report" || fail 'APK signature scheme v2 was not verified'
 mapfile -t signers < <(awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ {print $NF}' <<< "$report")
-test "${#signers[@]}" = 1
-[[ "${signers[0]}" =~ ^[0-9a-f]{64}$ ]]
+test "${#signers[@]}" = 1 || fail 'expected exactly one test APK signer'
+[[ "${signers[0]}" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid test APK certificate digest'
+printf 'HTTPS fixture: verified one signer and v2 APK signature\n'
 
 stage=$(mktemp -d)
 fixture_pid=
@@ -24,19 +30,22 @@ cleanup() {
 }
 trap cleanup EXIT
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
-  -addext subjectAltName=DNS:localhost -keyout "$stage/tls.key" -out "$stage/tls.crt" 2>/dev/null
+  -addext subjectAltName=DNS:localhost -keyout "$stage/tls.key" -out "$stage/tls.crt" \
+  2>"$stage/openssl.log" || { cat "$stage/openssl.log" >&2; fail 'could not create a disposable TLS certificate'; }
 node scripts/update-https-fixture.mjs "$stage" "$apk" "${signers[0]}" &
 fixture_pid=$!
 for attempt in {1..50}; do
   [[ -s "$stage/port" ]] && break
-  kill -0 "$fixture_pid"
+  kill -0 "$fixture_pid" || fail 'TLS server exited before binding'
   sleep 0.2
 done
+test -s "$stage/port" && test -s "$stage/pin" || fail 'TLS server did not report readiness'
 host_port=$(cat "$stage/port")
-[[ "$host_port" =~ ^[0-9]+$ ]]
+[[ "$host_port" =~ ^[0-9]+$ ]] || fail 'TLS server returned an invalid port'
 curl --noproxy '*' --fail --silent --show-error --max-time 5 --cacert "$stage/tls.crt" \
-  "https://localhost:$host_port/stable.json" >/dev/null
-adb reverse "tcp:$device_port" "tcp:$host_port"
+  "https://localhost:$host_port/stable.json" >/dev/null || fail 'host loopback TLS check failed'
+adb reverse "tcp:$device_port" "tcp:$host_port" || fail 'ADB did not map the emulator HTTPS port'
+printf 'HTTPS fixture: host feed verified, starting Android assertions\n'
 tls=$(openssl x509 -in "$stage/tls.crt" -outform DER | base64 -w0)
 timeout --signal=TERM --kill-after=15s 3m adb shell am instrument -w \
   -e class ru.forma.app.UpdateHttpsInstrumentedTest \
