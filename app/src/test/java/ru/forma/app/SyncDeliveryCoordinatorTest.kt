@@ -152,7 +152,7 @@ class SyncDeliveryCoordinatorTest {
   val name="forma-durable-conflict-test.db"
   ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-   .addMigrations(MIGRATION_1_2).build()
+   .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
   try {
    var repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="Alice"))
@@ -171,7 +171,7 @@ class SyncDeliveryCoordinatorTest {
    assertEquals(0,remote.writes)
    db.close()
    db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-    .addMigrations(MIGRATION_1_2).build()
+    .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
    repo=ProfileRepository(db)
    assertEquals(listOf(parked),db.sync().conflictsForAccount("uid-A"))
    assertNull(db.sync().nextPendingForAccount("uid-A"))

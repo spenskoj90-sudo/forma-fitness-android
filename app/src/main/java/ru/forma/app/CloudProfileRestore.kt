@@ -28,12 +28,14 @@ internal interface AuthenticatedProfileRestore {
     suspend fun readProfile(lease: VerifiedSyncLease, id: String): RemoteProfileBundle?
 }
 
-internal data class CloudRestoreResult(val restored: Int = 0, val conflicts: Int = 0)
+internal data class CloudRestoreResult(
+    val restored: Int = 0, val conflicts: Int = 0, val changesApplied: Boolean = false,
+)
 
 private enum class RestoreDecision { KEEP, ACCEPT, CONFLICT }
 
-private val restoreJson = Json { encodeDefaults = true }
-private val localProfileJson = Json { encodeDefaults = true; ignoreUnknownKeys = true }
+internal val restoreJson = Json { encodeDefaults = true }
+internal val localProfileJson = Json { encodeDefaults = true; ignoreUnknownKeys = true }
 
 internal fun SyncRemoteEcho.toRestoredProfile(): Profile {
     val record = restoreJson.decodeFromString<CloudProfilePayload>(snapshot)
@@ -50,12 +52,12 @@ internal fun SyncRemoteEcho.toRestoredProfile(): Profile {
     ).also { require(it.valid()) }
 }
 
-private fun SyncRemoteEcho.toMeasurement(): Measurement {
+internal fun SyncRemoteEcho.toMeasurement(): Measurement {
     val record = restoreJson.decodeFromString<CloudMeasurementPayload>(snapshot)
     return Measurement(recordId, record.dateMs, record.values)
 }
 
-private fun SyncRemoteEcho.toWorkout(): Workout {
+internal fun SyncRemoteEcho.toWorkout(): Workout {
     val record = restoreJson.decodeFromString<CloudWorkoutPayload>(snapshot)
     return Workout(recordId, record.day, record.startedMs, record.finishedMs, record.sets,
         Phase.valueOf(record.status), record.activeSeconds, record.painReported)
@@ -76,6 +78,18 @@ internal class CloudProfileRestorer(
         requireLease(lease)
         require(cloudDocumentId.matches(id))
         val bundle = remote.readProfile(lease, id) ?: return CloudRestoreResult(conflicts = 1)
+        return apply(lease, id, bundle)
+    }
+
+    suspend fun applyChanges(lease: VerifiedSyncLease, id: String, changes: BoundCloudChanges): CloudRestoreResult =
+        apply(lease, id, changes.bundle, changes.cursors)
+
+    private suspend fun apply(
+        lease: VerifiedSyncLease,
+        id: String,
+        bundle: RemoteProfileBundle,
+        cursors: List<SyncPullRow>? = null,
+    ): CloudRestoreResult {
         require(bundle.parent.validFor(lease, id, "profile") && bundle.parent.recordId == id)
         require(bundle.measurements.all { it.validFor(lease, id, "measurement") } &&
             bundle.workouts.all { it.validFor(lease, id, "workout") })
@@ -93,7 +107,7 @@ internal class CloudProfileRestorer(
             val dao = database.sync()
             val stored = database.profiles().get(id)
             val binding = dao.binding(id)
-            if (bundle.parent.tombstone ||
+            if ((cursors != null && (stored == null || binding == null)) ||
                 (binding != null && (binding.accountUid != lease.uid || binding.consentAtMs <= 0)) ||
                 (stored != null && binding == null)) {
                 return@withTransaction CloudRestoreResult(conflicts = 1)
@@ -101,10 +115,15 @@ internal class CloudProfileRestorer(
             val local = stored?.let {
                 localProfileJson.decodeFromString<Profile>(it.document).also { value -> require(value.id == id) }
             }
-            val parentDecision = decide(dao, bundle.parent, local?.let { restoreJson.encodeToString(it.cloudPayload()) })
+            val review = database.syncReview()
+            val parentDecision = if (bundle.parent.tombstone) RestoreDecision.CONFLICT else
+                decide(dao, bundle.parent, local?.let { restoreJson.encodeToString(it.cloudPayload()) })
             if (parentDecision == RestoreDecision.CONFLICT) {
+                if (local != null && binding != null) review.mark(bundle.parent.reviewKey())
+                requireLease(lease)
                 return@withTransaction CloudRestoreResult(conflicts = 1)
             }
+            review.clear(lease.uid, id, "profile", id)
             if (stored == null) {
                 require(database.profiles().count() < MAX_BACKUP_PROFILES) {"Лимит локальных профилей достигнут"}
                 if (binding == null) dao.bindForVerifiedConsent(SyncBindingRow(id, lease.uid, System.currentTimeMillis()))
@@ -121,7 +140,10 @@ internal class CloudProfileRestorer(
                 if (local == null || local.cloudPayload() != profile.cloudPayload()) restored++
             }
             suspend fun merge(record: SyncRemoteEcho, current: String?, materialize: () -> Unit) {
-                when (decide(dao, record, current)) {
+                val decision = decide(dao, record, current)
+                if (decision == RestoreDecision.CONFLICT) review.mark(record.reviewKey())
+                else review.clear(lease.uid, id, record.kind, record.recordId)
+                when (decision) {
                     RestoreDecision.ACCEPT -> {
                         recordReceipt(dao, record)
                         if (!record.tombstone && current != record.snapshot) {
@@ -139,7 +161,12 @@ internal class CloudProfileRestorer(
             }
             for (record in bundle.workouts) {
                 val value = localWorkouts[record.recordId]?.let { restoreJson.encodeToString(it.cloudPayload()) }
-                merge(record, value) { localWorkouts[record.recordId] = workouts.getValue(record.recordId) }
+                if (local?.active?.id == record.recordId) {
+                    review.mark(record.reviewKey())
+                    conflicts++
+                } else {
+                    merge(record, value) { localWorkouts[record.recordId] = workouts.getValue(record.recordId) }
+                }
             }
             val next = (if (parentDecision == RestoreDecision.ACCEPT) profile else checkNotNull(local)).copy(
                 measurements = localMeasures.values.toList(), history = localWorkouts.values.toList(),
@@ -147,8 +174,13 @@ internal class CloudProfileRestorer(
             )
             require(next.measurements.size <= 10_000 && next.history.size <= 10_000)
             if (next != local) database.profiles().put(ProfileRow(id, next.name, localProfileJson.encodeToString(next)))
+            cursors?.forEach { cursor ->
+                require(cursor.accountUid == lease.uid && cursor.profileId == id &&
+                    cursor.kind in setOf("measurement", "workout"))
+                review.saveCursor(cursor)
+            }
             requireLease(lease)
-            CloudRestoreResult(restored, conflicts)
+            CloudRestoreResult(restored, conflicts, changesApplied = cursors != null)
         }
     }
 
@@ -157,7 +189,7 @@ internal class CloudProfileRestorer(
     }
 }
 
-private fun SyncRemoteEcho.validFor(lease: VerifiedSyncLease, id: String, expectedKind: String): Boolean =
+internal fun SyncRemoteEcho.validFor(lease: VerifiedSyncLease, id: String, expectedKind: String): Boolean =
     accountUid == lease.uid && profileId == id && kind == expectedKind &&
         cloudDocumentId.matches(recordId) && cloudDocumentId.matches(opId) && revision in 1..MAX_CLOUD_REVISION
 
@@ -184,10 +216,11 @@ private suspend fun decide(dao: SyncOutboxDao, remote: SyncRemoteEcho, current: 
     return RestoreDecision.ACCEPT
 }
 
-private suspend fun recordReceipt(dao: SyncOutboxDao, echo: SyncRemoteEcho) {
+internal suspend fun recordReceipt(dao: SyncOutboxDao, echo: SyncRemoteEcho) {
     val previous = dao.revisionForAccount(echo.accountUid, echo.profileId, echo.kind, echo.recordId, echo.revision)
     if (previous != null) {
         check(echo.matches(previous))
+        if (previous.state == "ACKED") return
         check(dao.acknowledgeExactRemoteEcho(echo.accountUid, echo.opId, echo.profileId, echo.kind,
             echo.recordId, echo.revision, echo.snapshot, echo.tombstone) == 1)
     } else {
@@ -195,3 +228,5 @@ private suspend fun recordReceipt(dao: SyncOutboxDao, echo: SyncRemoteEcho) {
             echo.recordId, echo.revision, echo.snapshot, "ACKED", echo.tombstone, System.currentTimeMillis()))
     }
 }
+
+internal fun SyncRemoteEcho.reviewKey() = SyncReviewRow(accountUid, profileId, kind, recordId)

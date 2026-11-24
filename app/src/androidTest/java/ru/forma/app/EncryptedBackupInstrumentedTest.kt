@@ -44,7 +44,7 @@ class EncryptedBackupInstrumentedTest {
   val file=File(ctx.cacheDir,"synthetic-restore-roundtrip.forma")
   ctx.deleteDatabase(dbName)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,dbName)
-   .addMigrations(MIGRATION_1_2).build()
+   .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
   try {
    var repo=ProfileRepository(db)
    val existing=Profile(id="already-stored",name="Unchanged")
@@ -88,7 +88,7 @@ class EncryptedBackupInstrumentedTest {
    assertNull(db.sync().binding(importedId))
    db.close()
    db=Room.databaseBuilder(ctx,FormaDatabase::class.java,dbName)
-    .addMigrations(MIGRATION_1_2).build()
+    .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
    repo=ProfileRepository(db)
    assertEquals(source,repo.load(importedId)!!.copy(id=source.id))
    assertEquals(existing,repo.load(existing.id))

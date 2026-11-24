@@ -20,7 +20,7 @@ import ru.forma.domain.MAX_BACKUP_PROFILES
 internal class FirestoreSyncRemote(
     app: FirebaseApp,
     private val identity: VerifiedSyncIdentity,
-) : AuthenticatedSyncRemote, AuthenticatedProfileRestore {
+) : AuthenticatedSyncRemote, AuthenticatedProfileRestore, AuthenticatedProfileChanges {
     private val auth = FirebaseAuth.getInstance(app)
     private val firestore = FirebaseFirestore.getInstance(app).apply {
         // Room already persists the outbox. Do not retain another account's cloud cache on disk.
@@ -30,8 +30,11 @@ internal class FirestoreSyncRemote(
     }
 
     override suspend fun read(lease: VerifiedSyncLease, row: SyncOutboxRow): SyncRemoteEcho? {
-        return readDocument(lease, document(lease, row), row.profileId, row.kind, row.recordId)
+        return readDocument(lease, document(lease, SyncReviewRow(row.accountUid, row.profileId, row.kind, row.recordId)), row.profileId, row.kind, row.recordId)
     }
+
+    override suspend fun readForReview(lease: VerifiedSyncLease, key: SyncReviewRow): SyncRemoteEcho? =
+        readDocument(lease, document(lease, key), key.profileId, key.kind, key.recordId)
 
     private suspend fun readDocument(
         lease: VerifiedSyncLease, path: DocumentReference, profileId: String, kind: String, id: String,
@@ -50,7 +53,7 @@ internal class FirestoreSyncRemote(
         expectedParent: SyncRemoteEcho?,
     ): Boolean {
         requireCurrent(lease)
-        val target = document(lease, row)
+        val target = document(lease, SyncReviewRow(row.accountUid, row.profileId, row.kind, row.recordId))
         val parent = when (row.kind) {
             "profile" -> {
                 require(expectedParent == null)
@@ -126,6 +129,48 @@ internal class FirestoreSyncRemote(
         return RemoteProfileBundle(first, measurements, workouts)
     }
 
+    override suspend fun readChanges(
+        lease: VerifiedSyncLease, id: String, measurement: SyncPullRow?, workout: SyncPullRow?,
+    ): BoundCloudChanges? {
+        require(cloudDocumentId.matches(id))
+        val parent = profile(lease.uid, id)
+        val first = readDocument(lease, parent, id, "profile", id) ?: return null
+        if (first.tombstone) return BoundCloudChanges(
+            RemoteProfileBundle(first, emptyList(), emptyList()), emptyList(), false,
+        )
+        val measurements = readChangesPage(lease, id, "measurement", parent.collection("measurements"), measurement)
+        val workouts = readChangesPage(lease, id, "workout", parent.collection("workouts"), workout)
+        if (readDocument(lease, parent, id, "profile", id) != first) throw CloudRemoteChanged()
+        val records = measurements.first + workouts.first
+        require(records.sumOf { it.snapshot.encodeToByteArray().size.toLong() } <= MAX_BACKUP_BYTES)
+        return BoundCloudChanges(
+            RemoteProfileBundle(first, measurements.first, workouts.first),
+            listOfNotNull(measurements.second, workouts.second),
+            measurements.first.size == CHANGE_PAGE_SIZE || workouts.first.size == CHANGE_PAGE_SIZE,
+        )
+    }
+
+    private suspend fun readChangesPage(
+        lease: VerifiedSyncLease, id: String, kind: String, source: CollectionReference, cursor: SyncPullRow?,
+    ): Pair<List<SyncRemoteEcho>, SyncPullRow?> {
+        val ordered = source.orderBy("updatedAt").orderBy(FieldPath.documentId()).limit(CHANGE_PAGE_SIZE.toLong())
+        val query = if (cursor == null) ordered else {
+            require(cursor.accountUid == lease.uid && cursor.profileId == id && cursor.kind == kind &&
+                cloudDocumentId.matches(cursor.recordId))
+            ordered.startAfter(Timestamp(cursor.seconds, cursor.nanos), cursor.recordId)
+        }
+        requireCurrent(lease)
+        val page = query.get(Source.SERVER).await()
+        requireCurrent(lease)
+        check(!page.metadata.isFromCache && !page.metadata.hasPendingWrites())
+        val records = page.documents.map { checkNotNull(it.echo(lease.uid, id, kind, it.id)) }
+        val next = page.documents.lastOrNull()?.let {
+            val time = checkNotNull(it.getTimestamp("updatedAt"))
+            SyncPullRow(lease.uid, id, kind, time.seconds, time.nanoseconds, it.id)
+        }
+        return records to next
+    }
+
     private suspend fun readChildren(
         lease: VerifiedSyncLease, id: String, kind: String, source: CollectionReference,
         accountBytes: (SyncRemoteEcho) -> Unit,
@@ -148,12 +193,12 @@ internal class FirestoreSyncRemote(
     }
 
     private suspend fun requireCurrent(lease: VerifiedSyncLease) {
-        check(identity.currentLease() == lease && auth.currentUser?.uid == lease.uid) {
-            "Verified account session changed"
+        if (identity.currentLease() != lease || auth.currentUser?.uid != lease.uid) {
+            throw LocalWorkoutAccessRevoked()
         }
     }
 
-    private fun document(lease: VerifiedSyncLease, row: SyncOutboxRow): DocumentReference {
+    private fun document(lease: VerifiedSyncLease, row: SyncReviewRow): DocumentReference {
         require(lease.uid == row.accountUid && cloudDocumentId.matches(lease.uid))
         require(cloudDocumentId.matches(row.profileId) && cloudDocumentId.matches(row.recordId))
         val parent = profile(lease.uid, row.profileId)
@@ -188,6 +233,7 @@ internal class FirestoreSyncRemote(
     }
 
     private companion object {
+        const val CHANGE_PAGE_SIZE = 16
         val envelopeFields = setOf("ownerUid", "profileId", "id", "schemaVersion", "revision", "opId",
             "createdAt", "updatedAt", "deleted", "payload")
     }

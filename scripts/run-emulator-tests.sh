@@ -98,10 +98,10 @@ grep -F "OK (3 tests)" "verification/profile-edit-exit-api${api}.txt"
 # Large offline measurement journal: paging, stable editing identity, no dropped records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.BodyHistoryPaginationTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/body-history-api${api}.txt"
 grep -F "OK (2 tests)" "verification/body-history-api${api}.txt"
-# Exercise a populated on-disk Room v1->v2 upgrade on each Android API.
+# Exercise populated on-disk Room v1 and v2 upgrades on each Android API.
 # This test uses a dedicated disposable database; never real owner records.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.RoomMigrationInstrumentedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/room-migration-api${api}.txt"
-grep -F "OK (1 test)" "verification/room-migration-api${api}.txt"
+grep -F "OK (2 tests)" "verification/room-migration-api${api}.txt"
 
 # Synthetic test-only MP4 exercises actual decoder, lifecycle and honest offline fallback.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.TechniqueMediaTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/technique-media-api${api}.txt"

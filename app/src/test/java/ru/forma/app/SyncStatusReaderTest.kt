@@ -84,7 +84,7 @@ class SyncStatusReaderTest {
   val name="forma-sync-status-restart-test.db"
   ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-   .addMigrations(MIGRATION_1_2).build()
+   .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
   try {
    val repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="persisted",name="Keep history"))
@@ -96,7 +96,7 @@ class SyncStatusReaderTest {
    assertEquals(LocalSyncSummary(LocalSyncState.READY,0,1,0),before)
    db.close()
    db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-    .addMigrations(MIGRATION_1_2).build()
+    .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
    val after=SyncStatusReader(db,identity(lease,lease)).read()
    assertEquals(before,after)
    assertEquals(pending.copy(state="CONFLICT"),db.sync().conflictsForAccount("uid-p").single())

@@ -24,7 +24,19 @@ the applicable production gates.
   UUIDs and imports exact server revision receipts. Local divergent records and
   rows awaiting delivery are kept. A cloud tombstone is never restored as a live
   record and does not silently delete an existing local record. The panel
-  reports conflicts to the owner for separate resolution.
+  reports conflicts to the signed-in user for explicit resolution.
+- Inbound work runs after sign-in and periodically when connected. It visits only
+  present profiles already bound to that UID by consent. Child pages use a
+  persisted server timestamp and document ID cursor. Room commits each cursor
+  with the records and the conflict markers for that page. An invalid profile
+  leaves its cursors intact while other profiles can advance.
+- The conflict dialog compares a fresh cloud revision with the device record.
+  Confirming either version saves both snapshots and the displaced queue in a
+  local account-scoped archive. Taking the device version rebases it on the exact
+  verified revision for retryable delivery. A child tombstone requires explicit
+  confirmation to remove a local record. A parent tombstone preserves local
+  history and blocks changes under the deleted cloud profile. The existing
+  encrypted profile backup does not export the synchronization archive.
 - An account workspace can create a verified encrypted backup of the selected
   profile using the same offline format as the guest export. Scope is rechecked
   before and after file I/O.
@@ -34,7 +46,8 @@ the applicable production gates.
   registration, email verification, password reset request, sign-in, local
   consent, offline replay, tombstones, account switching, revocation of
   workout commands from an old workspace, and restore into a separate Room
-  database with conflicting edits. Both commands
+  database with conflicting edits, a stale manual decision, a rebased device
+  choice, a cloud deletion choice and an incremental inbound Worker. Both commands
   use `demo-forma-rules` and loopback endpoints.
 - No \`.firebaserc\`, credential, \`google-services.json\`, production project ID
   or real user data is required. All profile/workout/measurement values are synthetic.

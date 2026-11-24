@@ -58,10 +58,19 @@ val MIGRATION_1_2=object:Migration(1,2){
   db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_state ON sync_outbox (state)")
  }
 }
-@Database(entities=[ProfileRow::class,SyncBindingRow::class,SyncOutboxRow::class],version=2,exportSchema=true)
+val MIGRATION_2_3=object:Migration(2,3){
+ override fun migrate(db:SupportSQLiteDatabase){
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_review (accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, PRIMARY KEY(accountUid, profileId, kind, recordId))")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_pull (accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, seconds INTEGER NOT NULL, nanos INTEGER NOT NULL, recordId TEXT NOT NULL, PRIMARY KEY(accountUid, profileId, kind))")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_resolution_archive (id TEXT NOT NULL PRIMARY KEY, accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, localSnapshot TEXT, cloudSnapshot TEXT NOT NULL, cloudDeleted INTEGER NOT NULL, cloudRevision INTEGER NOT NULL, cloudOpId TEXT NOT NULL, queueSnapshot TEXT NOT NULL, choice TEXT NOT NULL, savedAtMs INTEGER NOT NULL)")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_resolution_archive_accountUid_savedAtMs ON sync_resolution_archive (accountUid,savedAtMs)")
+ }
+}
+@Database(entities=[ProfileRow::class,SyncBindingRow::class,SyncOutboxRow::class,SyncReviewRow::class,SyncPullRow::class,SyncResolutionArchiveRow::class],version=3,exportSchema=true)
 abstract class FormaDatabase:RoomDatabase(){
  abstract fun profiles():ProfileDao
  abstract fun sync():SyncOutboxDao
+ abstract fun syncReview():SyncReviewDao
 }
 internal data class VerifiedAccountProfiles(val lease:VerifiedSyncLease,val profiles:List<Profile>)
 
@@ -318,7 +327,7 @@ class FormaApp:Application(){
  private val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
- val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2).build()}
+ val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()}
  internal val firebaseAccount by lazy {
   FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let{configured->
    FirebaseAccount(configured).also{account->

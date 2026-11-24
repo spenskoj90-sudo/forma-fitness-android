@@ -40,11 +40,17 @@ class CloudSyncTest {
         repeat(2) {
             scheduler.enqueue().result.get(5, TimeUnit.SECONDS)
             scheduler.ensurePeriodic().result.get(5, TimeUnit.SECONDS)
+            scheduler.ensureReconciliation().result.get(5, TimeUnit.SECONDS)
+            scheduler.enqueueReconciliation().result.get(5, TimeUnit.SECONDS)
         }
         val oneTime = manager.getWorkInfosForUniqueWork(CloudDeliveryScheduler.IMMEDIATE).get(5, TimeUnit.SECONDS)
         val periodic = manager.getWorkInfosForUniqueWork(CloudDeliveryScheduler.PERIODIC).get(5, TimeUnit.SECONDS)
         assertEquals(NetworkType.CONNECTED, oneTime.single().constraints.requiredNetworkType)
         assertEquals(NetworkType.CONNECTED, periodic.single().constraints.requiredNetworkType)
+        for (name in listOf(CloudDeliveryScheduler.RECONCILE_IMMEDIATE, CloudDeliveryScheduler.RECONCILE_PERIODIC)) {
+            val scheduled = manager.getWorkInfosForUniqueWork(name).get(5, TimeUnit.SECONDS).single()
+            assertEquals(NetworkType.CONNECTED, scheduled.constraints.requiredNetworkType)
+        }
     }
 
     @Test fun outboxRetryAndBatchStayOnTheLeaseFromTheFirstRecord() = runBlocking {
@@ -151,6 +157,60 @@ class CloudSyncTest {
             assertNull(ProfileRepository(db).load(profile.id))
             assertNull(db.sync().binding(profile.id))
             assertEquals(0, db.sync().totalRows())
+        }
+    }
+
+    @Test fun reconciliationDoesNotAdvanceTheCursorAcrossAnOfflineReadOrAccountSwitch() = runBlocking {
+        withDatabase { db ->
+            val parent = SyncRemoteEcho(first.uid, profile.id, "profile", profile.id, 1,
+                "remote-profile", json.encodeToString(profile.cloudPayload()), false)
+            val record = SyncRemoteEcho(first.uid, profile.id, "measurement", measurement.id, 1,
+                "remote-measure", json.encodeToString(measurement.cloudPayload()), false)
+            val cursor = SyncPullRow(first.uid, profile.id, "measurement", 1L, 0, measurement.id)
+            var signedIn = first
+            var offline = true
+            var switchAfterRead = false
+            var reads = 0
+            val identity = object : VerifiedSyncIdentity {
+                override suspend fun currentLease() = signedIn
+            }
+            val remote = object : AuthenticatedProfileRestore, AuthenticatedProfileChanges {
+                override suspend fun listProfiles(lease: VerifiedSyncLease) = emptyList<CloudProfileChoice>()
+                override suspend fun readProfile(lease: VerifiedSyncLease, id: String) =
+                    RemoteProfileBundle(parent, emptyList(), emptyList())
+                override suspend fun readForReview(lease: VerifiedSyncLease, key: SyncReviewRow) = null
+                override suspend fun readChanges(
+                    lease: VerifiedSyncLease, id: String, measurement: SyncPullRow?, workout: SyncPullRow?,
+                ): BoundCloudChanges {
+                    assertEquals(first, lease)
+                    assertEquals(profile.id, id)
+                    reads++
+                    assertNull(measurement)
+                    assertNull(workout)
+                    if (offline) throw FirebaseFirestoreException("Synthetic offline", FirebaseFirestoreException.Code.UNAVAILABLE)
+                    if (switchAfterRead) signedIn = second
+                    return BoundCloudChanges(RemoteProfileBundle(parent, listOf(record), emptyList()), listOf(cursor), false)
+                }
+            }
+            val restorer = CloudProfileRestorer(db, identity, remote)
+            restorer.restore(first, profile.id)
+            val reconciler = CloudInboundReconciler(db, identity, remote, restorer)
+            suspend fun run() = runCloudBatch { reconciler.run() }
+            assertEquals(DeliveryBatchResult.RETRY, run())
+            assertNull(db.syncReview().cursor(first.uid, profile.id, "measurement"))
+            offline = false
+            switchAfterRead = true
+            assertEquals(DeliveryBatchResult.COMPLETE, run())
+            assertNull(db.syncReview().cursor(first.uid, profile.id, "measurement"))
+            assertTrue(ProfileRepository(db).load(profile.id)!!.measurements.isEmpty())
+            assertEquals(DeliveryBatchResult.COMPLETE, run())
+            assertEquals(2, reads)
+            signedIn = first
+            switchAfterRead = false
+            assertEquals(DeliveryBatchResult.COMPLETE, run())
+            assertEquals(cursor, db.syncReview().cursor(first.uid, profile.id, "measurement"))
+            assertNull(db.syncReview().cursor(second.uid, profile.id, "measurement"))
+            assertEquals(listOf(measurement), ProfileRepository(db).load(profile.id)?.measurements)
         }
     }
 

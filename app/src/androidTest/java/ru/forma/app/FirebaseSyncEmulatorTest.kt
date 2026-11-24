@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -183,6 +184,26 @@ class FirebaseSyncEmulatorTest {
         val uploaded = firestore.document("accounts/${scope.lease.uid}/profiles/${profile.id}").get(Source.SERVER).await()
         assertTrue(uploaded.exists())
         assertNull(forma.database.sync().nextPendingForAccount(scope.lease.uid))
+
+        val measurement = Measurement(dateMs = 2_000L, values = mapOf("weight" to 77.0))
+        val payload = FirestoreSyncPayload.document("measurement", restoreJson.encodeToString(measurement.cloudPayload()))
+        uploaded.reference.collection("measurements").document(measurement.id).set(mapOf(
+            "ownerUid" to scope.lease.uid, "profileId" to profile.id, "id" to measurement.id,
+            "schemaVersion" to 1L, "revision" to 1L, "opId" to UUID.randomUUID().toString(),
+            "createdAt" to FieldValue.serverTimestamp(), "updatedAt" to FieldValue.serverTimestamp(),
+            "deleted" to false, "payload" to payload,
+        )).await()
+        val inbound = withTimeout(15_000) {
+            manager.getWorkInfosForUniqueWorkFlow(CloudDeliveryScheduler.RECONCILE_IMMEDIATE)
+                .mapNotNull { requests -> requests.firstOrNull { !it.state.isFinished } }.first()
+        }
+        checkNotNull(WorkManagerTestInitHelper.getTestDriver(forma)).setAllConstraintsMet(inbound.id)
+        val fetched = withTimeout(30_000) {
+            manager.getWorkInfoByIdFlow(inbound.id).first { it?.state?.isFinished == true }
+        }
+        assertEquals(WorkInfo.State.SUCCEEDED, fetched?.state)
+        assertEquals(listOf(measurement), scope.repository.load(profile.id)?.measurements)
+        assertEquals(measurement.id, forma.database.syncReview().cursor(scope.lease.uid, profile.id, "measurement")?.recordId)
     }
 
     @Test fun verifiedAccountsDeliverWithoutLeakingAcrossSignOutOrAccountSwitch() = runBlocking {
@@ -357,6 +378,51 @@ class FirebaseSyncEmulatorTest {
             // The usual sender also detects divergence and parks the local version durably.
             assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(db, identity, remote).run())
             assertEquals("CONFLICT", db.sync().headForAccount(lease.uid, original.id, "measurement", local.id)?.state)
+
+            val resolver = CloudConflictResolver(db, identity, remote)
+            val key = resolver.reviews(lease).single()
+            val olderPreview = resolver.preview(lease, key)
+            assertTrue(olderPreview.canKeepDevice)
+            assertEquals(restoreJson.encodeToString(local.cloudPayload()), olderPreview.localSnapshot)
+            val latestOtherDevice = measurement.copy(values = mapOf("weight" to 78.0))
+            newRepository.mutateForVerifiedAccount(original.id, lease, identity) {
+                it.copy(measurements = listOf(latestOtherDevice))
+            }
+            assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(fresh, identity, remote).run())
+            assertTrue(runCatching { resolver.resolve(lease, olderPreview, CloudConflictChoice.DEVICE) }
+                .exceptionOrNull() is CloudRemoteChanged)
+            assertTrue(resolver.archives(lease).isEmpty())
+
+            val selected = resolver.preview(lease, key)
+            resolver.resolve(lease, selected, CloudConflictChoice.DEVICE)
+            val archived = resolver.archives(lease).single()
+            assertEquals(selected.localSnapshot, archived.localSnapshot)
+            assertEquals(selected.cloud?.snapshot, archived.cloudSnapshot)
+            assertEquals(selected.queued, restoreJson.decodeFromString<List<SyncOutboxRow>>(archived.queueSnapshot))
+            assertEquals(checkNotNull(selected.cloud).revision + 1, db.sync().nextPendingForAccount(lease.uid)?.revision)
+            assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(db, identity, remote).run())
+            assertTrue(resolver.reviews(lease).isEmpty())
+
+            val reconcile = CloudInboundReconciler(fresh, identity, remote, restorer)
+            val completedBefore = checkNotNull(newRepository.load(original.id)).history
+            assertEquals(DeliveryBatchResult.COMPLETE, reconcile.run())
+            assertEquals(listOf(local), newRepository.load(original.id)?.measurements)
+            val firstCursor = fresh.syncReview().cursor(lease.uid, original.id, "measurement")
+            assertNotNull(firstCursor)
+            repo.mutateForVerifiedAccount(original.id, lease, identity) { it.copy(measurements = emptyList()) }
+            assertEquals(DeliveryBatchResult.COMPLETE, CloudDeliveryBatch(db, identity, remote).run())
+            val downloadedResolver = CloudConflictResolver(fresh, identity, remote)
+            assertEquals(DeliveryBatchResult.COMPLETE, reconcile.run())
+            assertNotEquals(firstCursor, fresh.syncReview().cursor(lease.uid, original.id, "measurement"))
+            val deletion = downloadedResolver.preview(lease, downloadedResolver.reviews(lease).single())
+            assertFalse(deletion.canKeepDevice)
+            assertTrue(deletion.canUseCloud)
+            assertEquals(listOf(local), newRepository.load(original.id)?.measurements)
+            downloadedResolver.resolve(lease, deletion, CloudConflictChoice.CLOUD)
+            assertTrue(checkNotNull(newRepository.load(original.id)).measurements.isEmpty())
+            assertEquals(completedBefore, newRepository.load(original.id)?.history)
+            assertEquals(restoreJson.encodeToString(local.cloudPayload()), downloadedResolver.archives(lease).single().localSnapshot)
+            assertTrue(downloadedResolver.reviews(lease).isEmpty())
         } finally {
             fresh.close()
         }

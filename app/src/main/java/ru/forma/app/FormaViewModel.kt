@@ -68,6 +68,10 @@ class FormaViewModel internal constructor(
     throw cancel
    }catch(_:LocalWorkoutAccessRevoked){
     mutableCloudRestoreUi.value=CloudRestoreUi()
+   }catch(_:CloudRemoteChanged){
+    if(stillOpen())mutableCloudRestoreUi.update{it.copy(
+     preview=null,message="Запись изменилась. Откройте конфликт снова и сравните текущие версии."
+    )}
    }catch(_:Exception){
     if(stillOpen())mutableCloudRestoreUi.update{it.copy(
      message="Не удалось выполнить облачную операцию. Проверьте сеть и повторите."
@@ -96,6 +100,40 @@ class FormaViewModel internal constructor(
    )}
   }
  }
+ internal fun scheduleCloudReconciliation(){cloudAction{runtime,_,stillOpen->
+  runtime.enqueueReconciliation()
+  if(stillOpen())mutableCloudRestoreUi.update{it.copy(
+   message="Получение изменений запланировано и начнётся при доступной сети."
+  )}
+ }}
+ internal fun listCloudConflicts(){cloudAction{runtime,lease,stillOpen->
+  val reviews=runtime.reviews(lease,stillOpen)
+  if(stillOpen())mutableCloudRestoreUi.update{it.copy(reviews=reviews)}
+ }}
+ internal fun previewCloudConflict(key:SyncReviewRow){
+  if(mutableCloudRestoreUi.value.reviews?.contains(key)!=true)return
+  cloudAction{runtime,lease,stillOpen->
+   val preview=runtime.preview(lease,key,stillOpen)
+   if(stillOpen())mutableCloudRestoreUi.update{it.copy(preview=preview)}
+  }
+ }
+ internal fun closeCloudConflict(){mutableCloudRestoreUi.update{it.copy(preview=null)}}
+ internal fun resolveCloudConflict(choice:CloudConflictChoice){
+  val preview=mutableCloudRestoreUi.value.preview?:return
+  cloudAction{runtime,lease,stillOpen->
+   runtime.resolve(lease,preview,choice,stillOpen)
+   val reviews=runtime.reviews(lease,stillOpen)
+   if(stillOpen())mutableCloudRestoreUi.update{it.copy(
+    preview=null,reviews=reviews,archives=null,
+    message=if(choice==CloudConflictChoice.CLOUD) "Облачная версия принята на этом устройстве."
+     else "Версия устройства сохранена. Очередь проверит отправку при доступной сети."
+   )}
+  }
+ }
+ internal fun listCloudArchives(){cloudAction{runtime,lease,stillOpen->
+  val archives=runtime.archives(lease,stillOpen)
+  if(stillOpen())mutableCloudRestoreUi.update{it.copy(archives=archives)}
+ }}
  private val accountSelection=MutableStateFlow("")
  private val accountPlace=MutableStateFlow(TrainingPlace.HOME)
  internal val accountWorkouts=app.accountWorkouts

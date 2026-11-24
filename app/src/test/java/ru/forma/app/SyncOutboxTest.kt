@@ -258,7 +258,7 @@ class SyncOutboxTest {
   val name="forma-consented-outbox-restart-test.db"
   ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-   .addMigrations(MIGRATION_1_2).build()
+   .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
   try {
    var repo=ProfileRepository(db)
    val a=Profile(id="offline-a",name="Alice",
@@ -275,7 +275,7 @@ class SyncOutboxTest {
 
    // Simulates process death/account B signing in while A's work is pending.
    db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-    .addMigrations(MIGRATION_1_2).build()
+    .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
    repo=ProfileRepository(db)
    assertEquals(original,db.sync().pendingForAccount("uid-A"))
    assertTrue(db.sync().pendingForAccount("uid-B").isEmpty())
@@ -319,7 +319,7 @@ class SyncOutboxTest {
   val name="forma-exact-remote-ack-test.db"
   ctx.deleteDatabase(name)
   var db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-   .addMigrations(MIGRATION_1_2).build()
+   .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
   try {
    var repo=ProfileRepository(db)
    repo.saveProfile(Profile(id="a",name="A"))
@@ -344,7 +344,7 @@ class SyncOutboxTest {
    assertEquals(rows[1],db.sync().nextPendingForAccount("uid-A"))
    db.close()
    db=Room.databaseBuilder(ctx,FormaDatabase::class.java,name)
-    .addMigrations(MIGRATION_1_2).build()
+    .addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
    repo=ProfileRepository(db)
    assertEquals(2,db.sync().totalRows()) // ACK rows remain for stable revisions.
    assertEquals(listOf(rows[1]),db.sync().pendingForAccount("uid-A"))

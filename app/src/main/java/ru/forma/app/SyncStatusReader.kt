@@ -44,6 +44,7 @@ internal class SyncStatusReader(
   val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}
    ?:return LocalSyncSummary(LocalSyncState.NO_AUTH)
   val counts=db.sync().countsForVerifiedAccount(lease.uid)
+  val conflicts=db.syncReview().count(lease.uid)
   if(identity.currentLease()!=lease)
    return LocalSyncSummary(LocalSyncState.SESSION_CHANGED)
   require(counts.total>=0 && counts.pending>=0 &&
@@ -52,6 +53,6 @@ internal class SyncStatusReader(
    "Unknown or invalid local synchronization state"
   }
   return LocalSyncSummary(LocalSyncState.READY,
-   counts.pending,counts.conflicts,counts.acknowledged)
+   counts.pending,conflicts,counts.acknowledged)
  }
 }

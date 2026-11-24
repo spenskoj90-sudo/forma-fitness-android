@@ -15,6 +15,7 @@ data class SyncBindingRow(
  val accountUid:String,
  val consentAtMs:Long
 )
+@Serializable
 @Entity(tableName="sync_outbox", indices=[
  Index(value=["accountUid","profileId","kind","recordId","revision"],unique=true),
  Index(value=["state"])
@@ -47,6 +48,8 @@ data class SyncOutboxCounts(
 
  @Query("SELECT * FROM sync_bindings WHERE profileId=:profileId")
  suspend fun binding(profileId:String):SyncBindingRow?
+ @Query("SELECT b.profileId FROM sync_bindings b INNER JOIN profiles p ON p.id=b.profileId WHERE b.accountUid=:uid AND b.consentAtMs>0 ORDER BY b.profileId")
+ suspend fun existingProfileIds(uid:String):List<String>
  // The repository writes this together with the initial outbox snapshot.
  @Insert(onConflict=OnConflictStrategy.ABORT)
  suspend fun bindForVerifiedConsent(row:SyncBindingRow)
@@ -79,9 +82,15 @@ data class SyncOutboxCounts(
  suspend fun revisionForAccount(uid:String,profileId:String,kind:String,recordId:String,revision:Int):SyncOutboxRow?
  @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profileId AND kind=:kind AND recordId=:recordId ORDER BY revision DESC LIMIT 1")
  suspend fun headForAccount(uid:String,profileId:String,kind:String,recordId:String):SyncOutboxRow?
+ @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profile AND kind=:kind AND recordId=:record AND state!='ACKED' ORDER BY revision")
+ suspend fun unresolvedRecord(uid:String,profile:String,kind:String,record:String):List<SyncOutboxRow>
+ @Query("DELETE FROM sync_outbox WHERE accountUid=:uid AND profileId=:profile AND kind=:kind AND recordId=:record AND state!='ACKED'")
+ suspend fun retireReviewedRecord(uid:String,profile:String,kind:String,record:String):Int
+ @Query("SELECT * FROM sync_outbox WHERE accountUid=:uid AND profileId=:profile AND kind=:kind AND recordId=:record AND state='ACKED' ORDER BY revision DESC LIMIT 1")
+ suspend fun latestReceipt(uid:String,profile:String,kind:String,record:String):SyncOutboxRow?
  // Conflicts preserve the exact local snapshot/opId and survive process death.
  // No remote conflicting payload is stored until reviewed by an authenticated
- // conflict UI. Only a future explicit review flow may resolve this state.
+ // conflict UI. Resolving it archives the device snapshot and queued operations.
  @Query("UPDATE sync_outbox SET state='CONFLICT' WHERE state='PENDING' AND accountUid=:uid AND opId=:opId AND profileId=:profileId AND kind=:kind AND recordId=:recordId AND revision=:revision AND snapshot=:snapshot AND tombstone=:tombstone")
  suspend fun parkExactConflict(
   uid:String,opId:String,profileId:String,kind:String,recordId:String,
