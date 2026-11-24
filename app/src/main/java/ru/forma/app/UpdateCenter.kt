@@ -97,21 +97,27 @@ internal interface FormaUpdateGateway {
     suspend fun requestSystemInstallation(apk: File, release: FormaRelease)
 }
 
-internal class FormaUpdateClient(private val context: Context) : FormaUpdateGateway {
+internal class FormaUpdateClient(
+    private val context: Context,
+    feedUrl: String = context.getString(R.string.forma_update_feed_url),
+    pinnedKey: String = context.getString(R.string.forma_update_manifest_public_key),
+    private val openHttps: (URL) -> HttpsURLConnection = { it.openConnection() as HttpsURLConnection }
+) : FormaUpdateGateway {
+    private val feedUrl = feedUrl.trim()
+    private val pinnedKey = pinnedKey.trim()
+
     override fun installedVersion(): String = runCatching {
         androidPackageInfo(context).versionName.orEmpty() +
             " (код " + versionCode(androidPackageInfo(context)) + ")"
     }.getOrDefault("не определена")
 
     override suspend fun check(): FormaRelease? = withContext(Dispatchers.IO) {
-        val feedUrl = context.getString(R.string.forma_update_feed_url).trim()
         require(feedUrl.isNotEmpty()) {
             "Канал обновлений ещё не настроен. Установленная FORMA и её данные остаются без изменений."
         }
-        val pinnedKey = context.getString(R.string.forma_update_manifest_public_key).trim()
         require(pinnedKey.isNotBlank()) { "Доверенный ключ описания обновления ещё не настроен" }
         val feed = validHttps(feedUrl)
-        val connection = (URL(feedUrl).openConnection() as HttpsURLConnection).apply {
+        val connection = openHttps(URL(feedUrl)).apply {
             connectTimeout = 10000
             readTimeout = 10000
             instanceFollowRedirects = false
@@ -171,7 +177,8 @@ internal class FormaUpdateClient(private val context: Context) : FormaUpdateGate
     }
 
     override suspend fun downloadAndVerify(release: FormaRelease): File = withContext(Dispatchers.IO) {
-        val base = validHttps(context.getString(R.string.forma_update_feed_url).trim())
+        require(release.sizeBytes in 1..MAX_UPDATE_APK_BYTES) { "Недопустимый размер APK" }
+        val base = validHttps(feedUrl)
         val source = validHttps(release.apkUrl)
         require(source.host.equals(base.host, ignoreCase = true))
         val installed = androidPackageInfo(context)
@@ -196,7 +203,7 @@ internal class FormaUpdateClient(private val context: Context) : FormaUpdateGate
         var moved = false
         // Failure constructing a provider connection must not leak temp APKs.
         val connection = try {
-            (URL(release.apkUrl).openConnection() as HttpsURLConnection).apply {
+            openHttps(URL(release.apkUrl)).apply {
                 connectTimeout = 15000
                 readTimeout = 30000
                 instanceFollowRedirects = false
@@ -217,8 +224,8 @@ internal class FormaUpdateClient(private val context: Context) : FormaUpdateGate
                         if (n < 0) break
                         require(n > 0) { "Не удалось прочитать файл обновления" }
                         total += n
-                        require(total <= MAX_UPDATE_APK_BYTES) {
-                            "APK превышает допустимый размер"
+                        require(total <= release.sizeBytes) {
+                            "Размер APK превышает указанный в подписанном описании"
                         }
                         md.update(buffer, 0, n)
                         output.write(buffer, 0, n)

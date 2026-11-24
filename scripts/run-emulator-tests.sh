@@ -120,6 +120,9 @@ grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"
 # Run the native SDK against two disposable Firebase emulators after the
 # offline journeys. One Android API is enough to exercise the transport.
 if [[ "$api" == "34" ]]; then
+  # Still the offline v2 installation. Download and verify the test v3 APK over
+  # HTTPS before switching to the Firebase emulator build.
+  bash scripts/run-update-https-emulator-test.sh
   # Exercise the real scheduler and screen against the demo provider.
   adb install -r "$cloud/app.apk"
   adb install -r "$cloud/test.apk"

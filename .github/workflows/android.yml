@@ -151,6 +151,9 @@ jobs:
             mkdir -p .forma-emulator/cloud
             cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/cloud/app.apk
             cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/cloud/test.apk
+            ./gradlew :app:assembleDebug -PformaVersionCode=3 -PformaVersionName=0.3.0-update-test --console=plain
+            mkdir -p .forma-emulator/update
+            cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/update/app-v3.apk
           fi
       - name: Build exact legacy base for API34 update test
         if: matrix.api == 34
