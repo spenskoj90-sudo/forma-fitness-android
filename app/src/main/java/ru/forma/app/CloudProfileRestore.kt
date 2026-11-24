@@ -102,12 +102,13 @@ internal class CloudProfileRestorer(
             measurements = measures.values.toList(), history = workouts.values.toList(),
         ))))
 
+        val incremental = cursors != null
         return database.withTransaction {
             requireLease(lease)
             val dao = database.sync()
             val stored = database.profiles().get(id)
             val binding = dao.binding(id)
-            if ((cursors != null && (stored == null || binding == null)) ||
+            if ((incremental && (stored == null || binding == null)) ||
                 (binding != null && (binding.accountUid != lease.uid || binding.consentAtMs <= 0)) ||
                 (stored != null && binding == null)) {
                 return@withTransaction CloudRestoreResult(conflicts = 1)
@@ -117,7 +118,7 @@ internal class CloudProfileRestorer(
             }
             val review = database.syncReview()
             val parentDecision = if (bundle.parent.tombstone) RestoreDecision.CONFLICT else
-                decide(dao, bundle.parent, local?.let { restoreJson.encodeToString(it.cloudPayload()) })
+                decide(dao, bundle.parent, local?.let { restoreJson.encodeToString(it.cloudPayload()) }, incremental)
             if (parentDecision == RestoreDecision.CONFLICT) {
                 if (local != null && binding != null) review.mark(bundle.parent.reviewKey())
                 requireLease(lease)
@@ -140,7 +141,7 @@ internal class CloudProfileRestorer(
                 if (local == null || local.cloudPayload() != profile.cloudPayload()) restored++
             }
             suspend fun merge(record: SyncRemoteEcho, current: String?, materialize: () -> Unit) {
-                val decision = decide(dao, record, current)
+                val decision = decide(dao, record, current, incremental)
                 if (decision == RestoreDecision.CONFLICT) review.mark(record.reviewKey())
                 else review.clear(lease.uid, id, record.kind, record.recordId)
                 when (decision) {
@@ -180,7 +181,7 @@ internal class CloudProfileRestorer(
                 review.saveCursor(cursor)
             }
             requireLease(lease)
-            CloudRestoreResult(restored, conflicts, changesApplied = cursors != null)
+            CloudRestoreResult(restored, conflicts, changesApplied = incremental)
         }
     }
 
@@ -193,7 +194,9 @@ internal fun SyncRemoteEcho.validFor(lease: VerifiedSyncLease, id: String, expec
     accountUid == lease.uid && profileId == id && kind == expectedKind &&
         cloudDocumentId.matches(recordId) && cloudDocumentId.matches(opId) && revision in 1..MAX_CLOUD_REVISION
 
-private suspend fun decide(dao: SyncOutboxDao, remote: SyncRemoteEcho, current: String?): RestoreDecision {
+private suspend fun decide(
+    dao: SyncOutboxDao, remote: SyncRemoteEcho, current: String?, incremental: Boolean,
+): RestoreDecision {
     val previous = dao.headForAccount(remote.accountUid, remote.profileId, remote.kind, remote.recordId)
     val target = remote.snapshot.takeUnless { remote.tombstone }
     // Local history survives a remote deletion until the owner resolves that conflict.
@@ -207,6 +210,11 @@ private suspend fun decide(dao: SyncOutboxDao, remote: SyncRemoteEcho, current: 
             "PENDING" -> RestoreDecision.ACCEPT
             else -> RestoreDecision.CONFLICT
         }
+    }
+    if (incremental && previous.state == "PENDING" && previous.revision > remote.revision) {
+        // The server can still be on the exact confirmed predecessor while delivery is pending.
+        val receipt = dao.latestReceipt(remote.accountUid, remote.profileId, remote.kind, remote.recordId)
+        if (receipt != null && remote.matches(receipt)) return RestoreDecision.KEEP
     }
     if (previous.state != "ACKED" || previous.revision >= remote.revision ||
         (previous.tombstone && !remote.tombstone) ||

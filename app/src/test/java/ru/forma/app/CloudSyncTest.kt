@@ -194,6 +194,10 @@ class CloudSyncTest {
             }
             val restorer = CloudProfileRestorer(db, identity, remote)
             restorer.restore(first, profile.id)
+            val repository = ProfileRepository(db)
+            repository.mutateForVerifiedAccount(profile.id, first, identity) { it.copy(recovery = 4) }
+            val pending = checkNotNull(db.sync().nextPendingForAccount(first.uid))
+            assertEquals("profile", pending.kind)
             val reconciler = CloudInboundReconciler(db, identity, remote, restorer)
             suspend fun run() = runCloudBatch { reconciler.run() }
             assertEquals(DeliveryBatchResult.RETRY, run())
@@ -210,7 +214,11 @@ class CloudSyncTest {
             assertEquals(DeliveryBatchResult.COMPLETE, run())
             assertEquals(cursor, db.syncReview().cursor(first.uid, profile.id, "measurement"))
             assertNull(db.syncReview().cursor(second.uid, profile.id, "measurement"))
-            assertEquals(listOf(measurement), ProfileRepository(db).load(profile.id)?.measurements)
+            val updated = checkNotNull(repository.load(profile.id))
+            assertEquals(listOf(measurement), updated.measurements)
+            assertEquals(4, updated.recovery)
+            assertEquals(pending, db.sync().nextPendingForAccount(first.uid))
+            assertTrue(db.syncReview().reviews(first.uid, 1).isEmpty())
         }
     }
 
