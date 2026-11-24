@@ -3,6 +3,13 @@
 # action "script" values one line at a time, so compound if/fi cannot go there.
 set -euo pipefail
 api="${1:?Android API argument required}"
+offline=.forma-emulator/offline
+cloud=.forma-emulator/cloud
+[[ "$(adb get-serialno)" == emulator-* ]]
+test -s "$offline/app.apk" && test -s "$offline/test.apk"
+if [[ "$api" == "34" ]]; then
+  test -s "$cloud/app.apk" && test -s "$cloud/test.apk"
+fi
 mkdir -p verification
 # Screenshots live inside the debug app's private storage, so Android's
 # /sdcard/Android/data scoped-storage restrictions cannot hide CI evidence.
@@ -35,13 +42,16 @@ if [[ "$api" == "34" ]]; then
   adb install legacy/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
   timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.LegacySeedTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee legacy-seed.txt
   grep -F "OK (1 test)" legacy-seed.txt
-  ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=ru.forma.app.UpdateTest --console=plain
+  adb install -r "$offline/app.apk"
+  adb install -r "$offline/test.apk"
+  timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.UpdateTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/update-over-install-api${api}.txt"
+  grep -F "OK (1 test)" "verification/update-over-install-api${api}.txt"
+  # Isolate subsequent journeys from the synthetic legacy profile and preferences.
+  adb shell pm clear ru.forma.fitness | grep -Fx "Success"
+else
+  adb install -r "$offline/app.apk"
+  adb install -r "$offline/test.apk"
 fi
-# Gradle connected tests uninstall the app at cleanup, which erases screenshots
-# from its external files directory. Install and run instrumentations directly.
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb logcat -c || true
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.JourneyTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/journey-api${api}.txt"
 grep -F "OK (1 test)" "verification/journey-api${api}.txt"
@@ -111,9 +121,8 @@ grep -F "OK (5 tests)" "verification/technique-media-api${api}.txt"
 # offline journeys. One Android API is enough to exercise the transport.
 if [[ "$api" == "34" ]]; then
   # Exercise the real scheduler and screen against the demo provider.
-  ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PformaCloudSyncEnabled=true --console=plain
-  adb install -r app/build/outputs/apk/debug/app-debug.apk
-  adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  adb install -r "$cloud/app.apk"
+  adb install -r "$cloud/test.apk"
   (
     cd firebase
     export JAVA_HOME="${JAVA_HOME_21_X64:?Firestore emulator requires Java 21}"

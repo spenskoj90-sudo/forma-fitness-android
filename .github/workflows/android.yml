@@ -57,7 +57,7 @@ jobs:
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
       - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-      - name: Verify compiler-generated Room v1 schema baseline
+      - name: Verify compiler-generated Room schema baselines
         run: python3 scripts/check-room-schema.py
       - name: APK identity and signature evidence
         run: |
@@ -126,6 +126,21 @@ jobs:
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
+      - name: Build current instrumentation APKs before starting the emulator
+        env:
+          FORMA_API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --stacktrace
+          mkdir -p .forma-emulator/offline
+          cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/offline/app.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/offline/test.apk
+          if [[ "$FORMA_API" == "34" ]]; then
+            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PformaCloudSyncEnabled=true --console=plain --stacktrace
+            mkdir -p .forma-emulator/cloud
+            cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/cloud/app.apk
+            cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/cloud/test.apk
+          fi
       - name: Build exact legacy base for API34 update test
         if: matrix.api == 34
         run: |
@@ -137,7 +152,7 @@ jobs:
           cp app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt legacy/app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt
           cd legacy
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --stacktrace
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -182,6 +197,7 @@ jobs:
             verification/screenshots-api${{ matrix.api }}/
             verification/journey-api${{ matrix.api }}.txt
             verification/recovery-api${{ matrix.api }}.txt
+            verification/update-over-install-api${{ matrix.api }}.txt
             verification/technique-media-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
             verification/room-migration-api${{ matrix.api }}.txt
