@@ -228,44 +228,38 @@ class JourneyTest{
   click("Тёмное")
   click("Добавить пользователя")
   waitText("Имя")
-  composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
+  val formRoot=composeRule.onRoot(useUnmergedTree=true)
+  val rootWithoutKeyboard=formRoot.fetchSemanticsNode().boundsInRoot
+  val nameField=composeRule.onNodeWithText("Имя")
+  nameField.performTouchInput { click() }.performTextInput("Тест Б")
   // Unlike the first-profile setup, do NOT dismiss the focused IME before
   // the one physical Save touch: this is the original API26 failure path.
   composeRule.onNodeWithText("Имя").assertIsFocused()
   val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val requestsBefore=secondSaveVm.profileSaveRequests.value
   val touchBefore=secondSaveVm.profileSaveTouchEvidence.value
-  // A Compose semantics node can be "displayed" even while the OS IME covers
-  // its screen position during an API26 resize. Require the smaller IME-open
-  // viewport to settle BEFORE the single physical Save touch; never retry.
-  if(Build.VERSION.SDK_INT==26){
-   composeRule.waitUntil(10000){
-    composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.height <
-     composeRule.activity.resources.displayMetrics.heightPixels*0.8f
-   }
-  }
-  // Window/IME insets may resize the root before Compose has repositioned
-  // the persistent save footer (observed API30: root bottom=990, save=1584).
-  // Gate the *actual clickable button bounds*, not an arbitrary animation delay.
-  // A permanently hidden button still FAILS with full UI/Room evidence.
+  // Both bounds can agree before Android starts opening the IME. Require an
+  // IME-sized resize on every API, then wait for the actual footer to fit it.
   try{
    composeRule.waitUntil(10000){
     val nodes=composeRule.onAllNodesWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNodes()
-    val root=composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-    nodes.size==1 && nodes.single().boundsInRoot.let{it.top>=root.top && it.bottom<=root.bottom}
+    val root=formRoot.fetchSemanticsNode().boundsInRoot
+    root.height<rootWithoutKeyboard.height*0.8f && nodes.size==1 &&
+     nodes.single().boundsInRoot.let{it.top>=root.top && it.bottom<=root.bottom}
    }
   }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
    runCatching{screenshot("profile-save-viewport-timeout")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-VIEWPORT-TIMEOUT")}
    val saveBounds=runCatching{composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot}.getOrNull()
-   val rootBounds=runCatching{composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot}.getOrNull()
-   throw AssertionError("Save remained outside resized IME viewport: save=$saveBounds root=$rootBounds",e)
+   val rootBounds=runCatching{formRoot.fetchSemanticsNode().boundsInRoot}.getOrNull()
+   throw AssertionError("Save did not fit the resized IME viewport: save=$saveBounds root=$rootBounds before=$rootWithoutKeyboard",e)
   }
   val saveBefore=composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-  val rootBefore=composeRule.onRoot(useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+  val rootBefore=formRoot.fetchSemanticsNode().boundsInRoot
   assertTrue("Save must be inside the actual resized app viewport: save=$saveBefore root=$rootBefore",
-   saveBefore.bottom<=rootBefore.bottom && saveBefore.top>=rootBefore.top)
+   rootBefore.height<rootWithoutKeyboard.height*0.8f &&
+    saveBefore.bottom<=rootBefore.bottom && saveBefore.top>=rootBefore.top)
   click("Сохранить профиль")
   if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
    runCatching{screenshot("second-profile-touch-undispatched")}
