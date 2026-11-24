@@ -21,6 +21,7 @@ stage=$(mktemp -d)
 fixture_pid=
 device_port=10443
 cleanup() {
+  adb shell cmd appops set --user 0 ru.forma.fitness REQUEST_INSTALL_PACKAGES default >/dev/null 2>&1 || true
   adb reverse --remove "tcp:$device_port" >/dev/null 2>&1 || true
   if [[ -n "$fixture_pid" ]]; then
     kill "$fixture_pid" 2>/dev/null || true
@@ -47,9 +48,25 @@ curl --noproxy '*' --fail --silent --show-error --max-time 5 --cacert "$stage/tl
 adb reverse "tcp:$device_port" "tcp:$host_port" || fail 'ADB did not map the emulator HTTPS port'
 printf 'HTTPS fixture: host feed verified, starting Android assertions\n'
 tls=$(openssl x509 -in "$stage/tls.crt" -outform DER | base64 -w0)
-timeout --signal=TERM --kill-after=15s 3m adb shell am instrument -w \
-  -e class ru.forma.app.UpdateHttpsInstrumentedTest \
+fixture_args=(
   -e formaUpdateFixturePort "$device_port" -e formaUpdateFixtureTls "$tls" \
-  -e formaUpdateFixturePin "$(cat "$stage/pin")" \
+  -e formaUpdateFixturePin "$(cat "$stage/pin")"
+)
+timeout --signal=TERM --kill-after=15s 3m adb shell am instrument -w \
+  -e class ru.forma.app.UpdateHttpsInstrumentedTest "${fixture_args[@]}" \
   ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee verification/update-https-api34.txt
 grep -Fx 'OK (2 tests)' verification/update-https-api34.txt
+
+# Let the app request installation. The emulator must still show its own
+# confirmation before the host test can accept the verified APK.
+adb shell cmd appops set --user 0 ru.forma.fitness REQUEST_INSTALL_PACKAGES allow
+evidence=verification/update-installer-api34.txt
+timeout --signal=TERM --kill-after=15s 2m adb shell am instrument -w \
+  -e class ru.forma.app.UpdateInstallerHandoffTest "${fixture_args[@]}" \
+  ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "$evidence"
+grep -Fx 'OK (1 test)' "$evidence"
+python3 scripts/confirm-emulator-update.py | tee -a "$evidence"
+timeout --signal=TERM --kill-after=15s 2m adb shell am instrument -w \
+  -e class ru.forma.app.AfterSystemUpdateTest \
+  ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee -a "$evidence"
+test "$(grep -Fxc 'OK (1 test)' "$evidence")" = 2

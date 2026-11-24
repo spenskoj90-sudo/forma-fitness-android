@@ -1,5 +1,6 @@
 package ru.forma.app
 
+import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -18,9 +19,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /** A loopback TLS feed with a disposable pin and an actual same-signer debug APK. */
-@RunWith(AndroidJUnit4::class)
-class UpdateHttpsInstrumentedTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+internal class UpdateHttpsFixture(private val context: Context) {
     private val arguments = InstrumentationRegistry.getArguments()
     private val fixturePort by lazy {
         requireNotNull(arguments.getString("formaUpdateFixturePort")).toInt().also { require(it in 1024..65535) }
@@ -36,7 +35,7 @@ class UpdateHttpsInstrumentedTest {
         SSLContext.getInstance("TLS").apply { init(null, managers.trustManagers, null) }.socketFactory
     }
 
-    private fun client(path: String, trustFixture: Boolean = true) = FormaUpdateClient(
+    fun client(path: String, trustFixture: Boolean = true) = FormaUpdateClient(
         context, "https://localhost/$path", requireNotNull(arguments.getString("formaUpdateFixturePin"))
     ) { url ->
         // Only the isolated test transport maps the standard HTTPS port to adb reverse.
@@ -45,6 +44,12 @@ class UpdateHttpsInstrumentedTest {
             if (trustFixture) sslSocketFactory = sockets
         }
     }
+}
+
+@RunWith(AndroidJUnit4::class)
+class UpdateHttpsInstrumentedTest {
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val fixture = UpdateHttpsFixture(context)
 
     private suspend fun rejects(message: String, call: suspend () -> Any?) {
         val failure = runCatching { call() }.exceptionOrNull()
@@ -54,20 +59,20 @@ class UpdateHttpsInstrumentedTest {
 
     @Test fun checksSignedHttpsSourceAndRejectsInvalidOffers() {
         runBlocking {
-            val untrusted = runCatching { client("stable.json", trustFixture = false).check() }.exceptionOrNull()
+            val untrusted = runCatching { fixture.client("stable.json", trustFixture = false).check() }.exceptionOrNull()
             assertTrue("Untrusted TLS certificate should fail: $untrusted", untrusted is SSLHandshakeException)
-            assertNull(client("downgrade.json").check())
-            rejects("Сервер обновлений временно недоступен") { client("redirect.json").check() }
-            rejects("Источник обновлений изменён") { client("wrong-source.json").check() }
-            rejects("Пакет обновления не совпадает с установленной FORMA") { client("wrong-package.json").check() }
-            rejects("Подпись новой версии отличается от установленной FORMA") { client("wrong-cert.json").check() }
-            rejects("Подпись описания обновления недействительна") { client("invalid-signature.json").check() }
+            assertNull(fixture.client("downgrade.json").check())
+            rejects("Сервер обновлений временно недоступен") { fixture.client("redirect.json").check() }
+            rejects("Источник обновлений изменён") { fixture.client("wrong-source.json").check() }
+            rejects("Пакет обновления не совпадает с установленной FORMA") { fixture.client("wrong-package.json").check() }
+            rejects("Подпись новой версии отличается от установленной FORMA") { fixture.client("wrong-cert.json").check() }
+            rejects("Подпись описания обновления недействительна") { fixture.client("invalid-signature.json").check() }
         }
     }
 
     @Test fun downloadsAuthenticApkAndRejectsRedirectAlteredAndOversizedBytes() {
         runBlocking {
-            val good = client("stable.json")
+            val good = fixture.client("stable.json")
             val release = requireNotNull(good.check())
             assertEquals("ru.forma.fitness", release.applicationId)
             assertEquals(3L, release.versionCode)
@@ -82,7 +87,7 @@ class UpdateHttpsInstrumentedTest {
                     "apk-oversize.json" to "Размер APK превышает указанный в подписанном описании",
                     "apk-wrong-version.json" to "Неверная версия или имя пакета APK"
                 )) {
-                    val client = client(path)
+                    val client = fixture.client(path)
                     val offer = requireNotNull(client.check())
                     rejects(error) { client.downloadAndVerify(offer) }
                     assertFalse(File(directory, expectedUpdateApkName(offer.versionCode, offer.sha256)).exists())

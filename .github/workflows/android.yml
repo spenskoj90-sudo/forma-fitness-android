@@ -169,7 +169,7 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/offline/app.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/offline/test.apk
           if [[ "$FORMA_API" == "34" ]]; then
-            build_test_apks -PformaCloudSyncEnabled=true
+            build_test_apks -PformaCloudSyncEnabled=true -PformaVersionCode=3
             mkdir -p .forma-emulator/cloud
             cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/cloud/app.apk
             cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/cloud/test.apk
@@ -236,6 +236,7 @@ jobs:
             verification/reboot-api${{ matrix.api }}.txt
             verification/update-over-install-api${{ matrix.api }}.txt
             verification/update-https-api${{ matrix.api }}.txt
+            verification/update-installer-api${{ matrix.api }}.txt
             verification/technique-media-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
             verification/room-migration-api${{ matrix.api }}.txt
