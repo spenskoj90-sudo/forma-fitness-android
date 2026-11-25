@@ -18,9 +18,12 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  @Volatile private var job:Job?=null
  // Android may dispatch a new START before the previous workout loop exits.
  private val commandMutex=Mutex()
+ // Only the main thread opens, uses or closes native output handles.
+ private val outputHandler=Handler(Looper.getMainLooper())
+ private var outputsClosed=false
  private var tts:TextToSpeech?=null
- @Volatile private var ready=false
- @Volatile private var focusGranted=false
+ private var ready=false
+ private var focusGranted=false
  @Volatile private var focusLossPending=false
  @Volatile private var focusRequest:AudioFocusRequest?=null
  @Volatile private var focusLease:AudioFocusLease?=null
@@ -44,7 +47,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   val lease=audioFocusGate.open()
   val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-   .setOnAudioFocusChangeListener(AudioManager.OnAudioFocusChangeListener{change->onFocusChanged(lease,change)},Handler(Looper.getMainLooper()))
+   .setOnAudioFocusChangeListener(AudioManager.OnAudioFocusChangeListener{change->onFocusChanged(lease,change)},outputHandler)
    .build()
   focusLease=lease
   focusRequest=request
@@ -52,7 +55,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
  }
  private fun onFocusChanged(lease:AudioFocusLease,change:Int){
   // Android may deliver an abandoned request's callback after the Owner resumes.
-  if(!audioFocusGate.isCurrent(lease))return
+  if(outputsClosed||!audioFocusGate.isCurrent(lease))return
   if(change==AudioManager.AUDIOFOCUS_GAIN){focusGranted=true;return}
   if(!focusGranted)return
   focusGranted=false
@@ -79,8 +82,11 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   tts=TextToSpeech(this,this)
  }
  override fun onInit(status:Int){
-  if(status==TextToSpeech.SUCCESS)ready=runCatching{val voice=tts?.voices?.firstOrNull{it.locale.language=="ru"&&!it.isNetworkConnectionRequired};if(voice!=null){tts?.voice=voice;true}else false}.getOrDefault(false)
-  app.coachStatus.value=if(ready)"Русский офлайн-голос готов"else"Русский офлайн-голос недоступен. Используются экранные подсказки и включённые сигналы."
+  outputHandler.post {
+   if(outputsClosed)return@post
+   if(status==TextToSpeech.SUCCESS)ready=runCatching{val voice=tts?.voices?.firstOrNull{it.locale.language=="ru"&&!it.isNetworkConnectionRequired};if(voice!=null){tts?.voice=voice;true}else false}.getOrDefault(false)
+   app.coachStatus.value=if(ready)"Русский офлайн-голос готов"else"Русский офлайн-голос недоступен. Используются экранные подсказки и включённые сигналы."
+  }
  }
  override fun onBind(intent:Intent?):IBinder?=null
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
@@ -161,8 +167,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
      // replacement session. A stale notification cannot mutate this one.
      job?.cancelAndJoin()
      job=null
-     lastStage=""
-     nextBeat=0L
+     withContext(Dispatchers.Main.immediate){resetCue()}
     }
     profileId=id;sessionId=expected;workoutScopeId=access
     if(intent.action=="PAUSE"||intent.action=="STOP")app.audioFocusEpoch.invalidate()
@@ -173,7 +178,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
       else->session
      }
     }
-    if(intent.action=="PAUSE"||intent.action=="STOP")silence()
+    if(intent.action=="PAUSE"||intent.action=="STOP")withContext(Dispatchers.Main.immediate){silence()}
     if(intent.action=="STOP"){
      // A newer START can arrive while the cancelled loop is completing.
      job?.cancelAndJoin()
@@ -192,41 +197,92 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   return START_NOT_STICKY
  }
  private suspend fun runWorkout(id:String,expected:String,access:String?,repository:ProfileRepository){
-  wake=(getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout")
   try{while(currentCoroutineContext().isActive){
    app.mutateWorkoutSession(id,expected,scopeId=access){advanceTimed(it,app.workoutNow())}
    val s=repository.load(id)?.active?.takeIf{it.id==expected}?:break
-   if(s.terminal){silence();break}
+   if(s.terminal)break
    val prefs=app.settings.settings.first()
-   if(s.paused){silence();releaseFocus();if(wake?.isHeld==true)wake?.release()}
-   else{
-    if(wake?.isHeld!=true)wake?.acquire(10800000)
-    // Rotate stale grants after a user command; never overwrite a pending
-    // focus-loss pause with an immediate re-request.
-    val existing=focusLease
-    if(existing!=null&&!audioFocusGate.isCurrent(existing))releaseFocus()
-    if((prefs.sound||prefs.voice)&&!focusGranted&&!focusLossPending){releaseFocus();requestFocus()}
-    if(toneVolume!=prefs.volume){tone?.release();tone=runCatching{ToneGenerator(AudioManager.STREAM_MUSIC,prefs.volume)}.getOrNull();toneVolume=prefs.volume}
+   val title=if(s.paused)"Пауза"else stageLabel(s)
+   val posted=withContext(Dispatchers.Main.immediate){
+    if(outputsClosed||app.resolveWorkoutRepository(access)!==repository)return@withContext false
+    if(s.paused)pauseOutputs() else resumeOutputs(prefs)
+    updateCue(s,title,prefs)
+    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(1,notification(title,s,access))
+    true
    }
-   if(app.resolveWorkoutRepository(access)==null)break
-   val stage=sessionStage(s);val title=if(s.paused)"Пауза"else stageLabel(s)
-   if(stage!=lastStage){lastStage=stage;nextBeat=0;if(!s.paused)cue(title,prefs)}
-   if(!prefs.voice)tts?.stop()
-   if(!prefs.sound)tone?.stopTone()
-   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(1,notification(title,s,access))
-   val now=SystemClock.elapsedRealtime()
-   if(prefs.metronome&&prefs.sound&&focusGranted&&!s.paused&&s.phase==Phase.WORK&&now>=nextBeat){tone?.startTone(ToneGenerator.TONE_PROP_BEEP,65);nextBeat=now+60000L/prefs.bpm}
+   if(!posted)break
    delay(100)
   }}catch(e:CancellationException){throw e}catch(_:LocalWorkoutAccessRevoked){Unit}catch(e:Exception){
    runCatching{repository.mutateSession(id,expected){recoverSession(it,app.workoutNow())}}
    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2,notification("Сбой сопровождения. Откройте FORMA.",null))
   }finally{
-   silence();releaseFocus();if(wake?.isHeld==true)wake?.release()
-   // Do not tear down a service whose newer start targets another workout.
-   if(lastRequestedSession==expected&&lastRequestedScope==access)stopSelf(lastStartId)
+   withContext(NonCancellable+Dispatchers.Main.immediate){
+    if(outputsClosed)return@withContext
+    pauseOutputs()
+    // Do not tear down a service whose newer start targets another workout.
+    if(lastRequestedSession==expected&&lastRequestedScope==access)stopSelf(lastStartId)
+   }
   }
  }
- private fun silence(){tts?.stop();tone?.stopTone();nextBeat=0}
+ private fun resumeOutputs(prefs:Preferences){
+  if(outputsClosed)return
+  val lock=wake?:run {
+   val power=getSystemService(POWER_SERVICE) as PowerManager
+   power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"forma:workout").also{wake=it}
+  }
+  if(!lock.isHeld)lock.acquire(10800000)
+  // Do not replace a pending focus-loss pause with an immediate re-request.
+  val existing=focusLease
+  if(existing!=null&&!audioFocusGate.isCurrent(existing))releaseFocus()
+  if((prefs.sound||prefs.voice)&&!focusGranted&&!focusLossPending){releaseFocus();requestFocus()}
+  if(toneVolume!=prefs.volume){
+   tone?.release()
+   tone=runCatching{ToneGenerator(AudioManager.STREAM_MUSIC,prefs.volume)}.getOrNull()
+   toneVolume=prefs.volume
+  }
+ }
+ private fun resetCue(){
+  lastStage=""
+  nextBeat=0L
+ }
+ private fun updateCue(session:Session,title:String,prefs:Preferences){
+  if(outputsClosed)return
+  val stage=sessionStage(session)
+  if(stage!=lastStage){
+   lastStage=stage
+   nextBeat=0L
+   if(!session.paused)cue(title,prefs)
+  }
+  if(!prefs.voice)tts?.stop()
+  if(!prefs.sound)tone?.stopTone()
+  val now=SystemClock.elapsedRealtime()
+  if(prefs.metronome&&prefs.sound&&focusGranted&&!session.paused&&session.phase==Phase.WORK&&now>=nextBeat){
+   tone?.startTone(ToneGenerator.TONE_PROP_BEEP,65)
+   nextBeat=now+60000L/prefs.bpm
+  }
+ }
+ private fun silence(){
+  if(outputsClosed)return
+  tts?.stop()
+  tone?.stopTone()
+  nextBeat=0L
+ }
+ private fun pauseOutputs(){
+  if(outputsClosed)return
+  silence()
+  releaseFocus()
+  wake?.takeIf{it.isHeld}?.release()
+ }
+ private fun closeOutputs(){
+  if(outputsClosed)return
+  pauseOutputs()
+  outputsClosed=true
+  tts?.shutdown()
+  tts=null
+  tone?.release()
+  tone=null
+  wake=null
+ }
  private fun releaseFocus(){
   val request=focusRequest?:return
   audioFocusGate.expire()
@@ -268,8 +324,7 @@ class WorkoutService:Service(),TextToSpeech.OnInitListener{
   app.serviceRunning=false
   job?.cancel()
   scope.cancel()
-  if(wake?.isHeld==true)wake?.release()
-  silence();releaseFocus();tts?.shutdown();tone?.release()
+  closeOutputs()
   super.onDestroy()
  }
 }
