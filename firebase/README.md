@@ -93,14 +93,21 @@ Live provider activation and App Check enforcement remain behind separate gates.
 ## Two-account provider smoke
 
 The owner-approved live smoke targets only the existing isolated Spark project
-`forma-ee2e9`. Run `npm run test:provider:live` from this directory in a
-terminal with an authorized Google Cloud CLI session. It uses the existing
-Firebase browser API key and checks that the database region and the published
-rules match this checkout before creating fixtures. If the intended browser key
-has a custom display name, set `FORMA_FIREBASE_WEB_KEY_RESOURCE` to its Google
-Cloud resource name in this project. The CLI session needs to
-read the database, rules and existing key and manage the two synthetic Auth
-accounts. No service-account key file or real user data is needed.
+`forma-ee2e9`. Run `npm run test:provider:live` from this directory with
+Node 22 or later. Supply a short-lived Google OAuth access token through
+`FORMA_GOOGLE_ACCESS_TOKEN` in the authorized terminal to run through Google
+REST APIs without the Cloud CLI. The token needs the `cloud-platform` scope,
+and its identity needs access to the Firestore database and rules metadata,
+Firebase project metadata, the existing browser API key, and synthetic Auth
+user management in this project. An already authorized `gcloud` session also
+works when the variable is unset. Keep the token in the authorized terminal's
+environment for the duration of the probe.
+
+The probe uses the existing Firebase browser API key and checks that the
+database region and the published rules match this checkout before creating
+fixtures. If the intended browser key has a custom display name, set
+`FORMA_FIREBASE_WEB_KEY_RESOURCE` to its Google Cloud resource name in this
+project. No service-account key file or real user data is needed.
 
 The probe signs in through the provider's Email/Password API and uses the
 returned Firebase ID tokens for Firestore requests. It verifies an unverified

@@ -59,14 +59,50 @@ function gcloud(args, label) {
   }
 }
 
+function findBrowserKey(keys) {
+  const configuredKey = process.env.FORMA_FIREBASE_WEB_KEY_RESOURCE
+  const matches = keys.filter(key => configuredKey ? key.name === configuredKey :
+    key.displayName === 'Browser key (auto created by Firebase)')
+  requireCheck(matches.length === 1 && /^projects\/[A-Za-z0-9-]+\/locations\/global\/keys\/[A-Za-z0-9-]+$/.test(matches[0].name),
+    'Expected exactly one existing Firebase browser key')
+  return matches[0].name
+}
+
+async function readBrowserKeyWithRest(token) {
+  const target = await request('Firebase project metadata',
+    `https://firebase.googleapis.com/v1beta1/projects/${project}`, { token })
+  requireCheck(target.projectId === project && typeof target.projectNumber === 'string' &&
+    /^[1-9][0-9]*$/.test(target.projectNumber), 'Firebase project identity mismatch')
+  const parent = `projects/${target.projectNumber}/locations/global`
+  const keyApi = 'https://apikeys.googleapis.com/v2'
+  const keys = []
+  const seenPageTokens = new Set()
+  const url = new URL(`${keyApi}/${parent}/keys`)
+  for (;;) {
+    const page = await request('list Firebase browser keys', url, { token })
+    keys.push(...(page.keys ?? []))
+    if (!page.nextPageToken) break
+    requireCheck(!seenPageTokens.has(page.nextPageToken), 'Firebase browser key pagination repeated')
+    seenPageTokens.add(page.nextPageToken)
+    url.searchParams.set('pageToken', page.nextPageToken)
+  }
+  const keyResource = findBrowserKey(keys)
+  requireCheck(keyResource.startsWith(`${parent}/keys/`), 'Firebase browser key belongs to a different project')
+  const key = await request('read Firebase browser key', `${keyApi}/${keyResource}/keyString`, { token })
+  return key.keyString
+}
+
 async function preflight() {
   if (!live) {
     adminToken = 'owner'
     apiKey = 'emulator'
     return
   }
-  adminToken = gcloud(['auth', 'print-access-token'], 'Google Cloud CLI must be installed and authorized for forma-ee2e9')
-  requireCheck(adminToken, 'Google Cloud CLI returned no access token')
+  const suppliedToken = process.env.FORMA_GOOGLE_ACCESS_TOKEN
+  adminToken = suppliedToken === undefined
+    ? gcloud(['auth', 'print-access-token'], 'Authorize gcloud for forma-ee2e9 or supply a short-lived FORMA_GOOGLE_ACCESS_TOKEN')
+    : suppliedToken
+  requireCheck(/^[A-Za-z0-9._~+/-]+=*$/.test(adminToken), 'Google OAuth access token is missing or malformed')
   const config = await request('Firestore database metadata', `${firestoreHost}/v1/${database}`, { token: adminToken })
   requireCheck(config.name === database && config.locationId === 'europe-west3',
     'Firestore database identity or region mismatch')
@@ -83,15 +119,14 @@ async function preflight() {
     'Published Firestore rules differ from firebase/firestore.rules')
   console.log(`PASS active rules SHA-256 ${createHash('sha256').update(source).digest('hex')}`)
 
-  const keys = JSON.parse(gcloud(['services', 'api-keys', 'list', '--format=json(name,displayName)'],
-    'Cannot list the existing Firebase browser keys'))
-  const configuredKey = process.env.FORMA_FIREBASE_WEB_KEY_RESOURCE
-  const matches = keys.filter(key => configuredKey ? key.name === configuredKey :
-    key.displayName === 'Browser key (auto created by Firebase)')
-  requireCheck(matches.length === 1 && /^projects\/[A-Za-z0-9-]+\/locations\/global\/keys\/[A-Za-z0-9-]+$/.test(matches[0].name),
-    'Expected exactly one existing Firebase browser key')
-  apiKey = gcloud(['services', 'api-keys', 'get-key-string', matches[0].name, '--format=value(keyString)'],
-    'Cannot read the existing Firebase browser key')
+  if (suppliedToken === undefined) {
+    const keys = JSON.parse(gcloud(['services', 'api-keys', 'list', '--format=json(name,displayName)'],
+      'Cannot list the existing Firebase browser keys'))
+    apiKey = gcloud(['services', 'api-keys', 'get-key-string', findBrowserKey(keys), '--format=value(keyString)'],
+      'Cannot read the existing Firebase browser key')
+  } else {
+    apiKey = await readBrowserKeyWithRest(adminToken)
+  }
   requireCheck(/^AIza[A-Za-z0-9_-]{35}$/.test(apiKey), 'Firebase browser key unavailable')
 }
 
