@@ -31,6 +31,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import ru.forma.domain.Exercise
 import ru.forma.domain.exerciseCatalog
 
 /**
@@ -131,8 +132,7 @@ class OriginalVolumetricPreviewTest {
   }
  }
 
- @Test fun threeDimensionalSurfaceOnlyOpensOnRequestAndManualControlsRemainAccessible() {
-  val options=mutableStateOf(FormaVisualOptions())
+ private fun showExercise(exercise:Exercise,options:State<FormaVisualOptions>):AtomicReference<View> {
   val root=AtomicReference<View>()
   rule.setContent {
    val host=LocalView.current
@@ -140,11 +140,26 @@ class OriginalVolumetricPreviewTest {
    CompositionLocalProvider(LocalFormaVisualOptions provides options.value) {
     MaterialTheme {
      Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){
-      OriginalVolumetricPreview(exerciseCatalog.first())
+      OriginalVolumetricPreview(exercise)
      }
     }
    }
   }
+  return root
+ }
+
+ private fun readySurface(root:AtomicReference<View>):GLSurfaceView {
+  rule.waitUntil(timeoutMillis=12000) {
+   findGl(root.get())?.let {
+    it.width>80 && it.height>80 && it.holder.surface.isValid
+   }==true
+  }
+  return checkNotNull(findGl(root.get()))
+ }
+
+ @Test fun threeDimensionalSurfaceOnlyOpensOnRequestAndManualControlsRemainAccessible() {
+  val options=mutableStateOf(FormaVisualOptions())
+  val root=showExercise(exerciseCatalog.first(),options)
   rule.onNodeWithTag("volume-preview-surface").assertDoesNotExist()
   rule.onNodeWithTag("volume-preview-toggle").assertExists().performScrollTo().performClick()
   rule.onNodeWithTag("volume-preview-surface").performScrollTo().assertIsDisplayed()
@@ -156,12 +171,7 @@ class OriginalVolumetricPreviewTest {
    .assertContentDescriptionEquals("Фаза движения")
    .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Исходное положение"))
 
-  rule.waitUntil(timeoutMillis=12000) {
-   findGl(root.get())?.let{
-    it.width>80 && it.height>80 && it.holder.surface.isValid
-   }==true
-  }
-  val gl=checkNotNull(findGl(root.get()))
+  val gl=readySurface(root)
   val first=awaitRenderedMesh(gl)
   assertReadableFraming(first)
   saveSyntheticFrame(first,"volume-gl-start.png")
@@ -194,5 +204,29 @@ class OriginalVolumetricPreviewTest {
   rule.onNodeWithTag("volume-preview-play").assertIsEnabled()
   rule.onNodeWithTag("volume-preview-toggle").performScrollTo().performClick()
   rule.onNodeWithTag("volume-preview-surface").assertDoesNotExist()
+ }
+
+ @Test fun wallSlideRendersDistinctManualPosesWithoutChangingCamera() {
+  val wallSlide=exerciseCatalog.single{it.id=="wall_slide"}
+  val root=showExercise(wallSlide,mutableStateOf(FormaVisualOptions()))
+  rule.onNodeWithTag("volume-preview-toggle").performScrollTo().performClick()
+  rule.onNodeWithTag("volume-preview-surface").performScrollTo().assertIsDisplayed()
+  val gl=readySurface(root)
+  val first=awaitRenderedMesh(gl)
+  try {
+   saveSyntheticFrame(first,"wall-slide-start.png")
+   val scrub=rule.onNodeWithTag("volume-preview-scrub")
+   scrub.performSemanticsAction(SemanticsActions.SetProgress){it(1f)}
+   rule.waitForIdle()
+   scrub.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Крайнее положение модели"))
+   val raised=awaitRenderedMesh(gl,first)
+   try {
+    saveSyntheticFrame(raised,"wall-slide-raised.png")
+   } finally {
+    raised.recycle()
+   }
+  } finally {
+   first.recycle()
+  }
  }
 }

@@ -16,8 +16,8 @@ class OriginalVolumeEvidenceTest {
    assertEquals(exercise.equipment,packet.equipment)
    assertEquals(VolumeEvidenceStage.SOURCE_ONLY,packet.stage)
    val expectedRevision=when(exercise.id){
-    "goblet","lat_pulldown","bench_step","bird_dog","dead_bug","scap_pull" -> 3
-    "raise","wall_push","incline_push","chair_squat","wall_slide","smith_squat","prone_w","self_curl",
+    "goblet","lat_pulldown","bench_step","bird_dog","dead_bug","scap_pull","wall_slide" -> 3
+    "raise","wall_push","incline_push","chair_squat","smith_squat","prone_w","self_curl",
     "calf","floor_press","band_row","band_press","band_extension","kettlebell_squat",
     "kettlebell_deadlift","mat_plank","cable_triceps","leg_press","chest_press","machine_row","leg_curl" -> 2
     else -> 1

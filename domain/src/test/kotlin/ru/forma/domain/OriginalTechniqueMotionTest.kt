@@ -55,6 +55,9 @@ class OriginalTechniqueMotionTest {
  @Test fun backToWallSlideSketchKeepsBothForearmsAtTheWallWhileRaisingHands() {
   val slide=originalMotionFor(exerciseCatalog.first{it.id=="wall_slide"})!!
   val poses=listOf(0f,0.5f,1f).map{originalMotionAt(slide,it)}
+  val start=poses.first().joints
+  assertEquals(start[1].y,start[2].y,0.001f)
+  assertTrue(start[3].y<start[2].y)
   for(pose in poses) {
    // X=49 is the hand/forearm wall plane in the authored side view.
    assertEquals(49f,pose.joints[2].x,0.001f)
@@ -64,7 +67,7 @@ class OriginalTechniqueMotionTest {
    assertEquals("Torso must not drift toward the wall",53f,pose.joints[4].x,0.001f)
   }
   assertTrue("Hands must move upward along the same wall, not swing forward",
-   poses.first().joints[3].y-poses.last().joints[3].y>20f)
+   start[3].y-poses.last().joints[3].y>10f)
   assertEquals(poses.first().joints[3].x,poses.last().joints[3].x,0.001f)
  }
  @Test fun rejectWrongEquipmentAndMissingCatalogIds() {

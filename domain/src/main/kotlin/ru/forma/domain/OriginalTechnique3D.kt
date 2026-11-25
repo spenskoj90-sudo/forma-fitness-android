@@ -1,6 +1,8 @@
 package ru.forma.domain
 
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -74,6 +76,18 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
    shoulder.y-drop*(1f-eased)-elbowBend*eased,
    side*(rest+(extended-rest)*eased))
  }
+ // In the wall-slide rig the upper arms start out to the sides and the
+ // forearms start upright. Rotate fixed-length segments in the wall plane.
+ fun wallSlideElbow(shoulder:VolumePoint,side:Float):VolumePoint {
+  val rotation=Math.toRadians(70.0*eased)
+  return VolumePoint(p(primary[2],0f).x,
+   shoulder.y+1.25f*sin(rotation).toFloat(),shoulder.z+side*1.25f*cos(rotation).toFloat())
+ }
+ fun wallSlideWrist(elbow:VolumePoint,side:Float):VolumePoint {
+  val rotation=Math.toRadians(20.0*eased)
+  return VolumePoint(elbow.x,
+   elbow.y+1.19f*cos(rotation).toFloat(),elbow.z+side*1.19f*sin(rotation).toFloat())
+ }
  val armDepth = when(spec.kind) {
   MotionKind.FLOOR_PRESS -> 1.47f-0.8f*eased
   MotionKind.PRONE_W -> 1.45f
@@ -85,15 +99,25 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
   exercise.equipment == Equipment.KETTLEBELL -> 0.24f
   else -> armDepth
  }
- val leftElbow = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,false) else p(primary[2], armDepth)
+ val leftElbow = when(spec.kind) {
+  MotionKind.LATERAL_RAISE -> lateralPoint(leftShoulder,1f,false)
+  MotionKind.WALL_SLIDE -> wallSlideElbow(leftShoulder,1f)
+  else -> p(primary[2],armDepth)
+ }
  val rightElbow = when(spec.kind) {
   MotionKind.LATERAL_RAISE -> lateralPoint(rightShoulder,-1f,false)
+  MotionKind.WALL_SLIDE -> wallSlideElbow(rightShoulder,-1f)
   MotionKind.SELF_CURL -> p(MotionPoint(59f,56f),-0.40f)
   else -> p(alternate[2],-armDepth)
  }
- val leftWrist = if(exercise.id=="raise") lateralPoint(leftShoulder,1f,true) else p(primary[3], gripDepth)
+ val leftWrist = when(spec.kind) {
+  MotionKind.LATERAL_RAISE -> lateralPoint(leftShoulder,1f,true)
+  MotionKind.WALL_SLIDE -> wallSlideWrist(leftElbow,1f)
+  else -> p(primary[3],gripDepth)
+ }
  val rightWrist = when(spec.kind) {
   MotionKind.LATERAL_RAISE -> lateralPoint(rightShoulder,-1f,true)
+  MotionKind.WALL_SLIDE -> wallSlideWrist(rightElbow,-1f)
   // The assisting hand follows the working forearm, close to its wrist.
   MotionKind.SELF_CURL -> leftElbow+(leftWrist-leftElbow)*0.85f+VolumePoint(0f,0.13f,0f)
   else -> p(alternate[3],-gripDepth)
@@ -293,13 +317,13 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
     for(ankle in listOf(leftAnkle,rightAnkle)) body+=link(ankle,x(toeX,0.13f,ankle.z),0.13f)
    }
    "wall_slide" -> {
-    // Exact catalog cue: back to the wall, not the facing-wall rehab variant.
-    // Both authored elbow/wrist X coordinates stay in this stationary plane.
-    val wallX=(49f-60f)*0.092f
-    for(z in listOf(-1.6f,1.6f))
+    // Both elbows and wrists stay in this stationary plane.
+    val wallX=p(primary[2],0f).x
+    val halfWidth=2.15f
+    for(z in listOf(-halfWidth,halfWidth))
      support(x(wallX,0f,z),x(wallX,10.7f,z))
     for(y in listOf(0f,10.7f))
-     support(x(wallX,y,-1.6f),x(wallX,y,1.6f))
+     support(x(wallX,y,-halfWidth),x(wallX,y,halfWidth))
    }
    "wall_push" -> {
     // An authored wireframe wall: its plane passes through the two fixed

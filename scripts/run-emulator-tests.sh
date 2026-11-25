@@ -102,8 +102,8 @@ timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class r
 grep -F "OK (4 tests)" "verification/technique-catalog-api${api}.txt"
 # OpenGL ES on-demand volume preview must be accessible/offline on API26/30/34.
 timeout --signal=TERM --kill-after=15s 12m adb shell am instrument -w -e class ru.forma.app.OriginalVolumetricPreviewTest ru.forma.fitness.test/androidx.test.runner.AndroidJUnitRunner | tee "verification/volume-preview-api${api}.txt"
-grep -F "OK (1 test)" "verification/volume-preview-api${api}.txt"
-# Preserve the two synthetic *actual GPU surface* PixelCopy frames after
+grep -F "OK (2 tests)" "verification/volume-preview-api${api}.txt"
+# Preserve the synthetic *actual GPU surface* PixelCopy frames after
 # the preview test: the earlier pull occurred before these frames existed.
 # This is evidence only; any ADB/pixel-copy failure remains a hard CI failure.
 pull_evidence

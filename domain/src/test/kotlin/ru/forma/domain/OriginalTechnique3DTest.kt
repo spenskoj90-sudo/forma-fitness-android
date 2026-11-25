@@ -199,25 +199,39 @@ class OriginalTechnique3DTest {
  }
  @Test fun wallSlideHandsRemainAtFixedPosteriorWallAcrossEntireMotion() {
   val exercise=exerciseCatalog.first{it.id=="wall_slide"}
-  val scenes=listOf(0f,0.5f,1f).map{originalVolumeAt(exercise,it)!!}
-  val wall=scenes.first().links.filter{it.tone==VolumeTone.SUPPORT}
+  val scenes=(0..8).map{originalVolumeAt(exercise,it/8f)!!}
+  val start=scenes.first()
+  val wall=start.links.filter{it.tone==VolumeTone.SUPPORT}
   assertEquals("Need two wall posts and two frame crossbars",4,wall.size)
   val wallX=(49f-60f)*0.092f
+  val halfWidth=wall.maxOf{maxOf(abs(it.a.z),abs(it.b.z))}
+  for(linkIndex in listOf(2,4)) {
+   val upper=start.links[linkIndex]
+   val forearm=start.links[linkIndex+1]
+   assertEquals(upper.a.y,upper.b.y,0.001f)
+   assertTrue("Upper arms must start out to both sides",abs(upper.b.z)-abs(upper.a.z)>1f)
+   assertEquals(forearm.a.z,forearm.b.z,0.001f)
+   assertTrue("Hands start above their elbows",forearm.b.y-forearm.a.y>1f)
+  }
   for(scene in scenes) {
    assertEquals("Wall must not follow the arms",wall,
     scene.links.filter{it.tone==VolumeTone.SUPPORT})
-   for(i in listOf(2,3,4,5)) {
-    val contact=scene.links[i].b
+   for(i in 2..5) {
+    val arm=scene.links[i]
+    val original=start.links[i]
+    val contact=arm.b
     assertTrue("Elbow/wrist must stay in stationary wall plane",
      abs(contact.x-wallX)<0.001f)
     assertTrue("Hands must remain within wall width",
-     contact.z in -1.6f..1.6f)
+     contact.z in -halfWidth..halfWidth)
+    assertEquals("Arm segment length must stay fixed",
+     (original.b-original.a).length(),(arm.b-arm.a).length(),0.001f)
    }
    assertTrue("Wall must be behind torso with a small contact gap",
     scene.joints[1].position.x-wallX in 0f..0.5f)
   }
   assertTrue("Hands must rise on the wall instead of swinging forward",
-   scenes.last().links[3].b.y-scenes.first().links[3].b.y>2f)
+   scenes.last().links[3].b.y-start.links[3].b.y>1f)
  }
  @Test fun birdDogAndDeadBugReachWithOppositeArmAndLegAndAlternateSides() {
   for(id in listOf("bird_dog","dead_bug")) {

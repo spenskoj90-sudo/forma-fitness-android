@@ -26,7 +26,7 @@ Reviewed on 23 November 2026. The unit of review is `exerciseId` plus equipment.
 | `db_press` | [NASM dumbbell overhead press demonstration][db-press], related overhead-press movement | Upward dumbbell travel. FORMA depicts the standing variant, with standing stability and forearm alignment still under review. |
 | `bb_rdl` | [NASM barbell Romanian deadlift][bb-rdl], direct | Separate barbell load and a visible hinge. The bar-to-leg clearance and unchanging segment lengths are unverified. |
 | `bb_curl` | [NASM barbell biceps curl][bb-curl], direct | One bar connects the two grips and moves via elbow flexion. Wrist orientation is schematic. |
-| `wall_slide` | [South Tees NHS lateral wall slides][slide], related wall orientation | FORMA depicts back to the wall and keeps both arms on a posterior plane. The variant and its shoulder limits need an exact reference. |
+| `wall_slide` | [UCSF Health Sports Medicine, Wall Angels][wall-angels], November 2025, p. 2 | Revision 3 raises both arms from the goalpost position, keeps the elbow and wrist contact plane fixed and preserves segment lengths. The source's heel contact and individual shoulder range still need qualified review. |
 | `self_curl` | [Self-resisted curl exercise guide][self], direct movement, secondary source | The assisting wrist now follows the working forearm. The prototype cannot establish the direction or amount of applied resistance. |
 | `band_row` | [ACE standing tubing row][band-row], related partner anchor | The rig uses a fixed forward anchor and a pull toward the torso. The source uses a partner; anchorage safety requires its own check. |
 | `band_press` | [NSCA resistance movement progressions][nsca], related | The line of resistance runs to a fixed anchor behind the figure. Verify the exact standing setup and attachment. |
@@ -66,7 +66,7 @@ The on-screen walkthrough retains text for setup, movement, return and self-chec
 [db-press]: https://www.youtube.com/watch?v=MMjBnEBnZKM
 [bb-rdl]: https://www.nasm.org/resource-center/exercise-library/romanian-deadlift-barbell
 [bb-curl]: https://www.nasm.org/resource-center/exercise-library/barbell-bicep-curl
-[slide]: https://www.southtees.nhs.uk/resources/lateral-wall-slides/
+[wall-angels]: https://sportsrehab.ucsf.edu/sites/g/files/tkssra10961/files/doc/Upper_Body_Stretches_Nov2025.pdf
 [self]: https://www.fitmetrics.ch/en/exercise/6a29cc22d9564-self-resisted-biceps-curl
 [band-row]: https://www.acefitness.org/resources/everyone/exercise-library/267/partner-standing-row-with-resistance-tubing/
 [nsca]: https://www.nsca.com/contentassets/3d09f06f0b4c4f6fbd8cc382ed1f3d4a/ptq-10.2.1-progressive-strategies-for-teaching-fundamental-resistance-training-movement-patterns.pdf

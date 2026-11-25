@@ -35,6 +35,10 @@ private val band=lead("42795858",VolumeLeadScope.GENERAL,
  "Elastic resistance narrative review; attachment, force and direction vary by band setup.")
 private val shoulder=lead("40165544",VolumeLeadScope.REHAB_POPULATION,
  "Shoulder pathology guideline; clinical population and exact form applicability need assessment.")
+private val wallSlide=VolumeResearchLead(
+ "https://sportsrehab.ucsf.edu/sites/g/files/tkssra10961/files/doc/Upper_Body_Stretches_Nov2025.pdf",
+ VolumeLeadScope.RELATED_VARIANT,
+ "UCSF Health Sports Medicine Wall Angels, November 2025, p. 2. Bilateral wall contact and goalpost position; heel contact and suitable individual range still require review.")
 private val row=lead("19197209",VolumeLeadScope.RELATED_VARIANT,
  "Row trunk loading differs by equipment, support and stance; not exact model validation.")
 private val raise=lead("33312291",VolumeLeadScope.RELATED_VARIANT,
@@ -58,7 +62,8 @@ private val leadsById:Map<String,List<VolumeResearchLead>> = buildMap {
  fun assign(ids:String,lead:VolumeResearchLead){for(id in ids.split(" "))require(put(id,listOf(lead))==null)}
  assign("squat goblet chair_squat kettlebell_squat smith_squat leg_press",squat)
  assign("band_row band_press band_extension",band)
- assign("prone_w wall_slide scap_pull",shoulder)
+ assign("prone_w scap_pull",shoulder)
+ assign("wall_slide",wallSlide)
  assign("db_row bb_row machine_row lat_pulldown",row)
  assign("raise",raise)
  assign("db_press",press)
@@ -75,7 +80,7 @@ fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
 private val originalPoseRevisions=mapOf(
  "goblet" to 3,"lat_pulldown" to 3,"bench_step" to 3,"bird_dog" to 3,"dead_bug" to 3,"scap_pull" to 3,
  "raise" to 2,"wall_push" to 2,"incline_push" to 2,"chair_squat" to 2,"self_curl" to 2,"prone_w" to 2,
- "wall_slide" to 2,"smith_squat" to 2,"calf" to 2,"floor_press" to 2,"band_row" to 2,
+ "wall_slide" to 3,"smith_squat" to 2,"calf" to 2,"floor_press" to 2,"band_row" to 2,
  "band_press" to 2,"band_extension" to 2,"kettlebell_squat" to 2,"kettlebell_deadlift" to 2,
  "mat_plank" to 2,"cable_triceps" to 2,"leg_press" to 2,"chest_press" to 2,
  "machine_row" to 2,"leg_curl" to 2)
