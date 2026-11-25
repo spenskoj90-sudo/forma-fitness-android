@@ -228,6 +228,13 @@ APK SHA-256, announced byte length and actual APK signer. User installation
 still requires Android confirmation. The live feed, publishing custody and
 both physical same-cert upgrades remain NOT_RUN.
 
+The protected signing workflow checks `FORMA_UPDATE_FEED_URL` and
+`FORMA_UPDATE_MANIFEST_PUBKEY` before it restores the APK signing key. The
+`check-config` command requires an ordinary HTTPS feed URL and a canonical
+3072–4096-bit RSA public SPKI pin. It checks the configuration locally so a
+first release can be signed before the feed is published. Use `verify-hosted`
+for the separate live readback after staging and publication.
+
 `scripts/release_update_manifest.mjs payload` prepares the exact signed bytes
 from the verified APK identity, matching APK bytes, previous version, approved
 certificate, feed URL, download URL and release notes. After an authorized

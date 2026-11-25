@@ -64,13 +64,22 @@ export function prepareUpdatePayload(identity, apk, options) {
   }));
 }
 
-export function packUpdateEnvelope(payload, signature, publicKeySpkiB64) {
+function updatePublicKey(publicKeySpkiB64) {
   const spki = Buffer.from(publicKeySpkiB64, 'base64');
   if (spki.toString('base64') !== publicKeySpkiB64) throw new Error('Invalid public key encoding');
   const publicKey = createPublicKey({ key: spki, format: 'der', type: 'spki' });
   const bits = publicKey.asymmetricKeyDetails?.modulusLength;
   if (publicKey.asymmetricKeyType !== 'rsa' || !bits || bits < 3072 || bits > 4096 ||
-      payload.length < 1 || payload.length > maxEnvelopeBytes ||
+      !spki.equals(publicKey.export({ format: 'der', type: 'spki' }))) {
+    throw new Error('Invalid update public key');
+  }
+  return publicKey;
+}
+
+export function packUpdateEnvelope(payload, signature, publicKeySpkiB64) {
+  const publicKey = updatePublicKey(publicKeySpkiB64);
+  const bits = publicKey.asymmetricKeyDetails.modulusLength;
+  if (payload.length < 1 || payload.length > maxEnvelopeBytes ||
       signature.length !== Math.ceil(bits / 8) || !verify('sha256', payload, publicKey, signature)) {
     throw new Error('Invalid update signature');
   }
@@ -131,12 +140,18 @@ export async function verifyHostedUpdate(envelope, pin, feedUrl, { apkOnly = fal
 }
 
 async function main([command, ...args]) {
+  if (command === 'check-config' && args.length === 0) {
+    httpsUrl(process.env.FORMA_UPDATE_FEED_URL ?? '');
+    updatePublicKey(process.env.FORMA_UPDATE_MANIFEST_PUBKEY ?? '');
+    console.log('PASS signed update channel configuration');
+    return;
+  }
   const commands = {
     payload: ['identity', 'apk', 'previous-version', 'expected-signer', 'feed', 'apk-url', 'notes', 'out'],
     envelope: ['payload', 'signature', 'public-key', 'out'],
     'verify-hosted': ['envelope', 'public-key', 'feed'],
   };
-  if (!Object.hasOwn(commands, command)) throw new Error('Choose payload, envelope or verify-hosted');
+  if (!Object.hasOwn(commands, command)) throw new Error('Choose check-config, payload, envelope or verify-hosted');
   const names = commands[command];
   const options = Object.fromEntries(names.map(name => [name, { type: 'string' }]));
   if (command === 'verify-hosted') options['apk-only'] = { type: 'boolean' };

@@ -84,6 +84,13 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_release_guard.py'
           python3 -m unittest discover -s scripts -p 'test_release_ledger.py'
           node --test scripts/test_release_delivery.mjs
+      - name: Require a usable signed update channel before secrets
+        shell: bash
+        env:
+          FORMA_UPDATE_FEED_URL: ${{ vars.FORMA_UPDATE_FEED_URL }}
+          FORMA_UPDATE_MANIFEST_PUBKEY: ${{ vars.FORMA_UPDATE_MANIFEST_PUBKEY }}
+        run: |
+          node scripts/release_update_manifest.mjs check-config
       - name: Authorize exact reserved run and delivery recipient before secrets
         shell: bash
         run: |
@@ -148,12 +155,6 @@ jobs:
           if not any(line.split()[1:3] == ['/dev/shm', 'tmpfs'] for line in Path('/proc/mounts').read_text().splitlines()):
               raise SystemExit('Signing requires tmpfs')
           PY
-          if [[ -n "$FORMA_UPDATE_FEED_URL" && ! "$FORMA_UPDATE_FEED_URL" =~ ^https://[^/:@]+(/[^[:space:]]*)?$ ]]; then
-            echo "::error::Release feed must be an ordinary HTTPS URL without credentials or custom port"; exit 1
-          fi
-          if [[ -n "$FORMA_UPDATE_FEED_URL" && -z "$FORMA_UPDATE_MANIFEST_PUBKEY" ]]; then
-            echo "::error::Signed update feed requires a pinned public verification key"; exit 1
-          fi
           chmod +x gradlew
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache --no-scan :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleRelease \
             "-PformaVersionCode=$VERSION_CODE" "-PformaVersionName=$VERSION_NAME" "-PformaUpdateFeedUrl=$FORMA_UPDATE_FEED_URL" "-PformaUpdateManifestPubKey=$FORMA_UPDATE_MANIFEST_PUBKEY" --console=plain

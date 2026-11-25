@@ -31,6 +31,36 @@ def step_commands():
 
 
 class ReleaseWorkflowIntegrationTests(unittest.TestCase):
+    def test_update_channel_configuration_is_required_before_signing(self):
+        commands = step_commands()
+        preflight = 'Require a usable signed update channel before secrets'
+        self.assertLess(list(commands).index(preflight),
+                        list(commands).index('Restore only the private FORMA signing key'))
+        keys = json.loads(subprocess.run(['node', '--input-type=module', '-e', '''
+            import { generateKeyPairSync } from 'node:crypto';
+            console.log(JSON.stringify([3072, 2048].map(modulusLength =>
+                generateKeyPairSync('rsa', { modulusLength }).publicKey
+                    .export({ type: 'spki', format: 'der' }).toString('base64'))));
+        '''], capture_output=True, text=True, check=True).stdout)
+        feed = 'https://updates.example.test/forma/latest.json'
+        for url, key, accepted in (
+            (feed, keys[0], True),
+            ('', '', False),
+            (feed, '', False),
+            ('', keys[0], False),
+            (feed, 'malformed', False),
+            (feed, keys[1], False),
+            ('http://updates.example.test/latest.json', keys[0], False),
+            ('https://user@updates.example.test/latest.json', keys[0], False),
+            ('https://updates.example.test:8443/latest.json', keys[0], False),
+            (feed + '#fragment', keys[0], False),
+        ):
+            with self.subTest(url=url, accepted=accepted):
+                env = os.environ | {'FORMA_UPDATE_FEED_URL': url, 'FORMA_UPDATE_MANIFEST_PUBKEY': key}
+                result = subprocess.run(['bash', '-euo', 'pipefail', '-c', commands[preflight]],
+                                        cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
     def test_actual_preflight_step_rejects_overflow_before_key_use(self):
         preflight=step_commands()['Require an explicit, monotonic version']
         env=os.environ.copy()
