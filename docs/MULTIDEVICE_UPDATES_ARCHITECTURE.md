@@ -233,5 +233,21 @@ from the verified APK identity, matching APK bytes, previous version, approved
 certificate, feed URL, download URL and release notes. After an authorized
 publisher signs those bytes externally, the `envelope` command verifies the
 detached signature against the app's public SPKI pin and writes the feed JSON.
-Both commands operate locally and require an absent output path. The script
-uses no private key, performs no upload and grants no release authorization.
+Both commands operate locally and require an absent output path.
+
+After the immutable APK is uploaded to its approved HTTPS URL, validate the
+served bytes before publishing the feed. Use the exact generated envelope and
+the public SPKI pin supplied to the app build.
+
+```sh
+node scripts/release_update_manifest.mjs verify-hosted \
+  --envelope latest.json --public-key manifest-public-spki.b64 \
+  --feed 'https://updates.example.test/forma/latest.json' --apk-only
+```
+
+After publishing `latest.json`, run the same command without `--apk-only`.
+Both checks authenticate the local envelope before sending requests and reject
+redirects, a different source or a mismatched byte count or SHA-256. The second
+check also verifies the served feed against the approved envelope. Verification
+uses HTTPS reads and never needs the private publication key. Publication is
+subject to the release approval and delivery procedure.

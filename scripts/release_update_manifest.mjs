@@ -7,7 +7,18 @@ import { parseArgs } from 'node:util';
 const maxApkBytes = 200 * 1024 * 1024;
 const maxEnvelopeBytes = 16 * 1024;
 const maxVersionCode = 2_100_000_000;
-const fingerprint = /^[a-f0-9]{64}$/;
+const apkContentType = 'application/vnd.android.package-archive';
+const downloadDeadlineMs = 120_000;
+
+function isSha256(value) {
+  return typeof value === 'string' && value.length === 64 && /^[a-f0-9]+$/.test(value);
+}
+
+function isReleaseVersion(code, name) {
+  return Number.isInteger(code) && code > 0 && code <= maxVersionCode &&
+    typeof name === 'string' && name.length <= 80 && name === name.trim() &&
+    /^[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.-]+)?$/.test(name);
+}
 
 function httpsUrl(value) {
   const authority = /^https:\/\/([^/?#]+)(?:[/?#]|$)/.exec(value)?.[1];
@@ -26,15 +37,12 @@ function httpsUrl(value) {
 export function prepareUpdatePayload(identity, apk, options) {
   const { previousVersion, expectedSigner, feedUrl, apkUrl, notes } = options;
   const releaseNotes = notes.trim();
-  if (!fingerprint.test(expectedSigner) || identity.package !== 'ru.forma.fitness' ||
+  if (!isSha256(expectedSigner) || identity.package !== 'ru.forma.fitness' ||
       identity.v2 !== true || identity.signerSha256 !== expectedSigner) {
     throw new Error('APK identity mismatch');
   }
   if (!Number.isInteger(previousVersion) || previousVersion < 0 ||
-      !Number.isInteger(identity.versionCode) || identity.versionCode <= previousVersion ||
-      identity.versionCode > maxVersionCode || typeof identity.versionName !== 'string' ||
-      !/^[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.-]+)?$/.test(identity.versionName) ||
-      identity.versionName.length > 80) {
+      !isReleaseVersion(identity.versionCode, identity.versionName) || identity.versionCode <= previousVersion) {
     throw new Error('Invalid update version');
   }
   if (!Buffer.isBuffer(apk) || apk.length < 1 || apk.length > maxApkBytes ||
@@ -42,7 +50,9 @@ export function prepareUpdatePayload(identity, apk, options) {
       createHash('sha256').update(apk).digest('hex') !== identity.apkSha256) {
     throw new Error('APK bytes mismatch');
   }
-  if (httpsUrl(feedUrl).hostname !== httpsUrl(apkUrl).hostname ||
+  const feed = httpsUrl(feedUrl);
+  const download = httpsUrl(apkUrl);
+  if (feed.origin !== download.origin || feed.href === download.href ||
       releaseNotes.length < 1 || releaseNotes.length > 500) {
     throw new Error('Invalid update source or release notes');
   }
@@ -70,14 +80,76 @@ export function packUpdateEnvelope(payload, signature, publicKeySpkiB64) {
   return envelope;
 }
 
-function main([command, ...args]) {
-  const names = command === 'payload'
-    ? ['identity', 'apk', 'previous-version', 'expected-signer', 'feed', 'apk-url', 'notes', 'out']
-    : ['payload', 'signature', 'public-key', 'out'];
-  if (command !== 'payload' && command !== 'envelope') throw new Error('Choose payload or envelope');
+async function verifyHostedBody(fetchResponse, label, url, accept, expectedSize, expectedHash) {
+  const response = await fetchResponse(url, {
+    headers: { Accept: accept, 'Cache-Control': 'no-cache' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(downloadDeadlineMs),
+  });
+  if (response.status !== 200 || !response.body) {
+    await response.body?.cancel();
+    throw new Error(`${label} is unavailable`);
+  }
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > expectedSize) throw new Error(`${label} exceeds the approved size`);
+    hash.update(chunk);
+  }
+  if (size !== expectedSize || hash.digest('hex') !== expectedHash) {
+    throw new Error(`${label} differs from the approved bytes`);
+  }
+}
+
+export async function verifyHostedUpdate(envelope, pin, feedUrl, { apkOnly = false, fetchResponse = fetch } = {}) {
+  if (!Buffer.isBuffer(envelope) || envelope.length < 1 || envelope.length > maxEnvelopeBytes) {
+    throw new Error('Invalid local update envelope size');
+  }
+  const { payload, signature } = JSON.parse(envelope);
+  const signedBytes = Buffer.from(payload, 'base64');
+  if (!envelope.equals(packUpdateEnvelope(signedBytes, Buffer.from(signature, 'base64'), pin))) {
+    throw new Error('Local update envelope differs from the generated form');
+  }
+  const release = JSON.parse(signedBytes);
+  const feed = httpsUrl(feedUrl);
+  const apk = httpsUrl(release.apkUrl);
+  const notes = typeof release.releaseNotes === 'string' ? release.releaseNotes.trim() : '';
+  if (release.channel !== 'stable' || release.applicationId !== 'ru.forma.fitness' ||
+      release.sourceUrl !== feedUrl || apk.origin !== feed.origin || apk.href === feed.href ||
+      !isReleaseVersion(release.versionCode, release.versionName) || notes.length < 1 || notes.length > 500 ||
+      !Number.isInteger(release.sizeBytes) || release.sizeBytes < 1 || release.sizeBytes > maxApkBytes ||
+      !isSha256(release.sha256) || !isSha256(release.certificateSha256)) {
+    throw new Error('Signed envelope does not describe an APK at the approved update source');
+  }
+
+  if (!apkOnly) {
+    await verifyHostedBody(fetchResponse, 'Hosted feed', feed, 'application/json', envelope.length,
+      createHash('sha256').update(envelope).digest('hex'));
+  }
+  await verifyHostedBody(fetchResponse, 'Hosted APK', apk, apkContentType, release.sizeBytes, release.sha256);
+}
+
+async function main([command, ...args]) {
+  const commands = {
+    payload: ['identity', 'apk', 'previous-version', 'expected-signer', 'feed', 'apk-url', 'notes', 'out'],
+    envelope: ['payload', 'signature', 'public-key', 'out'],
+    'verify-hosted': ['envelope', 'public-key', 'feed'],
+  };
+  if (!Object.hasOwn(commands, command)) throw new Error('Choose payload, envelope or verify-hosted');
+  const names = commands[command];
   const options = Object.fromEntries(names.map(name => [name, { type: 'string' }]));
+  if (command === 'verify-hosted') options['apk-only'] = { type: 'boolean' };
   const { values } = parseArgs({ args, options });
   if (names.some(name => !values[name])) throw new Error('Missing update manifest argument');
+
+  if (command === 'verify-hosted') {
+    if (statSync(values.envelope).size > maxEnvelopeBytes) throw new Error('Update envelope too large');
+    await verifyHostedUpdate(readFileSync(values.envelope), readFileSync(values['public-key'], 'utf8').trim(),
+      values.feed, { apkOnly: values['apk-only'] });
+    console.log(values['apk-only'] ? 'PASS hosted APK' : 'PASS hosted signed feed and APK');
+    return;
+  }
 
   let output;
   if (command === 'payload') {
@@ -99,6 +171,6 @@ function main([command, ...args]) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try { main(process.argv.slice(2)); }
+  try { await main(process.argv.slice(2)); }
   catch { console.error('FORMA update manifest validation failed'); process.exitCode = 1; }
 }
