@@ -2,6 +2,7 @@ package ru.forma.domain
 
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -15,7 +16,7 @@ data class MotionPose(val joints: List<MotionPoint>) {
  init { require(joints.size == 7) }
 }
 enum class MotionKind {
- SQUAT, GOBLET_SQUAT, SMITH_SQUAT, WALL_PUSH, BIRD_DOG, PRONE_W, CALF, HINGE_ROW, FLOOR_PRESS, LATERAL_RAISE, CURL, BRIDGE, INCLINE_PUSH, DEAD_BUG, HINGE, OVERHEAD_PRESS, WALL_SLIDE, SELF_CURL, BAND_ROW, BAND_PRESS, TRICEPS_EXTENSION, KETTLEBELL_HINGE, SCAP_PULL, PLANK, STEP_UP, LAT_PULL, LEG_PRESS, SEATED_PRESS, SEATED_ROW, LEG_CURL
+ SQUAT, CHAIR_SQUAT, GOBLET_SQUAT, SMITH_SQUAT, WALL_PUSH, BIRD_DOG, PRONE_W, CALF, HINGE_ROW, DUMBBELL_ROW, FLOOR_PRESS, LATERAL_RAISE, CURL, BRIDGE, INCLINE_PUSH, DEAD_BUG, HINGE, OVERHEAD_PRESS, WALL_SLIDE, SELF_CURL, BAND_ROW, BAND_PRESS, TRICEPS_EXTENSION, KETTLEBELL_HINGE, SCAP_PULL, PLANK, STEP_UP, LAT_PULL, LEG_PRESS, SEATED_PRESS, SEATED_ROW, LEG_CURL
 }
 data class OriginalMotionSpec(
  val exerciseId: String, val equipment: Equipment, val kind: MotionKind
@@ -25,8 +26,13 @@ private fun pose(vararg p: Int): MotionPose {
  return MotionPose(p.toList().chunked(2).map { MotionPoint(it[0].toFloat(), it[1].toFloat()) })
 }
 private val forearmPlank = pose(18, 72, 31, 80, 31, 107, 51, 107, 56, 88, 77, 96, 98, 103)
+private val squatPoses = pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to
+ pose(65, 37, 60, 50, 75, 60, 77, 66, 45, 78, 75, 86, 54, 105)
+private val hingeRowPoses = pose(77, 40, 64, 48, 70, 65, 71, 87, 44, 67, 51, 86, 52, 105) to
+ pose(77, 40, 64, 48, 62, 57, 59, 64, 44, 67, 51, 86, 52, 105)
 private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
- MotionKind.SQUAT to (pose(52, 22, 52, 38, 47, 57, 44, 68, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 75, 60, 77, 66, 45, 78, 75, 86, 54, 105)),
+ MotionKind.SQUAT to squatPoses,
+ MotionKind.CHAIR_SQUAT to squatPoses,
  MotionKind.GOBLET_SQUAT to (pose(52, 22, 52, 38, 58, 49, 58, 46, 52, 69, 52, 86, 52, 105) to pose(65, 37, 60, 50, 67, 57, 65, 54, 45, 78, 75, 86, 54, 105)),
  // Vertical guided-Smith *schematic*: shoulder and grip stay on the
  // fixed rail X, while torso/hips lower; other squat variants are unchanged.
@@ -35,7 +41,8 @@ private val motionPairs: Map<MotionKind, Pair<MotionPose, MotionPose>> = mapOf(
  MotionKind.BIRD_DOG to (pose(76, 52, 59, 63, 59, 85, 60, 107, 36, 64, 35, 106, 22, 107) to pose(76, 52, 59, 63, 78, 55, 99, 55, 36, 64, 25, 63, 9, 63)),
  MotionKind.PRONE_W to (pose(24, 98, 42, 103, 52, 104, 43, 104, 65, 104, 78, 104, 94, 106) to pose(24, 98, 42, 102, 52, 99, 43, 98, 65, 104, 78, 104, 94, 106)),
  MotionKind.CALF to (pose(52, 22, 52, 38, 62, 54, 76, 51, 52, 69, 52, 86, 52, 105) to pose(53, 15, 53, 31, 62, 49, 76, 51, 53, 62, 53, 79, 53, 97)),
- MotionKind.HINGE_ROW to (pose(77, 40, 64, 48, 70, 65, 71, 87, 44, 67, 51, 86, 52, 105) to pose(77, 40, 64, 48, 62, 57, 59, 64, 44, 67, 51, 86, 52, 105)),
+ MotionKind.HINGE_ROW to hingeRowPoses,
+ MotionKind.DUMBBELL_ROW to hingeRowPoses,
  MotionKind.FLOOR_PRESS to (pose(19, 102, 36, 102, 40, 106, 40, 91, 64, 103, 82, 80, 95, 106) to pose(19, 102, 36, 102, 39, 87, 41, 72, 64, 103, 82, 80, 95, 106)),
  MotionKind.LATERAL_RAISE to (pose(52, 22, 52, 38, 48, 54, 45, 70, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 72, 42, 93, 41, 52, 69, 52, 86, 52, 105)),
  MotionKind.CURL to (pose(52, 22, 52, 38, 47, 57, 44, 71, 52, 69, 52, 86, 52, 105) to pose(52, 22, 52, 38, 50, 56, 59, 46, 52, 69, 52, 86, 52, 105)),
@@ -66,12 +73,12 @@ private val motionById: Map<String, OriginalMotionSpec> = mapOf(
  "prone_w" to OriginalMotionSpec("prone_w", Equipment.BODYWEIGHT, MotionKind.PRONE_W),
  "calf" to OriginalMotionSpec("calf", Equipment.BODYWEIGHT, MotionKind.CALF),
  "goblet" to OriginalMotionSpec("goblet", Equipment.DUMBBELL, MotionKind.GOBLET_SQUAT),
- "db_row" to OriginalMotionSpec("db_row", Equipment.DUMBBELL, MotionKind.HINGE_ROW),
+ "db_row" to OriginalMotionSpec("db_row", Equipment.DUMBBELL, MotionKind.DUMBBELL_ROW),
  "floor_press" to OriginalMotionSpec("floor_press", Equipment.DUMBBELL, MotionKind.FLOOR_PRESS),
  "raise" to OriginalMotionSpec("raise", Equipment.DUMBBELL, MotionKind.LATERAL_RAISE),
  "curl" to OriginalMotionSpec("curl", Equipment.DUMBBELL, MotionKind.CURL),
  "bb_row" to OriginalMotionSpec("bb_row", Equipment.BARBELL, MotionKind.HINGE_ROW),
- "chair_squat" to OriginalMotionSpec("chair_squat", Equipment.BODYWEIGHT, MotionKind.SQUAT),
+ "chair_squat" to OriginalMotionSpec("chair_squat", Equipment.BODYWEIGHT, MotionKind.CHAIR_SQUAT),
  "bridge" to OriginalMotionSpec("bridge", Equipment.BODYWEIGHT, MotionKind.BRIDGE),
  "incline_push" to OriginalMotionSpec("incline_push", Equipment.BODYWEIGHT, MotionKind.INCLINE_PUSH),
  "dead_bug" to OriginalMotionSpec("dead_bug", Equipment.BODYWEIGHT, MotionKind.DEAD_BUG),
@@ -105,6 +112,18 @@ fun originalMotionFor(exercise: Exercise): OriginalMotionSpec? =
    exerciseCatalog.any { it.id == exercise.id && it.equipment == spec.equipment }
  }
 
+// Use the chosen side of the endpoint axis where the two segment circles meet.
+private fun hingeJoint(start: MotionPoint, end: MotionPoint, firstLength: Float,
+ secondLength: Float, side: Float): MotionPoint {
+ val dx = end.x - start.x
+ val dy = end.y - start.y
+ val distance = hypot(dx, dy)
+ val along = (firstLength * firstLength - secondLength * secondLength + distance * distance) / (2f * distance)
+ val across = side * sqrt((firstLength * firstLength - along * along).coerceAtLeast(0f))
+ return MotionPoint(start.x + (dx * along + dy * across) / distance,
+  start.y + (dy * along - dx * across) / distance)
+}
+
 /** Deterministic, bounded interpolation for scrubbing and paused previews. */
 fun originalMotionAt(spec: OriginalMotionSpec, fraction: Float): MotionPose {
  require(fraction.isFinite()) { "Invalid motion time" }
@@ -113,6 +132,20 @@ fun originalMotionAt(spec: OriginalMotionSpec, fraction: Float): MotionPose {
  val coords = pair.first.joints.zip(pair.second.joints) { a, b ->
   MotionPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
  }.toMutableList()
+ val rest = pair.first.joints
+ when (spec.kind) {
+  MotionKind.CHAIR_SQUAT -> {
+   coords[6] = rest[6]
+   coords[5] = hingeJoint(coords[4], coords[6], rest[5].y - rest[4].y,
+    rest[6].y - rest[5].y, side = 1f)
+  }
+  MotionKind.DUMBBELL_ROW -> {
+   val upperArm = hypot(rest[2].x-rest[1].x, rest[2].y-rest[1].y)
+   val forearm = hypot(rest[3].x-rest[2].x, rest[3].y-rest[2].y)
+   coords[2] = hingeJoint(coords[1], coords[3], upperArm, forearm, side = -1f)
+  }
+  else -> Unit
+ }
  if (spec.kind == MotionKind.LEG_PRESS) {
   // Resolve the knee from hip and guided foot with fixed upper/lower segment lengths.
   val hip = coords[4]

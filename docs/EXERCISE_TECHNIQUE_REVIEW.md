@@ -1,6 +1,6 @@
 # FORMA exercise demonstration engineering review
 
-Reviewed on 23 November 2026. The unit of review is `exerciseId` plus equipment. The findings below describe the original FORMA prototype and its correspondence to a reference. The `originalVolumeReviewPacket` function records the variant, revision, source provenance and deterministic SHA-256 across five poses. External references supplied no media, assets, or animation frames.
+Engineering review updated on 25 November 2026. The unit of review is `exerciseId` plus equipment. The findings below describe the original FORMA prototype and its correspondence to a reference. The `originalVolumeReviewPacket` function records the variant, revision, source provenance and deterministic SHA-256 across five poses. External references supplied no media, assets, or animation frames.
 
 **Direct** means the source shows the movement and equipment. **Related** means at least one element of the setup, equipment or population differs. The passing checks cover source geometry and the Android presentation. Every variant remains `SOURCE_ONLY` until the qualified technique review specified by the product requirements.
 
@@ -12,12 +12,12 @@ Reviewed on 23 November 2026. The unit of review is `exerciseId` plus equipment.
 | `prone_w` | [ACE prone shoulder series][prone], direct W formation | Pelvis remains low and fixed. Forearms point toward the head and move up from the prone setup. Scapular motion remains schematic. |
 | `calf` | [North Tees NHS standing exercises][heel], direct | Added a fixed hand support and toe contact while the heels rise. |
 | `goblet` | [NASM goblet squat coaching][goblet-guide], direct dumbbell option | Both grips converge on one chest-held dumbbell. Foot contact and depth remain unverified. |
-| `db_row` | [Mayo Clinic bent-over dumbbell row][db-row], related supported single-arm variant | FORMA draws two loads and the elbows move back. A direct bilateral setup and segment lengths need review. |
+| `db_row` | [NOFFS Movement Library, Bent Over Row – Dumbbell, p. 24][db-row], direct unsupported bilateral variant | Revision 2 keeps the hip hinge and both arm segment lengths fixed while the elbows travel back and two loads rise. Grip, shoulder blade motion, range and breathing need qualified review. |
 | `floor_press` | [Dumbbell Floor Press exercise guide][floor], direct movement, secondary source | Both loads rise from the near-floor upper-arm position. Contact and wrist/forearm alignment remain provisional. |
 | `raise` | [NASM lateral raise demonstration][raise], direct | Bilateral raising in depth. Individual shoulder limits, wrist orientation and load are outside the rig. |
 | `curl` | [Mayo Clinic dumbbell curl][curl], related unilateral variant | Demonstrates forearm flexion with two loads. Hand supination and stable elbow orientation remain schematic. |
 | `bb_row` | [CSCCa barbell bent-over row][bb-row], direct | One bar joins both grips and moves toward the torso. Verify precise trunk stability and bar/torso clearance. |
-| `chair_squat` | [South Tees NHS sit-to-stand][chair], related sitting end position | Stationary seat and lowered hip contact. FORMA uses a touch-and-rise variant. |
+| `chair_squat` | [UCSF orthopaedic Squat with Chair Touch, p. 12][chair], direct motion in a rehab context. [NSCA PTQ 10.2, 2023, p. 9][nsca], related touch-and-go box squat | Revision 3 keeps both feet planted and both leg segment lengths fixed as the hips lower to the stationary seat. Control, suitable seat height and individual range still need qualified review. |
 | `bridge` | [North Tees NHS lower-limb exercises][bridge], direct movement, physiotherapy context | Hip rises with the shoulder and ankles fixed. The floor contact and top alignment are schematic. |
 | `incline_push` | [NASM incline push-up][incline], direct | Hands meet a fixed elevated support. Verify a straight body line during the lowering phase. |
 | `dead_bug` | [NASM dead bug][dead], direct | Opposite reach and return to the neutral setup before switching. Individual lumbar control cannot be measured from the mesh. |
@@ -52,12 +52,12 @@ The on-screen walkthrough retains text for setup, movement, return and self-chec
 [prone]: https://www.acefitness.org/resources/everyone/exercise-library/249/prone-scapular-shoulder-stabilization-series-i-y-t-w-o-formation/
 [heel]: https://www.nth.nhs.uk/resources/standing-exercises/
 [goblet-guide]: https://www.nasm.org/resource-center/blog/training/how-to-perform-goblet-squats
-[db-row]: https://www.mayoclinic.org/healthy-lifestyle/fitness/multimedia/bent-over-row/vid-20084680
+[db-row]: https://www.navyfitness.org/modules/media/?__cb=636307946256800000&do=download&id=cd04b178-26f4-48c8-931f-ec7649030146
 [floor]: https://gymkc.org/en/exercise/dumbbell-floor-press/
 [raise]: https://www.youtube.com/watch?v=XPPfnSEATJA
 [curl]: https://www.mayoclinic.org/healthy-lifestyle/fitness/multimedia/biceps-curl/vid-20084675
 [bb-row]: https://cscca.org/content.aspx?club_id=408309&module_id=732310&page_id=22
-[chair]: https://www.southtees.nhs.uk/resources/sit-to-stand-from-chair-combined/
+[chair]: https://www.ucsfbenioffchildrens.org/-/media/project/ucsf/ucsf-bch/pdf/acl-injury.pdf
 [bridge]: https://www.nth.nhs.uk/resources/lower-limb-exercise-and-education/
 [incline]: https://www.nasm.org/resource-center/exercise-library/incline-push-up
 [dead]: https://www.nasm.org/resource-center/exercise-library/dead-bug

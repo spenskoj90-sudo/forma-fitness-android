@@ -41,6 +41,14 @@ private val wallSlide=VolumeResearchLead(
  "UCSF Health Sports Medicine Wall Angels, November 2025, p. 2. Bilateral wall contact and goalpost position; heel contact and suitable individual range still require review.")
 private val row=lead("19197209",VolumeLeadScope.RELATED_VARIANT,
  "Row trunk loading differs by equipment, support and stance; not exact model validation.")
+private val dumbbellRow=VolumeResearchLead(
+ "https://www.navyfitness.org/modules/media/?__cb=636307946256800000&do=download&id=cd04b178-26f4-48c8-931f-ec7649030146",
+ VolumeLeadScope.GENERAL,
+ "NOFFS Movement Library, Bent Over Row – Dumbbell, p. 24. Unsupported bilateral hip hinge with two dumbbells; joint path, grip and breathing still require review.")
+private val chairTouch=VolumeResearchLead(
+ "https://www.ucsfbenioffchildrens.org/-/media/project/ucsf/ucsf-bch/pdf/acl-injury.pdf",
+ VolumeLeadScope.REHAB_POPULATION,
+ "UCSF Benioff Children's Hospitals, Squat with Chair Touch, p. 12. Same chair-touch action; rehab population and individual range need qualified review.")
 private val raise=lead("33312291",VolumeLeadScope.RELATED_VARIANT,
  "Lateral raise/shoulder press EMG; no universal clinically safe angle or trajectory.")
 private val press=lead("36560129",VolumeLeadScope.RELATED_VARIANT,
@@ -60,11 +68,13 @@ private val rehabStep=lead("36744516",VolumeLeadScope.REHAB_POPULATION,
 
 private val leadsById:Map<String,List<VolumeResearchLead>> = buildMap {
  fun assign(ids:String,lead:VolumeResearchLead){for(id in ids.split(" "))require(put(id,listOf(lead))==null)}
- assign("squat goblet chair_squat kettlebell_squat smith_squat leg_press",squat)
+ assign("squat goblet kettlebell_squat smith_squat leg_press",squat)
+ put("chair_squat",listOf(chairTouch,squat))
  assign("band_row band_press band_extension",band)
  assign("prone_w scap_pull",shoulder)
  assign("wall_slide",wallSlide)
- assign("db_row bb_row machine_row lat_pulldown",row)
+ assign("bb_row machine_row lat_pulldown",row)
+ put("db_row",listOf(dumbbellRow,row))
  assign("raise",raise)
  assign("db_press",press)
  assign("calf",calf)
@@ -79,7 +89,7 @@ fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
 // Digests bind source keyposes, not final rendered images or expert acceptance.
 private val originalPoseRevisions=mapOf(
  "goblet" to 3,"lat_pulldown" to 3,"bench_step" to 3,"bird_dog" to 3,"dead_bug" to 3,"scap_pull" to 3,
- "raise" to 2,"wall_push" to 2,"incline_push" to 2,"chair_squat" to 2,"self_curl" to 2,"prone_w" to 2,
+ "chair_squat" to 3,"db_row" to 2,"raise" to 2,"wall_push" to 2,"incline_push" to 2,"self_curl" to 2,"prone_w" to 2,
  "wall_slide" to 3,"smith_squat" to 2,"calf" to 2,"floor_press" to 2,"band_row" to 2,
  "band_press" to 2,"band_extension" to 2,"kettlebell_squat" to 2,"kettlebell_deadlift" to 2,
  "mat_plank" to 2,"cable_triceps" to 2,"leg_press" to 2,"chest_press" to 2,

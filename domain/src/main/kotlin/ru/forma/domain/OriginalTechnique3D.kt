@@ -340,6 +340,7 @@ fun originalVolumeAt(exercise: Exercise, fraction: Float): OriginalVolumeScene? 
      support(x(handMid.x,0f,z),x(handMid.x,handMid.y,z))
    }
    "chair_squat" -> {
+    for(ankle in listOf(leftAnkle,rightAnkle)) body+=link(ankle,x(ankle.x+0.52f,0.13f,ankle.z),0.13f)
     // This exact catalog variant ends with a gentle seat touch. The old
     // single rear rail was too far from the lowered hip to show contact.
     // Keep the chair stationary across all motion phases and show a full

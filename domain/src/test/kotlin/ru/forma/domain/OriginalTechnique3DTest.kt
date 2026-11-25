@@ -197,6 +197,42 @@ class OriginalTechnique3DTest {
   assertTrue("The standing pelvis must clear the chair",
    distanceToBeam(highHip)>highHip.radius+beam.radius+0.3f)
  }
+
+ @Test fun chairSquatKeepsBothFeetInPlaceAndLegLengthsFixed() {
+  val exercise=exerciseCatalog.single{it.id=="chair_squat"}
+  val start=originalVolumeAt(exercise,0f)!!
+  for(step in 0..100) {
+   val scene=originalVolumeAt(exercise,step/100f)!!
+   for(index in listOf(6,7,8,9)) {
+    val previous=start.links[index]
+    val current=scene.links[index]
+    assertEquals("Leg segment $index at phase $step",
+     (previous.b-previous.a).length(),(current.b-current.a).length(),0.0002f)
+   }
+   assertEquals(start.links[7].b,scene.links[7].b)
+   assertEquals(start.links[9].b,scene.links[9].b)
+  }
+  val lowered=originalVolumeAt(exercise,1f)!!
+  assertTrue(lowered.links[6].b.x>lowered.links[7].b.x)
+ }
+
+ @Test fun twoDumbbellRowKeepsArmLengthsAndTorsoFixedThroughoutThePull() {
+  val exercise=exerciseCatalog.single{it.id=="db_row"}
+  val start=originalVolumeAt(exercise,0f)!!
+  for(step in 0..100) {
+   val scene=originalVolumeAt(exercise,step/100f)!!
+   assertEquals(start.links[1],scene.links[1])
+   for(index in 2..5) {
+    val previous=start.links[index]
+    val current=scene.links[index]
+    assertEquals("Arm segment $index at phase $step",
+     (previous.b-previous.a).length(),(current.b-current.a).length(),0.0002f)
+   }
+  }
+  val raised=originalVolumeAt(exercise,1f)!!
+  assertTrue(raised.links[2].b.x<start.links[2].b.x)
+  assertTrue(raised.links[3].b.y>start.links[3].b.y)
+ }
  @Test fun wallSlideHandsRemainAtFixedPosteriorWallAcrossEntireMotion() {
   val exercise=exerciseCatalog.first{it.id=="wall_slide"}
   val scenes=(0..8).map{originalVolumeAt(exercise,it/8f)!!}
