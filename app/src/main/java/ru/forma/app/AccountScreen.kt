@@ -26,7 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
-internal enum class AccountAction { SIGN_IN, REGISTER, REFRESH, RESEND, RESET_PASSWORD, SIGN_OUT }
+internal enum class AccountAction { SIGN_IN, REGISTER, REFRESH, RESEND, RESET_PASSWORD, CHECK_SESSION, SIGN_OUT }
 
 internal data class AccountScreenState(
     val session: AccountSession = AccountSession.SIGNED_OUT,
@@ -125,6 +125,11 @@ internal fun AccountScreen(
                 Text("Почта подтверждена. Тренировки и замеры доступны в локальном профиле.")
                 openWorkouts?.let { Action("Профили аккаунта", it, !state.working) }
                 linkGuest?.let { Action("Связать выбранный профиль", it, !state.working) }
+                TextButton(
+                    { submit(AccountAction.CHECK_SESSION) },
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    enabled = !state.working,
+                ) { Text("Проверить сеанс") }
                 Action("Выйти из аккаунта", { submit(AccountAction.SIGN_OUT) }, !state.working)
             }
         }

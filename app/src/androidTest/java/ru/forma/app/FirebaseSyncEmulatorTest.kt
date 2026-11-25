@@ -92,6 +92,8 @@ class FirebaseSyncEmulatorTest {
                 compose.waitUntilExactlyOneExists(hasText("Профиль"), 15_000)
                 compose.onNodeWithText("Профиль").performClick()
                 compose.onNodeWithText("Аккаунт FORMA").performScrollTo().performClick()
+                compose.onNodeWithText("Проверить сеанс").performScrollTo().performClick()
+                compose.waitUntilExactlyOneExists(hasText("Сеанс подтверждён сервером."), 15_000)
                 compose.onNodeWithText("Связать выбранный профиль").performScrollTo().performClick()
                 compose.onNodeWithText(firstEmail, substring = true).assertExists()
                 compose.onNodeWithText("Отмена").performClick()
@@ -160,6 +162,23 @@ class FirebaseSyncEmulatorTest {
                     runBlocking { reopened.repository.load(a.id)?.history?.singleOrNull()?.id == session.id }
                 }
                 assertNull(forma.repository.load(a.id))
+
+                val queued = checkNotNull(forma.database.sync().nextPendingForAccount(reopened.lease.uid))
+                val saved = checkNotNull(reopened.repository.load(a.id))
+                disableEmulatorAccount(auth, firstEmail, reopened.lease.uid)
+                // Disabling an account does not push a change to the cached local session.
+                assertEquals(reopened.lease, identity.localLease())
+                assertEquals(DeliveryBatchResult.COMPLETE, checkNotNull(forma.cloudSync).deliver())
+                compose.waitUntil(15_000) { forma.accountWorkouts.value == null }
+                compose.onNodeWithText(a.name, substring = true).assertDoesNotExist()
+                assertNull(identity.localLease())
+                assertNull(forma.resolveWorkoutRepository(reopened.id))
+                assertTrue(runCatching { reopened.repository.load(a.id) }.exceptionOrNull() is LocalWorkoutAccessRevoked)
+                assertEquals(saved, ProfileRepository(forma.database).load(a.id))
+                assertEquals(queued, forma.database.sync().nextPendingForAccount(reopened.lease.uid))
+                assertNull(forma.repository.load(a.id))
+                account.signIn(secondEmail, password)
+                assertEquals(listOf(b), enterScope().repository.profiles.first())
             }
         } finally {
             account.signOut()
@@ -443,6 +462,26 @@ class FirebaseSyncEmulatorTest {
         }
         auth.applyActionCode(code).await()
     }
+
+    private suspend fun disableEmulatorAccount(auth: FirebaseAuth, email: String, uid: String) =
+        withContext(Dispatchers.IO) {
+            check(auth.currentUser?.let { it.uid == uid && it.email == email } == true)
+            val base = "http://$emulatorHost:9099/identitytoolkit.googleapis.com/v1/projects/$projectId/accounts"
+            val connection = URL("$base:update?key=demo-forma-emulator-key").openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Authorization", "Bearer owner")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 5_000
+            try {
+                val body = JSONObject().put("localId", uid).put("disableUser", true).toString()
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                assertEquals(200, connection.responseCode)
+                val result = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                assertEquals(uid, result.getString("localId"))
+            } finally { connection.disconnect() }
+        }
 
     private suspend fun expectFirestoreError(code: FirebaseFirestoreException.Code, operation: suspend () -> Unit) {
         try {

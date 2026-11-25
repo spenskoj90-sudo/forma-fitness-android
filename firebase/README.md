@@ -20,6 +20,14 @@ Live provider activation and App Check enforcement remain behind separate gates.
 - The outgoing queue uses unique connected-network work on new pending records
   and an hourly fallback. Room holds the payload. Each bounded batch pins one
   verified account and keeps pending records through retries and process exit.
+- The Android client refreshes Firebase Auth at the start of each background
+  cloud batch and before interactive cloud reads and conflict decisions. The
+  account screen also offers a direct session check. When Firebase rejects a
+  current session as invalid, the app closes that account's local workspace and
+  retains its Room records and queue. Network failures leave local offline
+  access available and background work can retry. This client behavior depends
+  on contacting Firebase. Server-wide invalidation of previously issued ID
+  tokens is tracked separately in Issue #8. See [Firebase session management](https://firebase.google.com/docs/auth/admin/manage-sessions).
 - The account panel reads the verified user's own profiles from the server.
   Restoring a selected profile requires confirmation. A Room transaction preserves
   UUIDs and imports exact server revision receipts. Local divergent records and
@@ -46,7 +54,8 @@ Live provider activation and App Check enforcement remain behind separate gates.
   `npm run test:android-sync` on API 34 with both emulators, using synthetic
   registration, email verification, password reset request, sign-in, local
   consent, offline replay, tombstones, account switching, revocation of
-  workout commands from an old workspace, and restore into a separate Room
+  workout commands from an old workspace, disabled-account handling and
+  restore into a separate Room
   database with conflicting edits, a stale manual decision, a rebased device
   choice, a cloud deletion choice and an incremental inbound Worker. Both commands
   use `demo-forma-rules` and loopback endpoints.

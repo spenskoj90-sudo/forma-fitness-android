@@ -18,14 +18,32 @@ internal class FirebaseSyncIdentity(app: FirebaseApp) : VerifiedSyncIdentity, Cl
 
     override suspend fun currentLease(): VerifiedSyncLease? {
         val lease = observeSession() ?: return null
-        val user = auth.currentUser?.takeIf { it.uid == lease.uid } ?: return null
+        return tokenLease(lease, forceRefresh = false)
+    }
+
+    /** Check the provider at a cloud entry point, leaving ordinary offline Room reads local. */
+    suspend fun verifyOnlineLease(lease: VerifiedSyncLease): VerifiedSyncLease? =
+        tokenLease(lease, forceRefresh = true)
+
+    private suspend fun tokenLease(lease: VerifiedSyncLease, forceRefresh: Boolean): VerifiedSyncLease? {
+        val user = synchronized(this) {
+            auth.currentUser?.takeIf { it.uid == lease.uid && lease == observeSession() }
+        } ?: return null
         val token = try {
-            user.getIdToken(false).await()
+            user.getIdToken(forceRefresh).await()
         } catch (_: FirebaseAuthInvalidUserException) {
+            signOutIfCurrent(lease)
             return null
         }
-        if (token.token.isNullOrEmpty() || token.claims["email_verified"] != true) return null
+        if (token.token.isNullOrEmpty() || token.claims["email_verified"] != true) {
+            if (forceRefresh) signOutIfCurrent(lease)
+            return null
+        }
         return lease.takeIf { it == observeSession() }
+    }
+
+    @Synchronized private fun signOutIfCurrent(lease: VerifiedSyncLease) {
+        if (observeSession() == lease) signOut()
     }
 
     /** The SDK's cached verified user may access local Room data while offline. */

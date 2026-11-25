@@ -50,6 +50,11 @@ internal class FirebaseAccount(private val app: FirebaseApp) {
         if (auth.currentUser?.uid == user.uid) user.getIdToken(true).await()
     }
 
+    suspend fun verifySession(): Boolean {
+        val lease = identity.localLease() ?: return false
+        return identity.verifyOnlineLease(lease) == lease
+    }
+
     suspend fun resendVerification() {
         val user = checkNotNull(auth.currentUser)
         if (!user.isEmailVerified) user.sendEmailVerification().await()

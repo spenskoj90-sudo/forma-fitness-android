@@ -22,22 +22,26 @@ internal class CloudSyncRuntime(
         scheduler.enqueue().await()
     }
 
-    suspend fun deliver(): DeliveryBatchResult = transfer.withLock {
-        if (account.identity.localLease() == null) return@withLock DeliveryBatchResult.COMPLETE
-        CloudDeliveryBatch(database, account.identity, remote).run()
+    suspend fun deliver(): DeliveryBatchResult = runVerifiedBatch { identity ->
+        CloudDeliveryBatch(database, identity, remote).run()
     }
 
     suspend fun enqueueReconciliation() {
         scheduler.enqueueReconciliation().await()
     }
 
-    suspend fun reconcile(): DeliveryBatchResult = transfer.withLock {
-        if (account.identity.localLease() == null) return@withLock DeliveryBatchResult.COMPLETE
-        runCloudBatch {
-            CloudInboundReconciler(database, account.identity, remote,
-                CloudProfileRestorer(database, account.identity, remote)).run()
-        }
+    suspend fun reconcile(): DeliveryBatchResult = runVerifiedBatch { identity ->
+        CloudInboundReconciler(database, identity, remote, CloudProfileRestorer(database, identity, remote)).run()
     }
+
+    private suspend fun runVerifiedBatch(run: suspend (VerifiedSyncIdentity) -> DeliveryBatchResult): DeliveryBatchResult =
+        transfer.withLock {
+            val lease = account.identity.localLease() ?: return@withLock DeliveryBatchResult.COMPLETE
+            runCloudBatch {
+                if (account.identity.verifyOnlineLease(lease) != lease) return@runCloudBatch DeliveryBatchResult.COMPLETE
+                run(openScope { account.identity.localLease() == lease })
+            }
+        }
 
     suspend fun reviews(lease: VerifiedSyncLease, stillOpen: () -> Boolean): List<SyncReviewRow> =
         resolver(stillOpen).reviews(lease)
@@ -47,12 +51,16 @@ internal class CloudSyncRuntime(
 
     suspend fun preview(
         lease: VerifiedSyncLease, key: SyncReviewRow, stillOpen: () -> Boolean,
-    ): CloudConflictPreview = transfer.withLock { resolver(stillOpen).preview(lease, key) }
+    ): CloudConflictPreview = transfer.withLock {
+        CloudConflictResolver(database, verifyScope(lease, stillOpen), remote).preview(lease, key)
+    }
 
     suspend fun resolve(
         lease: VerifiedSyncLease, preview: CloudConflictPreview, choice: CloudConflictChoice, stillOpen: () -> Boolean,
     ) {
-        transfer.withLock { resolver(stillOpen).resolve(lease, preview, choice) }
+        transfer.withLock {
+            CloudConflictResolver(database, verifyScope(lease, stillOpen), remote).resolve(lease, preview, choice)
+        }
         scheduler.enqueue().await()
         scheduler.enqueueReconciliation().await()
     }
@@ -64,13 +72,19 @@ internal class CloudSyncRuntime(
         }).read()
 
     suspend fun list(lease: VerifiedSyncLease, stillOpen: () -> Boolean): List<CloudProfileChoice> =
-        restorer(stillOpen).list(lease)
+        CloudProfileRestorer(database, verifyScope(lease, stillOpen), remote).list(lease)
 
     suspend fun restore(lease: VerifiedSyncLease, id: String, stillOpen: () -> Boolean): CloudRestoreResult =
-        transfer.withLock { restorer(stillOpen).restore(lease, id) }
+        transfer.withLock {
+            CloudProfileRestorer(database, verifyScope(lease, stillOpen), remote).restore(lease, id)
+        }
 
-    private fun restorer(stillOpen: () -> Boolean) =
-        CloudProfileRestorer(database, openScope(stillOpen), remote)
+    private suspend fun verifyScope(lease: VerifiedSyncLease, stillOpen: () -> Boolean): VerifiedSyncIdentity {
+        if (!stillOpen() || account.identity.verifyOnlineLease(lease) != lease || !stillOpen()) {
+            throw LocalWorkoutAccessRevoked()
+        }
+        return openScope { stillOpen() && account.identity.localLease() == lease }
+    }
 
     private fun resolver(stillOpen: () -> Boolean) =
         CloudConflictResolver(database, openScope(stillOpen), remote)

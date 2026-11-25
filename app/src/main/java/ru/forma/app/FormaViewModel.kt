@@ -195,6 +195,11 @@ class FormaViewModel internal constructor(
      }
      AccountAction.RESEND -> {client.resendVerification();"Письмо с подтверждением отправлено."}
      AccountAction.RESET_PASSWORD -> {client.sendPasswordReset(email);resetNotice}
+     AccountAction.CHECK_SESSION -> {
+      val valid=client.verifySession()
+      failed=!valid
+      if(valid)"Сеанс подтверждён сервером." else "Этот сеанс больше не действует."
+     }
      AccountAction.SIGN_OUT -> {
       client.signOut()
       app.accountWorkouts.value?.let{app.closeAccountWorkouts(it.id)}

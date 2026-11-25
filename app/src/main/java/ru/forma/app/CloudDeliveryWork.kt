@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.await
 import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,6 +61,8 @@ internal suspend fun runCloudBatch(block: suspend () -> DeliveryBatchResult): De
 } catch (_: CloudRemoteChanged) {
     DeliveryBatchResult.RETRY
 } catch (_: FirebaseNetworkException) {
+    DeliveryBatchResult.RETRY
+} catch (_: FirebaseTooManyRequestsException) {
     DeliveryBatchResult.RETRY
 } catch (error: FirebaseFirestoreException) {
     if (error.code in retryableFirestoreCodes) DeliveryBatchResult.RETRY else DeliveryBatchResult.BLOCKED
