@@ -356,13 +356,37 @@ class JourneyTest{
   // Exercise real app/repository backup without sending personal data anywhere.
   runBlocking{val before=app.repository.exportBackup();val ids=app.repository.importBackup(before);assertEquals(2,ids.size);assertEquals(4,app.repository.profiles.firstForTest().size)}
   waitText("Кардио по желанию")
-  composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst().performScrollTo().performTextReplacement("1")
+  val cardioRoot=composeRule.onRoot(useUnmergedTree=true)
+  val cardioRootWithoutKeyboard=cardioRoot.fetchSemanticsNode().boundsInRoot
+  val duration=composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst()
+  duration.performScrollTo().performTouchInput{click()}.performTextReplacement("1")
+  duration.assertIsFocused()
   // Keep the numeric IME open and use ONE physical button touch, not a
   // blind second tap or an accessibility text-node shortcut.
   val cardioVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val startsBefore=cardioVm.workoutStartRequests.value
-  composeRule.onNodeWithTag("cardio-start",useUnmergedTree=true)
-   .performScrollTo().assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
+  val cardioStart=composeRule.onNodeWithTag("cardio-start",useUnmergedTree=true)
+  try{
+   // Android may open the numeric IME after text replacement returns. Scroll
+   // against the resized viewport, as in the one-touch profile-save scenario.
+   composeRule.waitUntil(10000){
+    cardioRoot.fetchSemanticsNode().boundsInRoot.height<cardioRootWithoutKeyboard.height*0.8f
+   }
+   val button=cardioStart.performScrollTo().assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+   val viewport=cardioRoot.fetchSemanticsNode().boundsInRoot
+   assertTrue("Cardio Start must fit the resized viewport: button=$button viewport=$viewport",
+    button.top>=viewport.top && button.bottom<=viewport.bottom)
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("cardio-keyboard-viewport-timeout")}
+   runCatching{cardioRoot.printToLog("FORMA-CARDIO-VIEWPORT-TIMEOUT")}
+   throw e
+  }catch(e:AssertionError){
+   runCatching{screenshot("cardio-button-viewport-timeout")}
+   runCatching{cardioRoot.printToLog("FORMA-CARDIO-VIEWPORT-CLIPPED")}
+   throw e
+  }
+  cardioStart.performTouchInput { click() }
+  composeRule.waitForIdle()
   if(cardioVm.workoutStartRequests.value!=startsBefore+1){
    runCatching{screenshot("cardio-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-CARDIO-TOUCH-MISSED")}
