@@ -15,6 +15,9 @@ class UpdateTest{
   val p=app.repository.load("legacy-update")!!
   assertEquals(88.0,p.weightKg,0.0);assertEquals(1,p.history.size);assertEquals("old-measurement",p.measurements.single().id)
   assertEquals(2,app.packageManager.getPackageInfo(app.packageName,0).versionCode)
+  // A compatible v1->v2 reinstall must not silently bind data to any UID.
+  assertEquals(0,app.database.sync().totalRows())
+  assertNull(app.database.sync().binding(p.id))
   val roundTrip=ru.forma.domain.decodeBackup(app.repository.exportBackup())
   assertEquals(p,roundTrip.profiles.single())
   // Isolate subsequent UI journeys from this synthetic update fixture.

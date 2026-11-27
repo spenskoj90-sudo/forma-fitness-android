@@ -57,8 +57,30 @@ jobs:
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
       - run: ./gradlew :domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
-      - name: Verify compiler-generated Room v1 schema baseline
+      - name: Verify compiler-generated Room schema baselines
         run: python3 scripts/check-room-schema.py
+      - name: Verify App Check project number in unsigned release resources
+        env:
+          FORMA_CLOUD_RELEASE_ENABLED: 'true'
+          FORMA_FIREBASE_PROJECT_ID: demo-forma-release-check
+          FORMA_FIREBASE_ANDROID_APP_ID: '1:123456789012:android:0123456789abcdef'
+        run: |
+          set -euo pipefail
+          export FORMA_FIREBASE_ANDROID_API_KEY="AIza$(printf '%035d' 0)"
+          ./gradlew :app:generateReleaseResValues --console=plain
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          base = Path('app/build/generated/res/resValues')
+          def values(variant):
+              root = ElementTree.parse(base / variant / 'values/gradleResValues.xml').getroot()
+              return {element.attrib['name']: element.text for element in root if 'name' in element.attrib}
+          release = values('release')
+          assert release['google_app_id'] == '1:123456789012:android:0123456789abcdef'
+          assert release['gcm_defaultSenderId'] == '123456789012'
+          assert release['forma_use_play_integrity_app_check'] == 'true'
+          assert 'gcm_defaultSenderId' not in values('debug')
+          PY
       - name: APK identity and signature evidence
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
@@ -121,11 +143,40 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
       - run: chmod +x gradlew
       - name: FORMA-only disposable debug signer
         run: |
           mkdir -p .forma-signing
           keytool -genkeypair -keystore .forma-signing/debug.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=FORMA Development,O=FORMA,C=RU" -keyalg RSA -keysize 2048 -validity 3650
+      - name: Build current instrumentation APKs before starting the emulator
+        env:
+          FORMA_API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          build_test_apks() {
+            if ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --info --stacktrace "$@"; then
+              return 0
+            fi
+            # Gradle 8.10 can mask a resolver error while formatting failed tasks.
+            ./gradlew :app:dependencies --configuration debugRuntimeClasspath --console=plain "$@" || true
+            ./gradlew :app:dependencies --configuration debugAndroidTestRuntimeClasspath --console=plain "$@" || true
+            return 1
+          }
+          build_test_apks
+          mkdir -p .forma-emulator/offline
+          cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/offline/app.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/offline/test.apk
+          if [[ "$FORMA_API" == "34" ]]; then
+            build_test_apks -PformaCloudSyncEnabled=true -PformaVersionCode=3
+            mkdir -p .forma-emulator/cloud
+            cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/cloud/app.apk
+            cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk .forma-emulator/cloud/test.apk
+            ./gradlew :app:assembleDebug -PformaVersionCode=3 -PformaVersionName=0.3.0-update-test --console=plain
+            mkdir -p .forma-emulator/update
+            cp app/build/outputs/apk/debug/app-debug.apk .forma-emulator/update/app-v3.apk
+          fi
       - name: Build exact legacy base for API34 update test
         if: matrix.api == 34
         run: |
@@ -137,12 +188,20 @@ jobs:
           cp app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt legacy/app/src/androidTest/java/ru/forma/app/LegacySeedTest.kt
           cd legacy
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --info --stacktrace
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        if: matrix.api == 34
+        with:
+          node-version: '22'
+      - name: Install demo Firebase emulator tools
+        if: matrix.api == 34
+        working-directory: firebase
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Reserve emulator disk
         run: |
           # Hosted runners vary in free space. These preinstalled toolchains are
@@ -174,7 +233,25 @@ jobs:
             verification/screenshots-api${{ matrix.api }}/
             verification/journey-api${{ matrix.api }}.txt
             verification/recovery-api${{ matrix.api }}.txt
+            verification/reboot-api${{ matrix.api }}.txt
+            verification/update-over-install-api${{ matrix.api }}.txt
+            verification/update-https-api${{ matrix.api }}.txt
+            verification/update-installer-api${{ matrix.api }}.txt
+            verification/technique-media-api${{ matrix.api }}.txt
             verification/draft-restoration-api${{ matrix.api }}.txt
+            verification/room-migration-api${{ matrix.api }}.txt
+            verification/encrypted-backup-api${{ matrix.api }}.txt
+            verification/load-units-api${{ matrix.api }}.txt
+            verification/technique-catalog-api${{ matrix.api }}.txt
+            verification/volume-preview-api${{ matrix.api }}.txt
+            verification/glass-ui-api${{ matrix.api }}.txt
+            verification/accessibility-api${{ matrix.api }}.txt
+            verification/home-responsive-api${{ matrix.api }}.txt
+            verification/profile-header-api${{ matrix.api }}.txt
+            verification/report-consent-api${{ matrix.api }}.txt
+            verification/profile-edit-exit-api${{ matrix.api }}.txt
+            verification/body-history-api${{ matrix.api }}.txt
+            verification/firebase-sync-api${{ matrix.api }}.txt
             verification/failure-api${{ matrix.api }}.png
             verification/logcat-failure-api${{ matrix.api }}.txt
             legacy-seed.txt

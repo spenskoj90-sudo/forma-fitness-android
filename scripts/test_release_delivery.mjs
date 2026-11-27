@@ -1,11 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync,createHash} from 'node:crypto';
+import {generateKeyPairSync,createHash,sign} from 'node:crypto';
 import {mkdtempSync,writeFileSync,readFileSync,symlinkSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {prepareUpdatePayload,packUpdateEnvelope,verifyHostedUpdate} from './release_update_manifest.mjs';
 
 let delivery;
 try { delivery=await import('./release_delivery.mjs'); } catch(error) { if(error.code==='ERR_MODULE_NOT_FOUND')delivery=null;else throw error; }
@@ -19,6 +20,120 @@ const meta={package:'ru.forma.fitness',versionCode:3,versionName:'0.3.0',signerS
 const binding={schema:'forma.release-binding.v1',ledgerGeneration:1,ledgerCommit:'d'.repeat(40),signerSha256:'a'.repeat(64),sourceSha:'b'.repeat(40),runId:'12345678901',runAttempt:1,versionCode:3,versionName:'0.3.0',recipientSha256:fp,expiresAt:NOW+3600};
 const requireImpl=()=>assert.ok(delivery,'delivery implementation missing');
 const expected=buffer=>({...binding,...meta,capsuleSha256:createHash('sha256').update(buffer).digest('hex')});
+
+const updateOptions = {
+ previousVersion: 2, expectedSigner: meta.signerSha256,
+ feedUrl: 'https://updates.example.test/forma/latest.json',
+ apkUrl: 'https://updates.example.test/forma/forma-0.3.0.apk', notes: 'Сохранение тренировок',
+};
+const updatePin = pair.publicKey.export({type: 'spki', format: 'der'}).toString('base64');
+
+function signedUpdate(changes = {}) {
+ const prepared = prepareUpdatePayload(meta, data, updateOptions);
+ const payload = Buffer.from(JSON.stringify({...JSON.parse(prepared), ...changes}));
+ return packUpdateEnvelope(payload, sign('sha256', payload, pair.privateKey), updatePin);
+}
+
+test('update envelope preserves the exact signed bytes and the checked APK identity', () => {
+ const payload = prepareUpdatePayload(meta, data, updateOptions);
+ assert.deepEqual(JSON.parse(payload), {
+  channel: 'stable', sourceUrl: updateOptions.feedUrl, applicationId: meta.package,
+  versionCode: meta.versionCode, versionName: meta.versionName, apkUrl: updateOptions.apkUrl,
+  sha256: meta.apkSha256, certificateSha256: meta.signerSha256, sizeBytes: data.length,
+  releaseNotes: updateOptions.notes,
+ });
+ const signature = sign('sha256', payload, pair.privateKey);
+ const envelope = JSON.parse(packUpdateEnvelope(payload, signature, updatePin));
+ assert.deepEqual(Buffer.from(envelope.payload, 'base64'), payload);
+ assert.deepEqual(Buffer.from(envelope.signature, 'base64'), signature);
+ assert.throws(() => packUpdateEnvelope(Buffer.concat([payload, Buffer.from(' ')]), signature, updatePin));
+ assert.throws(() => packUpdateEnvelope(payload, signature, Buffer.from(priv).toString('base64')));
+});
+
+test('update preparation rejects substituted APKs, nonincreasing versions and untrusted URLs', () => {
+ assert.throws(() => prepareUpdatePayload(meta, Buffer.alloc(data.length), updateOptions));
+ assert.throws(() => prepareUpdatePayload({...meta, signerSha256: 'b'.repeat(64)}, data, updateOptions));
+ assert.throws(() => prepareUpdatePayload({...meta, package: 'other.app'}, data, updateOptions));
+ assert.throws(() => prepareUpdatePayload(meta, data, {...updateOptions, previousVersion: 3}));
+ for (const url of ['http://updates.example.test/release.apk', 'https://other.example.test/release.apk',
+  'https://user@updates.example.test/release.apk', 'https://updates.example.test:8443/release.apk',
+  'https://updates.example.test/release.apk#fragment', updateOptions.feedUrl]) {
+  assert.throws(() => prepareUpdatePayload(meta, data, {...updateOptions, apkUrl: url}));
+ }
+});
+
+test('hosted verification checks the staged APK and the published feed at their signed URLs', async () => {
+ const envelope = signedUpdate();
+ const requested = [];
+ const fetchResponse = async (url, options) => {
+  requested.push(url.href);
+  assert.equal(options.redirect, 'error');
+  assert.equal(options.headers['Cache-Control'], 'no-cache');
+  assert.ok(options.signal instanceof AbortSignal);
+  if (url.href === updateOptions.feedUrl) {
+   assert.equal(options.headers.Accept, 'application/json');
+   return new Response(envelope);
+  }
+  assert.equal(options.headers.Accept, 'application/vnd.android.package-archive');
+  return new Response(new ReadableStream({start(stream) {
+   stream.enqueue(data.subarray(0, 3));
+   stream.enqueue(data.subarray(3));
+   stream.close();
+  }}));
+ };
+ await verifyHostedUpdate(envelope, updatePin, updateOptions.feedUrl, {apkOnly: true, fetchResponse});
+ assert.deepEqual(requested, [updateOptions.apkUrl]);
+ requested.length = 0;
+ await verifyHostedUpdate(envelope, updatePin, updateOptions.feedUrl, {fetchResponse});
+ assert.deepEqual(requested, [updateOptions.feedUrl, updateOptions.apkUrl]);
+});
+
+test('hosted verification rejects a replaced feed before reaching the APK', async () => {
+ const envelope = signedUpdate();
+ const wrong = Buffer.from(envelope);
+ wrong[10] ^= 1;
+ let requests = 0;
+ await assert.rejects(verifyHostedUpdate(envelope, updatePin, updateOptions.feedUrl, {
+  fetchResponse: async () => { requests++; return new Response(wrong); },
+ }), /Hosted feed differs from the approved bytes/);
+ assert.equal(requests, 1);
+});
+
+test('hosted verification detects a redirected, missing, changed, or wrongly sized APK', async () => {
+ const envelope = signedUpdate();
+ const substituted = Buffer.from(data);
+ substituted[0] ^= 1;
+ for (const [response, expected] of [
+  [Response.redirect('https://different.example.test/file.apk'), /Hosted APK is unavailable/],
+  [new Response('missing', {status: 404}), /Hosted APK is unavailable/],
+  [new Response(substituted), /Hosted APK differs from the approved bytes/],
+  [new Response(data.subarray(1)), /Hosted APK differs from the approved bytes/],
+  [new Response(Buffer.concat([data, data])), /Hosted APK exceeds the approved size/],
+ ]) {
+  await assert.rejects(verifyHostedUpdate(envelope, updatePin, updateOptions.feedUrl, {
+   apkOnly: true, fetchResponse: async () => response,
+  }), expected);
+ }
+});
+
+test('hosted verification fails before HTTP for a wrong signature, source, or release identity', async () => {
+ const envelope = signedUpdate();
+ const tampered = JSON.parse(envelope);
+ tampered.signature = Buffer.alloc(384).toString('base64');
+ const options = {fetchResponse: async () => assert.fail('unexpected HTTP request')};
+ await assert.rejects(verifyHostedUpdate(Buffer.from(JSON.stringify(tampered)), updatePin,
+  updateOptions.feedUrl, options), /Invalid update signature/);
+ await assert.rejects(verifyHostedUpdate(envelope, updatePin,
+  updateOptions.feedUrl + '?different', options), /approved update source/);
+ for (const change of [
+  {applicationId: 'other.app'}, {channel: 'preview'}, {sizeBytes: 0}, {sizeBytes: 300 * 1024 * 1024},
+  {versionCode: 0}, {versionName: 'invalid'}, {certificateSha256: 'a'.repeat(63) + '\n'}, {releaseNotes: ' '},
+  {apkUrl: 'https://other.example.test/release.apk'}, {apkUrl: updateOptions.feedUrl},
+ ]) {
+  await assert.rejects(verifyHostedUpdate(signedUpdate(change), updatePin, updateOptions.feedUrl, options),
+   /approved update source/);
+ }
+});
 
 test('RSA recipient canonical fingerprint and private-key rejection',()=>{
  requireImpl();assert.equal(delivery.recipientFingerprint(pub),fp);

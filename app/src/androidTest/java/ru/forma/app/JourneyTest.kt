@@ -12,6 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
 import org.junit.Rule
 import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
@@ -97,14 +98,19 @@ class JourneyTest{
   // from the existing durable Room check; never retry an undelivered touch.
   val firstSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val firstRequestsBefore=firstSaveVm.profileSaveRequests.value
+  val firstTouchBefore=firstSaveVm.profileSaveTouchEvidence.value
   composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
    .assertIsEnabled().assertIsDisplayed().performTouchInput { click() }
   composeRule.waitForIdle()
   if(firstSaveVm.profileSaveRequests.value!=firstRequestsBefore+1){
    runCatching{screenshot("initial-profile-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-FIRST-SAVE-TOUCH-MISSED")}
+   val touchAfter=firstSaveVm.profileSaveTouchEvidence.value
    fail("One first-profile Save touch did not dispatch to ViewModel: "+
-    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}")
+    "before=$firstRequestsBefore after=${firstSaveVm.profileSaveRequests.value}, "+
+    "press=${touchAfter.presses-firstTouchBefore.presses}, "+
+    "release=${touchAfter.releases-firstTouchBefore.releases}, "+
+    "cancel=${touchAfter.cancels-firstTouchBefore.cancels}")
   }
   // Separate genuine Room write failure from delayed Home recomposition.
   try {
@@ -164,6 +170,28 @@ class JourneyTest{
   composeRule.onNodeWithText("Скрыть план подходов").performScrollTo().performClick()
   composeRule.onNodeWithText("План и записи подходов").assertDoesNotExist()
   composeRule.onAllNodesWithText("План:",substring=true).assertCountEquals(0)
+  // No reviewed exact-exercise media exists: the active Room-backed workout
+  // must not offer a dead Video tab. Original offline technique instructions
+  // remain reachable and their stages must change without touching set state.
+  composeRule.onNodeWithTag("workout-technique-tab-0").assertDoesNotExist()
+  composeRule.onNodeWithText("Воспроизвести демонстрацию").assertDoesNotExist()
+  waitText("Инструкция и ошибки")
+  waitText("Пошаговая техника · авторская схема")
+  composeRule.onNodeWithText("Шаг 1 из 4").assertExists()
+  click("Далее")
+  composeRule.onNodeWithText("Шаг 2 из 4").assertExists()
+  click("Назад")
+  composeRule.onNodeWithText("Шаг 1 из 4").assertExists()
+  click("Мышцы")
+  waitText("Работа мышц")
+  composeRule.onNodeWithText("Спереди").assertExists()
+  composeRule.onNodeWithText("Сзади").assertExists()
+  composeRule.onNodeWithContentDescription("Условная схема спереди",substring=true).assertExists()
+  composeRule.onNodeWithContentDescription("Условная схема сзади",substring=true).assertExists()
+  screenshot("workout-muscles-dark")
+  click("Инструкция")
+  waitText("Инструкция и ошибки")
+  composeRule.onNodeWithText("Подход выполнен").assertExists()
   click("Подход выполнен");waitText("Отдых");click("Пауза");waitText("Продолжить сопровождение");click("Продолжить сопровождение")
   // Do not tap STOP through the outgoing paused Runner: its Compose key is
   // replaced asynchronously when Room publishes the durable Resume transition.
@@ -201,19 +229,48 @@ class JourneyTest{
   click("Тёмное")
   click("Добавить пользователя")
   waitText("Имя")
-  composeRule.onNodeWithText("Имя").performTextInput("Тест Б")
+  val formRoot=composeRule.onRoot(useUnmergedTree=true)
+  val rootWithoutKeyboard=formRoot.fetchSemanticsNode().boundsInRoot
+  val nameField=composeRule.onNodeWithText("Имя")
+  nameField.performTouchInput { click() }.performTextInput("Тест Б")
   // Unlike the first-profile setup, do NOT dismiss the focused IME before
   // the one physical Save touch: this is the original API26 failure path.
   composeRule.onNodeWithText("Имя").assertIsFocused()
   val secondSaveVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
   val requestsBefore=secondSaveVm.profileSaveRequests.value
-  composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).assertIsEnabled()
+  val touchBefore=secondSaveVm.profileSaveTouchEvidence.value
+  // Both bounds can agree before Android starts opening the IME. Require an
+  // IME-sized resize on every API, then wait for the actual footer to fit it.
+  try{
+   composeRule.waitUntil(10000){
+    val nodes=composeRule.onAllNodesWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNodes()
+    val root=formRoot.fetchSemanticsNode().boundsInRoot
+    root.height<rootWithoutKeyboard.height*0.8f && nodes.size==1 &&
+     nodes.single().boundsInRoot.let{it.top>=root.top && it.bottom<=root.bottom}
+   }
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("profile-save-viewport-timeout")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-VIEWPORT-TIMEOUT")}
+   val saveBounds=runCatching{composeRule.onNodeWithTag("profile-save",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot}.getOrNull()
+   val rootBounds=runCatching{formRoot.fetchSemanticsNode().boundsInRoot}.getOrNull()
+   throw AssertionError("Save did not fit the resized IME viewport: save=$saveBounds root=$rootBounds before=$rootWithoutKeyboard",e)
+  }
+  val saveBefore=composeRule.onNodeWithTag("profile-save",useUnmergedTree=true)
+   .assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+  val rootBefore=formRoot.fetchSemanticsNode().boundsInRoot
+  assertTrue("Save must be inside the actual resized app viewport: save=$saveBefore root=$rootBefore",
+   rootBefore.height<rootWithoutKeyboard.height*0.8f &&
+    saveBefore.bottom<=rootBefore.bottom && saveBefore.top>=rootBefore.top)
   click("Сохранить профиль")
   if(secondSaveVm.profileSaveRequests.value!=requestsBefore+1){
    runCatching{screenshot("second-profile-touch-undispatched")}
    runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-SAVE-TOUCH-MISSED")}
-   fail("One visible Save-button touch did not dispatch to ViewModel: "+
-    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}")
+   val touchAfter=secondSaveVm.profileSaveTouchEvidence.value
+   fail("One visible Save-button touch did not dispatch to ViewModel: saveBefore=$saveBefore rootBefore=$rootBefore; "+
+    "before=$requestsBefore after=${secondSaveVm.profileSaveRequests.value}, "+
+    "press=${touchAfter.presses-touchBefore.presses}, "+
+    "release=${touchAfter.releases-touchBefore.releases}, "+
+    "cancel=${touchAfter.cancels-touchBefore.cancels}")
   }
   // The API26 failure here was previously attributed to one long source line:
   // distinguish Room persistence, selected-profile DataStore, and rendered UI.
@@ -238,7 +295,31 @@ class JourneyTest{
   waitNavigation()
   waitText("Тест Б")
   click("Статистика");waitText("История появится после первой сохранённой тренировки.");composeRule.onNodeWithText("История появится после первой сохранённой тренировки.").assertExists()
-  click("Профиль");click("Тест А");composeRule.waitUntil(20000){current().name=="Тест А"};click("Статистика")
+  // The navigation bar can switch before the profile choices finish composing.
+  // Wait for the actual destination and available original profile; do not retry
+  // a missed tap or relax either the selection or history-isolation checks.
+  click("Профиль")
+  waitText("Пользователи · 2")
+  waitText("Тест А")
+  val originalProfile=runBlocking{app.repository.profiles.first().single{it.name=="Тест А"}}
+  val secondProfile=runBlocking{app.repository.profiles.first().single{it.name=="Тест Б"}}
+  val selection=androidx.compose.ui.semantics.SemanticsProperties.Selected
+  // TalkBack must expose which local user owns the visible history.
+  composeRule.onNodeWithTag("profile-choice:${originalProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,false))
+  composeRule.onNodeWithTag("profile-choice:${secondProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,true))
+  click("Тест А")
+  composeRule.waitUntil(20000){
+   current().id==originalProfile.id &&
+    runBlocking{app.settings.settings.first().selected}==originalProfile.id
+  }
+  waitText("✓ Тест А")
+  composeRule.onNodeWithTag("profile-choice:${originalProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,true))
+  composeRule.onNodeWithTag("profile-choice:${secondProfile.id}",useUnmergedTree=true)
+   .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(selection,false))
+  click("Статистика")
   composeRule.onAllNodesWithText("Подходы: 1 · повторения: 12").onFirst().assertExists()
   // Explicit destination checks: earlier CI screenshots for Progress, Home and
   // Body captured the preceding screen despite a successful journey test.
@@ -275,8 +356,49 @@ class JourneyTest{
   // Exercise real app/repository backup without sending personal data anywhere.
   runBlocking{val before=app.repository.exportBackup();val ids=app.repository.importBackup(before);assertEquals(2,ids.size);assertEquals(4,app.repository.profiles.firstForTest().size)}
   waitText("Кардио по желанию")
-  composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst().performScrollTo().performTextReplacement("1")
-  composeRule.onAllNodesWithText("Начать кардио").onFirst().performScrollTo().performClick();waitText("Пропустить этап");click("Пропустить этап")
+  val cardioRoot=composeRule.onRoot(useUnmergedTree=true)
+  val cardioRootWithoutKeyboard=cardioRoot.fetchSemanticsNode().boundsInRoot
+  val duration=composeRule.onAllNodesWithText("Длительность, минут (1–120)").onFirst()
+  duration.performScrollTo().performTouchInput{click()}.performTextReplacement("1")
+  duration.assertIsFocused()
+  // Keep the numeric IME open and use ONE physical button touch, not a
+  // blind second tap or an accessibility text-node shortcut.
+  val cardioVm=androidx.lifecycle.ViewModelProvider(composeRule.activity)[FormaViewModel::class.java]
+  val startsBefore=cardioVm.workoutStartRequests.value
+  val cardioStart=composeRule.onNodeWithTag("cardio-start",useUnmergedTree=true)
+  try{
+   // Android may open the numeric IME after text replacement returns. Scroll
+   // against the resized viewport, as in the one-touch profile-save scenario.
+   composeRule.waitUntil(10000){
+    cardioRoot.fetchSemanticsNode().boundsInRoot.height<cardioRootWithoutKeyboard.height*0.8f
+   }
+   val button=cardioStart.performScrollTo().assertIsEnabled().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+   val viewport=cardioRoot.fetchSemanticsNode().boundsInRoot
+   assertTrue("Cardio Start must fit the resized viewport: button=$button viewport=$viewport",
+    button.top>=viewport.top && button.bottom<=viewport.bottom)
+  }catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("cardio-keyboard-viewport-timeout")}
+   runCatching{cardioRoot.printToLog("FORMA-CARDIO-VIEWPORT-TIMEOUT")}
+   throw e
+  }catch(e:AssertionError){
+   runCatching{screenshot("cardio-button-viewport-timeout")}
+   runCatching{cardioRoot.printToLog("FORMA-CARDIO-VIEWPORT-CLIPPED")}
+   throw e
+  }
+  cardioStart.performTouchInput { click() }
+  composeRule.waitForIdle()
+  if(cardioVm.workoutStartRequests.value!=startsBefore+1){
+   runCatching{screenshot("cardio-touch-undispatched")}
+   runCatching{composeRule.onRoot(useUnmergedTree=true).printToLog("FORMA-CARDIO-TOUCH-MISSED")}
+   fail("One visible cardio Start touch missed ViewModel dispatch: before=$startsBefore after=${cardioVm.workoutStartRequests.value}")
+  }
+  try{composeRule.waitUntil(20000){current().active?.day?.cardio!=null}}
+  catch(e:androidx.compose.ui.test.ComposeTimeoutException){
+   runCatching{screenshot("cardio-start-not-persisted")}
+   val hasError=cardioVm.error.value!=null
+   throw AssertionError("Cardio Start dispatched but no Room active session: hasError=$hasError",e)
+  }
+  waitText("Пропустить этап");click("Пропустить этап")
   composeRule.waitUntil(15000){current().active?.phase==Phase.CARDIO}
   val elapsed=current().active!!.activeSeconds
   composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
@@ -316,8 +438,22 @@ class JourneyTest{
   }
   waitText("Продолжить сопровождение")
   composeRule.activityRule.scenario.recreate();waitText("Продолжить сопровождение");assertTrue(current().active!!.paused)
-  // Leave a real persisted paused workout for a separate force-stop/relaunch test.
   screenshot("paused-dark")
+  if(rebootRecoveryRequested()){
+   // API 34 must recover a running workout after a real emulator restart.
+   click("Продолжить сопровождение")
+   composeRule.waitUntil(20000){
+    current().active?.let{it.id==recoveryCardioId&&!it.paused&&it.phase==Phase.CARDIO}==true
+   }
+   val resumedAt=requireNotNull(current().active).lastTickMs
+   composeRule.waitUntil(20000){
+    app.serviceRunning&&current().active?.let{it.id==recoveryCardioId&&it.lastTickMs>resumedAt}==true
+   }
+   val running=current()
+   assertFalse(requireNotNull(running.active).paused)
+   val evidence=RebootRecoveryEvidence(androidBootCount(app),running)
+   rebootRecoverySnapshot(app).writeText(Json.encodeToString(RebootRecoveryEvidence.serializer(),evidence))
+  }
  }
 }
 private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.firstForTest():T=this.first()

@@ -1,4 +1,6 @@
 package ru.forma.domain
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Test
 import org.junit.Assert.*
 class BackupTest {
@@ -17,6 +19,26 @@ class BackupTest {
  @Test fun limitationsAreBoundedAtProfileEntry(){
   assertFalse(p.copy(limitations="x".repeat(2001)).valid())
   assertTrue(p.copy(limitations="x".repeat(2000)).valid())
+ }
+
+ @Test fun completedWorkoutRequiresThePlannedSetsForEachExercise() {
+  val first = exerciseCatalog[0]
+  val second = exerciseCatalog[1]
+  val day = TrainingDay(1, "План", listOf(
+   Prescription(first, 1, 10),
+   Prescription(first, 1, 10),
+   Prescription(second, 1, 10)
+  ))
+  val firstSet = SetResult(first.id, 10, 0.0, 5, false, 1500)
+  val secondSet = firstSet.copy(exerciseId = second.id)
+  val completed = Workout("workout", day, 1000, 2000,
+   listOf(firstSet, firstSet, secondSet), Phase.DONE)
+  val backup = Backup(profiles = listOf(p.copy(history = listOf(completed))))
+  assertEquals(backup, decodeBackup(encodeBackup(backup)))
+
+  val wrongSets = completed.copy(sets = listOf(firstSet, firstSet, firstSet))
+  val malformed = Backup(profiles = listOf(p.copy(history = listOf(wrongSets))))
+  assertThrows(IllegalArgumentException::class.java) { decodeBackup(Json.encodeToString(malformed)) }
  }
 
 }

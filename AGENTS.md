@@ -5,7 +5,7 @@ This file routes contributors to the current policy and real workflows. Before c
 ## Sources of truth
 - FORMA product/engineering specification: https://docs.google.com/document/d/1BaJlUKzFhbzCiUtYvxEJfLUpkd1y9nGCizaiYvnqGUg/edit
 - Shared SENTINEL/FORMA regulation: https://docs.google.com/document/d/1furikabuGC5DduHfELkyERXoWiTKbzvDEw5pSojlfvE/edit
-- PROJECTS infrastructure/governance: https://docs.google.com/document/d/1hlzUCjZ4LejSBW_x3uAA_Bq7dGZoMJQd_73NjJFdN8Q/edit
+- FORMA infrastructure, budget, signing, backup, and recovery are tracked in the relevant existing FORMA Issue or PR. The owner approval requirements below apply.
 - Live source/status/evidence: existing FORMA GitHub Issues #7–#10 and their linked PRs. No duplicate PR/Issue or shadow tracker.
 
 ## Repository and checks

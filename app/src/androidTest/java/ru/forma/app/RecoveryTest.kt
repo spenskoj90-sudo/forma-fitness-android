@@ -5,12 +5,29 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.ViewModelProvider
 import android.graphics.Bitmap
+import android.content.Context
+import android.provider.Settings
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.*
 import org.junit.runner.RunWith
+import ru.forma.domain.Profile
+
+internal fun rebootRecoveryRequested() =
+ InstrumentationRegistry.getArguments().getString("formaRecoveryBoundary")=="reboot"
+
+internal fun rebootRecoverySnapshot(context:Context) = File(context.filesDir,"test-reboot-recovery.json")
+
+internal fun androidBootCount(context:Context) =
+ Settings.Global.getInt(context.contentResolver,Settings.Global.BOOT_COUNT)
+
+@Serializable internal data class RebootRecoveryEvidence(val bootCount:Int,val profile:Profile)
+
 @RunWith(AndroidJUnit4::class)
 class RecoveryTest{
  @get:Rule val rule=createAndroidComposeRule<MainActivity>()
@@ -26,6 +43,20 @@ class RecoveryTest{
   val app=rule.activity.application as FormaApp
   val p=runBlocking{app.repository.profiles.first()}.first{it.active!=null}
   val before=p.active!!;assertTrue(before.paused);assertFalse(app.serviceRunning)
+  if(rebootRecoveryRequested()){
+   val snapshot=rebootRecoverySnapshot(app)
+   val evidence=Json.decodeFromString(RebootRecoveryEvidence.serializer(),snapshot.readText())
+   assertTrue("The workout must cross an Android boot",androidBootCount(app)>evidence.bootCount)
+   val original=evidence.profile
+   val running=requireNotNull(original.active)
+   assertFalse(running.paused)
+   assertEquals(original.copy(active=null),p.copy(active=null))
+   assertEquals(original.id,runBlocking{app.settings.settings.first().selected})
+   assertEquals(running.id,before.id)
+   assertEquals(running.phase,before.phase)
+   assertNotEquals(running.processRunId,before.processRunId)
+   assertTrue(snapshot.delete())
+  }
   // A semantics node may exist while clipped/hidden after API26 process recovery.
   // Preserve the visibility gate and capture the live Activity before teardown.
   val resumeButton=rule.onNodeWithText("Продолжить сопровождение")

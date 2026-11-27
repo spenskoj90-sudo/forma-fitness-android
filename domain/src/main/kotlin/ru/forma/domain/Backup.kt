@@ -28,7 +28,12 @@ fun validateBackup(b:Backup){
    require(w.id.length in 1..100 && w.startedMs>=0 && w.finishedMs>=w.startedMs && validDay(w.day)) {"Некорректная тренировка"}
    require(w.status in setOf(Phase.DONE,Phase.STOPPED) && w.activeSeconds in 0..86400 && w.sets.size<=200)
    require(w.sets.all{s->s.exerciseId in w.day.exercises.map{it.exercise.id} && s.reps in 1..100 && s.weight.isFinite() && s.weight in 0.0..500.0 && s.effort in 1..10 && s.timeMs in w.startedMs..w.finishedMs}){"Некорректные подходы"}
-   require(w.status!=Phase.DONE || w.day.cardio!=null || w.sets.size==w.day.exercises.sumOf{it.sets}){"Неполное занятие не может быть завершённым"}
+   if (w.status == Phase.DONE && w.day.cardio == null) {
+    val plannedSets = w.day.exercises.groupBy { it.exercise.id }
+     .mapValues { (_, prescriptions) -> prescriptions.sumOf { it.sets } }
+    val loggedSets = w.sets.groupingBy { it.exerciseId }.eachCount()
+    require(loggedSets == plannedSets) {"Неполное занятие не может быть завершённым"}
+   }
   }
  }
 }

@@ -227,3 +227,34 @@ same host/no redirects, package, increasing versionCode, installed certificate,
 APK SHA-256, announced byte length and actual APK signer. User installation
 still requires Android confirmation. The live feed, publishing custody and
 both physical same-cert upgrades remain NOT_RUN.
+
+The protected signing workflow checks `FORMA_UPDATE_FEED_URL` and
+`FORMA_UPDATE_MANIFEST_PUBKEY` before it restores the APK signing key. The
+`check-config` command requires an ordinary HTTPS feed URL and a canonical
+3072–4096-bit RSA public SPKI pin. It checks the configuration locally so a
+first release can be signed before the feed is published. Use `verify-hosted`
+for the separate live readback after staging and publication.
+
+`scripts/release_update_manifest.mjs payload` prepares the exact signed bytes
+from the verified APK identity, matching APK bytes, previous version, approved
+certificate, feed URL, download URL and release notes. After an authorized
+publisher signs those bytes externally, the `envelope` command verifies the
+detached signature against the app's public SPKI pin and writes the feed JSON.
+Both commands operate locally and require an absent output path.
+
+After the immutable APK is uploaded to its approved HTTPS URL, validate the
+served bytes before publishing the feed. Use the exact generated envelope and
+the public SPKI pin supplied to the app build.
+
+```sh
+node scripts/release_update_manifest.mjs verify-hosted \
+  --envelope latest.json --public-key manifest-public-spki.b64 \
+  --feed 'https://updates.example.test/forma/latest.json' --apk-only
+```
+
+After publishing `latest.json`, run the same command without `--apk-only`.
+Both checks authenticate the local envelope before sending requests and reject
+redirects, a different source or a mismatched byte count or SHA-256. The second
+check also verifies the served feed against the approved envelope. Verification
+uses HTTPS reads and never needs the private publication key. Publication is
+subject to the release approval and delivery procedure.

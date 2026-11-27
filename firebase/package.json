@@ -1,0 +1,19 @@
+{
+  "name": "forma-firestore-rules-tests",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test:rules": "firebase emulators:exec --project demo-forma-rules --only auth,firestore --non-interactive \"node --test tests/firestore.rules.test.mjs && node tests/provider-smoke.mjs --emulator\"",
+    "test:android-sync": "firebase emulators:exec --project demo-forma-rules --only auth,firestore --non-interactive \"bash ../scripts/run-firebase-sync-emulator-test.sh\"",
+    "test:provider:live": "node tests/provider-smoke.mjs --live"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.2.0",
+    "firebase-tools": "15.35.0"
+  }
+}

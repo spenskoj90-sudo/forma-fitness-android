@@ -1,0 +1,130 @@
+package ru.forma.domain
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.MessageDigest
+
+/**
+ * Research leads are NOT exercise prescriptions or qualified technique review.
+ * Each exact variant remains SOURCE_ONLY until an independent human reviewer
+ * verifies joint trajectory, equipment geometry, ROM, breathing and errors.
+ */
+enum class VolumeEvidenceStage { SOURCE_ONLY, REVIEW_PENDING, ACCEPTED }
+enum class VolumeLeadScope { GENERAL, RELATED_VARIANT, REHAB_POPULATION }
+data class VolumeResearchLead(val url:String,val scope:VolumeLeadScope,val limitations:String) {
+ init { require(url.startsWith("https://") && limitations.isNotBlank()) }
+}
+data class VolumeReviewPacket(
+ val exerciseId:String,
+ val equipment:Equipment,
+ val revision:Int,
+ val sha256:String,
+ val authorship:String,
+ val researchLeads:List<VolumeResearchLead>,
+ val stage:VolumeEvidenceStage
+) {
+ init { require(revision>0 && Regex("[0-9a-f]{64}").matches(sha256) && researchLeads.isNotEmpty()) }
+}
+
+private fun lead(id:String,scope:VolumeLeadScope,note:String)=
+ VolumeResearchLead("https://pubmed.ncbi.nlm.nih.gov/"+id+"/",scope,note)
+
+private val squat=lead("38576836",VolumeLeadScope.RELATED_VARIANT,
+ "Squat biomechanics clinical commentary; not individual safe ROM, loaded variant or machine certification.")
+private val band=lead("42795858",VolumeLeadScope.GENERAL,
+ "Elastic resistance narrative review; attachment, force and direction vary by band setup.")
+private val shoulder=lead("40165544",VolumeLeadScope.REHAB_POPULATION,
+ "Shoulder pathology guideline; clinical population and exact form applicability need assessment.")
+private val wallSlide=VolumeResearchLead(
+ "https://sportsrehab.ucsf.edu/sites/g/files/tkssra10961/files/doc/Upper_Body_Stretches_Nov2025.pdf",
+ VolumeLeadScope.RELATED_VARIANT,
+ "UCSF Health Sports Medicine Wall Angels, November 2025, p. 2. Bilateral wall contact and goalpost position; heel contact and suitable individual range still require review.")
+private val row=lead("19197209",VolumeLeadScope.RELATED_VARIANT,
+ "Row trunk loading differs by equipment, support and stance; not exact model validation.")
+private val dumbbellRow=VolumeResearchLead(
+ "https://www.navyfitness.org/modules/media/?__cb=636307946256800000&do=download&id=cd04b178-26f4-48c8-931f-ec7649030146",
+ VolumeLeadScope.GENERAL,
+ "NOFFS Movement Library, Bent Over Row – Dumbbell, p. 24. Unsupported bilateral hip hinge with two dumbbells; joint path, grip and breathing still require review.")
+private val chairTouch=VolumeResearchLead(
+ "https://www.ucsfbenioffchildrens.org/-/media/project/ucsf/ucsf-bch/pdf/acl-injury.pdf",
+ VolumeLeadScope.REHAB_POPULATION,
+ "UCSF Benioff Children's Hospitals, Squat with Chair Touch, p. 12. Same chair-touch action; rehab population and individual range need qualified review.")
+private val raise=lead("33312291",VolumeLeadScope.RELATED_VARIANT,
+ "Lateral raise/shoulder press EMG; no universal clinically safe angle or trajectory.")
+private val press=lead("36560129",VolumeLeadScope.RELATED_VARIANT,
+ "Seated dumbbell overhead press study; FORMA uses standing dumbbells.")
+private val calf=lead("38156065",VolumeLeadScope.RELATED_VARIANT,
+ "Calf adaptation study; technique and individual ankle range not determined.")
+private val cable=lead("26694502",VolumeLeadScope.RELATED_VARIANT,
+ "Cable triceps handle study; measured EMG does not establish safe joint-angle limits.")
+private val legCurl=lead("38006325",VolumeLeadScope.RELATED_VARIANT,
+ "Hamstring exercise comparison; exact seated/prone machine geometry requires assessment.")
+private val general=VolumeResearchLead(
+ "https://dxpprod.nsca.com/education/articles/ptq/teaching-resistance-training-movement-patterns/",
+ VolumeLeadScope.GENERAL,
+ "NSCA general resistance movement patterns; NOT direct evidence for this exact exercise/equipment.")
+private val rehabStep=lead("36744516",VolumeLeadScope.REHAB_POPULATION,
+ "Step-up biomechanics includes post-stroke participants; cannot prescribe healthy-user technique.")
+
+private val leadsById:Map<String,List<VolumeResearchLead>> = buildMap {
+ fun assign(ids:String,lead:VolumeResearchLead){for(id in ids.split(" "))require(put(id,listOf(lead))==null)}
+ assign("squat goblet kettlebell_squat smith_squat leg_press",squat)
+ put("chair_squat",listOf(chairTouch,squat))
+ assign("band_row band_press band_extension",band)
+ assign("prone_w scap_pull",shoulder)
+ assign("wall_slide",wallSlide)
+ assign("bb_row machine_row lat_pulldown",row)
+ put("db_row",listOf(dumbbellRow,row))
+ assign("raise",raise)
+ assign("db_press",press)
+ assign("calf",calf)
+ assign("cable_triceps",cable)
+ assign("leg_curl",legCurl)
+ assign("wall_push bird_dog floor_press curl bridge incline_push dead_bug db_rdl hammer bb_rdl bb_curl self_curl kettlebell_deadlift mat_plank bench_step chest_press",general)
+ put("bench_step",listOf(general,rehabStep))
+}
+fun originalVolumeEvidenceCoverage():Set<String> = leadsById.keys
+
+// Revision each exact exercise when its authored rig/equipment trajectory changes.
+// Digests bind source keyposes, not final rendered images or expert acceptance.
+private val originalPoseRevisions=mapOf(
+ "goblet" to 3,"lat_pulldown" to 3,"bench_step" to 3,"bird_dog" to 3,"dead_bug" to 3,"scap_pull" to 3,
+ "chair_squat" to 3,"db_row" to 2,"raise" to 2,"wall_push" to 2,"incline_push" to 2,"self_curl" to 2,"prone_w" to 2,
+ "wall_slide" to 3,"smith_squat" to 2,"calf" to 2,"floor_press" to 2,"band_row" to 2,
+ "band_press" to 2,"band_extension" to 2,"kettlebell_squat" to 2,"kettlebell_deadlift" to 2,
+ "mat_plank" to 2,"cable_triceps" to 2,"leg_press" to 2,"chest_press" to 2,
+ "machine_row" to 2,"leg_curl" to 2)
+
+/** Reproducible digest of five source-authored keyposes and exact equipment. */
+private fun digestVolume(exercise:Exercise,revision:Int):String {
+ val digest=MessageDigest.getInstance("SHA-256")
+ digest.update(("forma-3d-v"+revision+":"+exercise.id+":"+exercise.equipment.name).toByteArray(Charsets.UTF_8))
+ val raw=ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN)
+ fun put(n:Float){raw.clear();raw.putInt(n.toRawBits());digest.update(raw.array())}
+ fun point(p:VolumePoint){put(p.x);put(p.y);put(p.z)}
+ for(t in listOf(0f,0.25f,0.5f,0.75f,1f)) {
+  val scene=originalVolumeAt(exercise,t) ?: error("Missing exact scene")
+  put(t)
+  for(link in scene.links) {
+   point(link.a);point(link.b);put(link.radius);put(link.tone.ordinal.toFloat())
+  }
+  for(joint in scene.joints) {
+   point(joint.position);put(joint.radius);put(joint.tone.ordinal.toFloat())
+  }
+ }
+ return digest.digest().joinToString(""){"%02x".format(it)}
+}
+
+/** Never admit a generated rig merely because URL/hash fields are populated. */
+fun originalVolumeReviewPacket(exercise:Exercise):VolumeReviewPacket? {
+ if(originalMotionFor(exercise)==null)return null
+ val leads=leadsById[exercise.id] ?: return null
+ val revision=originalPoseRevisions[exercise.id] ?: 1
+ return VolumeReviewPacket(
+  exerciseId=exercise.id,equipment=exercise.equipment,revision=revision,
+  sha256=digestVolume(exercise,revision),
+  authorship="Original FORMA offline Kotlin kinematics, no imported footage or 3D assets",
+  researchLeads=leads,
+  stage=VolumeEvidenceStage.SOURCE_ONLY
+ )
+}

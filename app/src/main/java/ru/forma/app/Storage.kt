@@ -2,12 +2,21 @@ package ru.forma.app
 import android.app.Application
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -17,20 +26,141 @@ import ru.forma.domain.*
  @Query("SELECT * FROM profiles ORDER BY name,id") fun observe():Flow<List<ProfileRow>>
  @Query("SELECT * FROM profiles WHERE id=:id") suspend fun get(id:String):ProfileRow?
  @Query("SELECT * FROM profiles") suspend fun all():List<ProfileRow>
+ @Query("SELECT COUNT(*) FROM profiles") suspend fun count():Int
+ @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id) ORDER BY p.name,p.id")
+ fun observeGuests():Flow<List<ProfileRow>>
+ @Query("SELECT p.* FROM profiles p WHERE p.id=:id AND NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
+ suspend fun guest(id:String):ProfileRow?
+ @Query("SELECT p.* FROM profiles p WHERE NOT EXISTS (SELECT 1 FROM sync_bindings b WHERE b.profileId=p.id)")
+ suspend fun guests():List<ProfileRow>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE b.accountUid = :uid AND b.consentAtMs > 0 ORDER BY p.name, p.id
+ """)
+ suspend fun accountProfiles(uid:String):List<ProfileRow>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE b.accountUid = :uid AND b.consentAtMs > 0 ORDER BY p.name, p.id
+ """)
+ fun observeAccountProfiles(uid:String):Flow<List<ProfileRow>>
+ @Query("""
+  SELECT p.* FROM profiles p INNER JOIN sync_bindings b ON b.profileId = p.id
+  WHERE p.id = :id AND b.accountUid = :uid AND b.consentAtMs > 0
+ """)
+ suspend fun accountProfile(id:String,uid:String):ProfileRow?
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun put(row:ProfileRow)
 }
-@Database(entities=[ProfileRow::class],version=1,exportSchema=true) abstract class FormaDatabase:RoomDatabase() {abstract fun profiles():ProfileDao}
-class ProfileRepository(private val db:FormaDatabase) {
+// Add-only schema migration: never rewrite the v1 profiles table or its JSON.
+val MIGRATION_1_2=object:Migration(1,2){
+ override fun migrate(db:SupportSQLiteDatabase){
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_bindings (profileId TEXT NOT NULL, accountUid TEXT NOT NULL, consentAtMs INTEGER NOT NULL, PRIMARY KEY(profileId))")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_bindings_accountUid ON sync_bindings (accountUid)")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_outbox (opId TEXT NOT NULL, accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, revision INTEGER NOT NULL, snapshot TEXT NOT NULL, state TEXT NOT NULL, tombstone INTEGER NOT NULL, createdAtMs INTEGER NOT NULL, PRIMARY KEY(opId))")
+  db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sync_outbox_accountUid_profileId_kind_recordId_revision ON sync_outbox (accountUid,profileId,kind,recordId,revision)")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_state ON sync_outbox (state)")
+ }
+}
+val MIGRATION_2_3=object:Migration(2,3){
+ override fun migrate(db:SupportSQLiteDatabase){
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_review (accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, PRIMARY KEY(accountUid, profileId, kind, recordId))")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_pull (accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, seconds INTEGER NOT NULL, nanos INTEGER NOT NULL, recordId TEXT NOT NULL, PRIMARY KEY(accountUid, profileId, kind))")
+  db.execSQL("CREATE TABLE IF NOT EXISTS sync_resolution_archive (id TEXT NOT NULL PRIMARY KEY, accountUid TEXT NOT NULL, profileId TEXT NOT NULL, kind TEXT NOT NULL, recordId TEXT NOT NULL, localSnapshot TEXT, cloudSnapshot TEXT NOT NULL, cloudDeleted INTEGER NOT NULL, cloudRevision INTEGER NOT NULL, cloudOpId TEXT NOT NULL, queueSnapshot TEXT NOT NULL, choice TEXT NOT NULL, savedAtMs INTEGER NOT NULL)")
+  db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_resolution_archive_accountUid_savedAtMs ON sync_resolution_archive (accountUid,savedAtMs)")
+ }
+}
+@Database(entities=[ProfileRow::class,SyncBindingRow::class,SyncOutboxRow::class,SyncReviewRow::class,SyncPullRow::class,SyncResolutionArchiveRow::class],version=3,exportSchema=true)
+abstract class FormaDatabase:RoomDatabase(){
+ abstract fun profiles():ProfileDao
+ abstract fun sync():SyncOutboxDao
+ abstract fun syncReview():SyncReviewDao
+}
+internal data class VerifiedAccountProfiles(val lease:VerifiedSyncLease,val profiles:List<Profile>)
+
+class ProfileRepository private constructor(
+ private val db:FormaDatabase,
+ private val guestOnly:Boolean,
+ private val account:LocalWorkoutAccess?=null
+) {
+ internal constructor(db:FormaDatabase):this(db,false)
+ internal companion object {
+  fun forGuest(db:FormaDatabase)=ProfileRepository(db,true)
+  fun forAccount(db:FormaDatabase,access:LocalWorkoutAccess)=ProfileRepository(db,true,access)
+ }
  private val json=Json{ignoreUnknownKeys=true;encodeDefaults=true}
  private fun decode(row:ProfileRow)=json.decodeFromString<Profile>(row.document).also{require(it.id==row.id)}
- val profiles=db.profiles().observe().map{rows->rows.map(::decode)}
- suspend fun load(id:String)=db.profiles().get(id)?.let(::decode)
- suspend fun saveProfile(p:Profile) {require(p.valid());db.withTransaction {require(db.profiles().all().size<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"};require(load(p.id)==null);put(p)}}
- suspend fun start(id:String,day:TrainingDay,now:Long):Session=db.withTransaction {
-  require(db.profiles().all().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
+ val profiles=when {
+  account!=null -> db.profiles().observeAccountProfiles(account.lease.uid)
+  guestOnly -> db.profiles().observeGuests()
+  else -> db.profiles().observe()
+ }.map{rows->rows.map(::decode).also{account?.requireCurrent()}}
+ suspend fun load(id:String):Profile? {
+  account?.requireCurrent()
+  return when {
+   account!=null -> db.profiles().accountProfile(id,account.lease.uid)
+   guestOnly -> db.profiles().guest(id)
+   else -> db.profiles().get(id)
+  }?.let(::decode).also{account?.requireCurrent()}
+ }
+ private suspend fun visibleProfiles()=when {
+  account!=null -> db.profiles().accountProfiles(account.lease.uid)
+  guestOnly -> db.profiles().guests()
+  else -> db.profiles().all()
+ }
+ suspend fun saveProfile(p:Profile) {
+  check(account==null)
+  require(p.valid())
+  db.withTransaction {
+   require(db.profiles().count()<MAX_BACKUP_PROFILES){"Лимит локальных профилей: $MAX_BACKUP_PROFILES"}
+   // A hidden profile still owns its UUID and must never be overwritten by REPLACE.
+   require(db.profiles().get(p.id)==null)
+   put(p)
+  }
+ }
+ /**
+  * Local persistence primitive for a Firebase-verified, explicitly
+  * consented profile binding.
+  * Binding plus the complete existing snapshot commit atomically: a crash
+  * cannot leave a bound historical profile with an empty initial outbox.
+  * Repeated consent for the same UID is idempotent; rehoming to another UID
+  * is forbidden until a separately reviewed ownership/recovery flow exists.
+  */
+ internal suspend fun bindAndQueueInitialSnapshotForVerifiedConsent(
+  profileId:String,identity:VerifiedSyncIdentity,consentAtMs:Long,
+  expectedLease:VerifiedSyncLease?=null
+ ) {
+  check(account==null)
+  // A user-entered or stored UID is never authority to bind personal history.
+  // A verified Auth lease must be the same before and after this transaction.
+  require(consentAtMs>0){"Explicit consent is required"}
+  val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}
+   ?:error("A verified account session is required")
+  if(expectedLease!=null&&expectedLease!=lease)throw LocalWorkoutAccessRevoked()
+  db.withTransaction {
+   require(identity.currentLease()==lease){"Account session changed during consent"}
+   val profile=db.profiles().get(profileId)?.let(::decode)?:error("Profile missing")
+   if(expectedLease!=null)require(profile.active==null){"Сначала завершите локальную тренировку"}
+   val prior=db.sync().binding(profileId)
+   if(prior!=null){
+    require(prior.accountUid==lease.uid){"Local profile is already bound to a different account"}
+    require(identity.currentLease()==lease){"Account session changed during consent"}
+    return@withTransaction
+   }
+   db.sync().bindForVerifiedConsent(SyncBindingRow(profileId,lease.uid,consentAtMs))
+   enqueueBoundChanges(db,null,profile,json)
+   // Roll back binding and all initial historical rows if sign-out,
+   // account switch or generation change occurs while queuing.
+   require(identity.currentLease()==lease){"Account session changed during consent"}
+  }
+ }
+ suspend fun start(id:String,day:TrainingDay,now:Long,processRunId:String?=null):Session=db.withTransaction {
+  account?.requireCurrent()
+  require(visibleProfiles().map(::decode).none{it.active!=null}) { "Есть незавершённое занятие" }
   val p=load(id)?:error("Профиль не найден")
   require(p.limitations.isBlank()&&p.recovery>1)
-  val session=startSession(id,day,now);put(p.copy(active=session));session
+  val session=startSession(id,day,now).copy(processRunId=processRunId)
+  put(p.copy(active=session))
+  account?.requireCurrent()
+  session
  }
  suspend fun mutateSession(id:String,sessionId:String,stage:String?=null,op:(Session)->Session)=db.withTransaction {
   val p=load(id)?:return@withTransaction
@@ -39,6 +169,7 @@ class ProfileRepository(private val db:FormaDatabase) {
   val next=op(active);require(next.id==active.id && next.profileId==id)
   // Paused ticks and stale callbacks must not rewrite an unchanged profile.
   if(next!=active)put(p.copy(active=next))
+  account?.requireCurrent()
  }
  /**
   * The service never established reliable foreground supervision. Preserve
@@ -54,48 +185,186 @@ class ProfileRepository(private val db:FormaDatabase) {
   * explicit in UI, since different local profiles may belong to other people.
   */
  suspend fun exportBackup(profileId:String?=null):String=db.withTransaction {
-  val selected=if(profileId==null)db.profiles().all().map(::decode)
+  require(account==null||profileId!=null)
+  account?.requireCurrent()
+  val selected=if(profileId==null)visibleProfiles().map(::decode)
    else listOf(load(profileId)?:error("Профиль не найден"))
-  encodeBackup(Backup(profiles=selected))
+  encodeBackup(Backup(profiles=selected)).also{account?.requireCurrent()}
  }
  suspend fun importBackup(text:String):List<String> {
+  check(account==null)
   val backup=decodeBackup(text)
   return db.withTransaction {
-   val existing=db.profiles().all().map(::decode)
-   require(existing.none{it.active!=null}){"Завершите занятие перед импортом"}
-   require(existing.size+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
+   require(visibleProfiles().map(::decode).none{it.active!=null}){"Завершите занятие перед импортом"}
+   require(db.profiles().count()+backup.profiles.size<=MAX_BACKUP_PROFILES){"На устройстве может быть не более $MAX_BACKUP_PROFILES профилей"}
    backup.profiles.map{p->val copy=p.copy(id=java.util.UUID.randomUUID().toString());put(copy);copy.id}
   }
  }
- private suspend fun put(p:Profile)=db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
- suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {val old=load(id)?:error("Профиль не найден");val next=op(old);require(next.id==id && next.valid());if(next!=old)put(next)}
+ // All put() call sites run inside db.withTransaction. The local write and
+ // any opted-in outbox events commit together, or both are rolled back.
+ private suspend fun put(p:Profile){
+  val before=db.profiles().get(p.id)?.let(::decode)
+  db.profiles().put(ProfileRow(p.id,p.name,json.encodeToString(p)))
+  enqueueBoundChanges(db,before,p,json)
+ }
+ suspend fun mutate(id:String,op:(Profile)->Profile)=db.withTransaction {
+  val old=load(id)?:error("Профиль не найден")
+  applyProfileChange(old,op)
+  account?.requireCurrent()
+ }
+
+ internal suspend fun profilesForVerifiedAccount(identity:VerifiedSyncIdentity):VerifiedAccountProfiles? {
+  val lease=identity.currentLease()?.takeIf{it.uid.isNotBlank()}?:return null
+  val profiles=db.profiles().accountProfiles(lease.uid).map(::decode)
+  return if(identity.currentLease()==lease) VerifiedAccountProfiles(lease,profiles) else null
+ }
+
+ /** Use the lease from the profile snapshot to reject actions from a stale account session. */
+ internal suspend fun mutateForVerifiedAccount(
+  id:String,lease:VerifiedSyncLease,identity:VerifiedSyncIdentity,op:(Profile)->Profile
+ )=db.withTransaction {
+  require(lease.uid.isNotBlank() && identity.currentLease()==lease){"A current verified session is required"}
+  val old=db.profiles().accountProfile(id,lease.uid)?.let(::decode)?:error("Профиль не найден")
+  applyProfileChange(old,op)
+  require(identity.currentLease()==lease){"Account session changed during the profile update"}
+ }
+
+ private suspend fun applyProfileChange(old:Profile,op:(Profile)->Profile) {
+  val next=op(old)
+  require(next.id==old.id && next.valid())
+  if(next!=old)put(next)
+ }
 }
 private val Context.store by preferencesDataStore(name="forma_preferences")
-data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME)
+data class Preferences(val selected:String="",val voice:Boolean=true,val sound:Boolean=true,val metronome:Boolean=false,val dark:Boolean?=true,val volume:Int=65,val bpm:Int=60,val speechRate:Float=1f,val trainingPlace:TrainingPlace=TrainingPlace.HOME,val highContrast:Boolean=false,val reducedMotion:Boolean=false,val simplifiedEffects:Boolean=false)
 class SettingsRepository(private val context:Context) {
  private val volume=intPreferencesKey("volume");private val bpm=intPreferencesKey("bpm");private val rate=floatPreferencesKey("speech_rate")
  private val selected=stringPreferencesKey("selected");private val voice=booleanPreferencesKey("voice");private val sound=booleanPreferencesKey("sound");private val metronome=booleanPreferencesKey("metronome");private val theme=stringPreferencesKey("theme");private val placeKey=stringPreferencesKey("training_place")
- val settings=context.store.data.map{Preferences(it[selected].orEmpty(),it[voice]?:true,it[sound]?:true,it[metronome]?:false,when(it[theme]){"dark"->true;"light"->false;"system"->null;else->true},(it[volume]?:65).coerceIn(0,100),(it[bpm]?:60).coerceIn(40,180),(it[rate]?:1f).coerceIn(0.7f,1.3f),TrainingPlace.entries.firstOrNull{place->place.name==it[placeKey]}?:TrainingPlace.HOME)}
+ private val highContrastKey=booleanPreferencesKey("high_contrast");private val reducedMotionKey=booleanPreferencesKey("reduced_motion");private val simplifiedEffectsKey=booleanPreferencesKey("simplified_effects")
+ val settings=context.store.data.map{Preferences(it[selected].orEmpty(),it[voice]?:true,it[sound]?:true,it[metronome]?:false,when(it[theme]){"dark"->true;"light"->false;"system"->null;else->true},(it[volume]?:65).coerceIn(0,100),(it[bpm]?:60).coerceIn(40,180),(it[rate]?:1f).coerceIn(0.7f,1.3f),TrainingPlace.entries.firstOrNull{place->place.name==it[placeKey]}?:TrainingPlace.HOME,it[highContrastKey]?:false,it[reducedMotionKey]?:false,it[simplifiedEffectsKey]?:false)}
  suspend fun select(id:String){context.store.edit{it[selected]=id}}
  suspend fun audio(v:Boolean,s:Boolean,m:Boolean){context.store.edit{it[voice]=v;it[sound]=s;it[metronome]=m}}
+ // A user can tap twice before Compose receives a new DataStore snapshot.
+ // Toggle inside the serialized edit, never from a potentially stale UI value.
+ suspend fun toggleVoice(){context.store.edit{it[voice]=!(it[voice]?:true)}}
+ suspend fun toggleSound(){context.store.edit{it[sound]=!(it[sound]?:true)}}
+ suspend fun toggleMetronome(){context.store.edit{it[metronome]=!(it[metronome]?:false)}}
  suspend fun coach(v:Int,b:Int,r:Float){require(v in 0..100 && b in 40..180 && r.isFinite() && r in 0.7f..1.3f);context.store.edit{it[volume]=v;it[bpm]=b;it[rate]=r}}
  suspend fun dark(v:Boolean?){context.store.edit{it[theme]=when(v){true->"dark";false->"light";null->"system"}}}
  suspend fun trainingPlace(place:TrainingPlace){context.store.edit{it[placeKey]=place.name}}
+ // Repeat gestures are serialized against committed DataStore values, not a stale Compose snapshot.
+ suspend fun toggleHighContrast(){context.store.edit{it[highContrastKey]=!(it[highContrastKey]?:false)}}
+ suspend fun toggleReducedMotion(){context.store.edit{it[reducedMotionKey]=!(it[reducedMotionKey]?:false)}}
+ suspend fun toggleSimplifiedEffects(){context.store.edit{it[simplifiedEffectsKey]=!(it[simplifiedEffectsKey]?:false)}}
 }
 class FormaApp:Application(){
+ override fun onCreate(){
+  super.onCreate()
+  if(resources.getBoolean(R.bool.forma_cloud_sync_enabled)&&
+   FirebaseApp.getApps(this).any{it.name==FirebaseApp.DEFAULT_APP_NAME}){
+   applicationScope.launch{
+    try{cloudSync}
+    catch(cancel:CancellationException){throw cancel}
+    catch(_:Exception){android.util.Log.w("FORMA-SYNC","Cloud sync startup unavailable")}
+   }
+  }
+ }
  @Volatile var serviceRunning=false
  internal val audioFocusEpoch=AudioFocusEpoch()
  internal val serviceInterruptions=ServiceInterruptionTracker()
  internal val applicationScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+ private val processRunId=java.util.UUID.randomUUID().toString()
+ private val workoutScopeMutex=Mutex()
+ private val mutableAccountWorkouts=MutableStateFlow<AccountWorkoutScope?>(null)
+ internal val accountWorkouts=mutableAccountWorkouts.asStateFlow()
+ internal suspend fun openAccountWorkouts()=workoutScopeMutex.withLock {
+  val identity=firebaseAccount?.identity?:throw LocalWorkoutAccessRevoked()
+  val lease=identity.localLease()?:throw LocalWorkoutAccessRevoked()
+  val current=mutableAccountWorkouts.value
+  if(current?.lease==lease)return@withLock
+  if(current!=null)throw LocalWorkoutAccessRevoked()
+  require(repository.profiles.first().none{it.active!=null}){"Сначала завершите локальную тренировку"}
+  if(identity.localLease()!=lease)throw LocalWorkoutAccessRevoked()
+  val id=java.util.UUID.randomUUID().toString()
+  val access=LocalWorkoutAccess(lease){
+   mutableAccountWorkouts.value?.id==id && identity.localLease()==lease
+  }
+  mutableAccountWorkouts.value=AccountWorkoutScope(id,lease,ProfileRepository.forAccount(database,access))
+ }
+ internal suspend fun closeAccountWorkouts(expectedId:String)=workoutScopeMutex.withLock {
+  if(mutableAccountWorkouts.value?.id==expectedId){
+   mutableAccountWorkouts.value=null
+   audioFocusEpoch.invalidate()
+   stopService(android.content.Intent(this,WorkoutService::class.java))
+  }
+ }
+ internal suspend fun bindGuestProfile(profileId:String,expected:VerifiedSyncLease)=workoutScopeMutex.withLock {
+  val identity=firebaseAccount?.identity?:throw LocalWorkoutAccessRevoked()
+  if(identity.localLease()!=expected)throw LocalWorkoutAccessRevoked()
+  require(mutableAccountWorkouts.value==null&&repository.load(profileId)!=null){"Локальный профиль недоступен"}
+  require(repository.profiles.first().none{it.active!=null}){"Сначала завершите локальную тренировку"}
+  repository.bindAndQueueInitialSnapshotForVerifiedConsent(profileId,identity,System.currentTimeMillis(),expected)
+ }
+ internal fun resolveWorkoutRepository(scopeId:String?):ProfileRepository? {
+  val account=mutableAccountWorkouts.value
+  return if(scopeId==null) repository.takeIf{account==null}
+  else account?.takeIf{it.id==scopeId && it.lease==firebaseAccount?.identity?.localLease()}?.repository
+ }
+ internal suspend fun startWorkout(profileId:String,day:TrainingDay,scopeId:String?=null):Session =
+  workoutScopeMutex.withLock {
+   val profiles=resolveWorkoutRepository(scopeId)?:throw LocalWorkoutAccessRevoked()
+   profiles.start(profileId,day,workoutNow(),scopeId?:processRunId)
+  }
  internal suspend fun mutateWorkoutSession(
-  profileId:String,sessionId:String,stage:String?=null,op:(Session)->Session
- )=mutateWithServiceInterruption(repository,serviceInterruptions,profileId,sessionId,stage,::workoutNow,op)
+  profileId:String,sessionId:String,stage:String?=null,scopeId:String?=null,op:(Session)->Session
+ ) {
+  val profiles=resolveWorkoutRepository(scopeId)?:throw LocalWorkoutAccessRevoked()
+  mutateWithServiceInterruption(profiles,serviceInterruptions,profileId,sessionId,stage,::workoutNow){active->
+   // A reopened account scope is a recovery boundary even in the same OS process.
+   op(recoverIfPreviousProcess(active,scopeId?:processRunId,workoutNow()))
+  }
+ }
  val coachStatus=MutableStateFlow("Голос проверяется при начале сопровождения")
  val serviceError=MutableStateFlow<String?>(null)
- val processStartedMs=System.currentTimeMillis()
+ private val processStartedMs=System.currentTimeMillis()
  private val elapsedAnchor=android.os.SystemClock.elapsedRealtime()
  fun workoutNow()=processStartedMs+(android.os.SystemClock.elapsedRealtime()-elapsedAnchor)
- val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").build()}
- val repository by lazy{ProfileRepository(database)}
+ val database by lazy{Room.databaseBuilder(this,FormaDatabase::class.java,"forma.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()}
+ internal val firebaseAccount by lazy {
+  FirebaseApp.getApps(this).singleOrNull{it.name==FirebaseApp.DEFAULT_APP_NAME}?.let{configured->
+   if (resources.getBoolean(R.bool.forma_use_play_integrity_app_check) && !installAppCheck(configured)) {
+    return@let null
+   }
+   FirebaseAccount(configured).also{account->
+    applicationScope.launch{
+     account.localLeases.collect{
+      val current=mutableAccountWorkouts.value
+      if(current!=null && current.lease!=account.identity.localLease())closeAccountWorkouts(current.id)
+     }
+    }
+   }
+  }
+ }
+ internal val cloudSync by lazy {
+  if(resources.getBoolean(R.bool.forma_cloud_sync_enabled))
+   firebaseAccount?.let{CloudSyncRuntime(this,database,it)}?.also{runtime->
+    applicationScope.launch{
+     try{runtime.watch()}
+     catch(cancel:CancellationException){throw cancel}
+     catch(_:Exception){android.util.Log.w("FORMA-SYNC","Automatic sync scheduling unavailable")}
+    }
+   }
+  else null
+ }
+ private fun installAppCheck(configured: FirebaseApp): Boolean = try {
+  FirebaseAppCheck.getInstance(configured)
+   .installAppCheckProviderFactory(PlayIntegrityAppCheckProviderFactory.getInstance())
+  true
+ } catch (_: RuntimeException) {
+  android.util.Log.w("FORMA-SYNC", "Firebase App Check initialization unavailable")
+  false
+ }
+ // Guest UI and guest service actions access only unbound profiles.
+ val repository by lazy{ProfileRepository.forGuest(database)}
  val settings by lazy{SettingsRepository(this)}
 }
